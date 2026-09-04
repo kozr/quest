@@ -1,0 +1,15 @@
+.git
+node_modules
+dist
+data
+.env
+.env.*
+*.p8
+*.pem
+**/*.p8
+**/*.pem
+ios
+test
+test-results
+playwright-report
+.impeccable

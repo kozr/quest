@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light dark">
+    <meta name="referrer" content="no-referrer">
+    <title>IAP Notifications</title>
+    <link rel="stylesheet" href="/styles.css">
+    <script type="module" src="/app.js"></script>
+  </head>
+  <body>
+    <!-- Functional beta administration only. Visual identity and artwork are intentionally deferred. -->
+    <a class="skip-link" href="#main">Skip to content</a>
+    <header class="site-header">
+      <a class="service-name" href="#apps" id="service-name">IAP Notifications</a>
+      <div class="session" id="session" hidden>
+        <span id="session-email"></span>
+        <button type="button" id="logout-button">Sign out</button>
+      </div>
+    </header>
+    <main id="main" tabindex="-1">
+      <div id="global-message" class="notice" role="status" aria-live="polite" hidden></div>
+      <section id="loading-view" aria-labelledby="loading-title">
+        <h1 id="loading-title">Loading your workspace</h1>
+        <p>Connecting to this notification server…</p>
+      </section>
+      <section id="unavailable-view" aria-labelledby="unavailable-title" hidden>
+        <h1 id="unavailable-title">Cannot reach the server</h1>
+        <p id="unavailable-detail">Check that the notification server is running, then try again.</p>
+        <button type="button" id="retry-startup">Try again</button>
+      </section>
+      <section id="auth-view" class="auth-view" aria-labelledby="auth-title" hidden>
+        <h1 id="auth-title">Sign in with your iPhone</h1>
+        <div id="pairing-panel">
+          <p>Use the account on your phone to open this computer’s workspace. No password is needed here.</p>
+          <ol class="pairing-instructions">
+            <li>Open IAP Notifications on your iPhone and sign in.</li>
+            <li>Go to Settings → Sign in on computer, then scan this QR code.</li>
+            <li>Match the code below and approve the sign-in on your phone.</li>
+          </ol>
+          <div class="pairing-layout">
+            <div class="pairing-image-area">
+              <img id="pairing-qr" width="240" height="240" alt="One-time sign-in QR code. Scan with IAP Notifications on your iPhone." hidden>
+              <p id="pairing-placeholder">Preparing your QR code…</p>
+            </div>
+            <div class="pairing-information">
+              <p id="pairing-code-label">Match this code on your phone</p>
+              <output id="pairing-code" aria-labelledby="pairing-code-label">—</output>
+              <p id="pairing-expiry" class="help"></p>
+              <p id="pairing-status" class="form-message" role="status" aria-live="polite">Preparing a one-time sign-in request…</p>
+              <div class="actions">
+                <button type="button" id="pairing-regenerate" disabled>Get new QR code</button>
+                <button type="button" id="pairing-cancel" disabled>Cancel sign-in</button>
+              </div>
+              <details id="pairing-simulator" class="pairing-simulator">
+                <summary>Using the iPhone Simulator?</summary>
+                <p class="help">Copy the one-use link and open it in the simulator. Keep this sign-in link private.</p>
+                <button type="button" id="pairing-copy" disabled>Copy QR link</button>
+              </details>
+            </div>
+          </div>
+          <p id="pairing-server" class="help"></p>
+          <p id="pairing-network-help" class="help" hidden></p>
+          <p class="help">Only approve a sign-in you started on this computer. Never scan a sign-in code someone sends you.</p>
+        </div>
+        <details id="email-fallback" class="email-fallback">
+          <summary id="email-fallback-label">Use email instead</summary>
+          <p class="help">Opening email sign-in cancels this QR code. Your account is the same on the phone and browser.</p>
+          <div class="actions" id="auth-modes" aria-label="Account options">
+            <button type="button" id="sign-in-mode" aria-pressed="true">Sign in</button>
+            <button type="button" id="register-mode" aria-pressed="false">Create account</button>
+          </div>
+          <form id="auth-form">
+            <div class="field">
+              <label for="auth-email">Email</label>
+              <input id="auth-email" name="email" type="email" autocomplete="username" maxlength="254" required>
+            </div>
+            <div class="field">
+              <label for="auth-password">Password</label>
+              <input id="auth-password" name="password" type="password" autocomplete="current-password" maxlength="128" required aria-describedby="password-help">
+              <p class="help" id="password-help">Use your account password. Password reset is not available in this beta.</p>
+            </div>
+            <p id="auth-message" class="form-message" role="alert" hidden></p>
+            <button class="primary" id="auth-submit" type="submit">Sign in</button>
+          </form>
+          <p class="help">This is a local/private beta foundation. Account recovery and email verification are not available yet.</p>
+        </details>
+      </section>
+      <div id="workspace" hidden>
+        <nav class="section-nav" aria-label="Workspace">
+          <a href="#apps" data-section="apps" aria-current="page">Apps</a>
+          <a href="#activity" data-section="activity">Activity</a>
+          <a href="#settings" data-section="settings">Settings</a>
+        </nav>
+        <section id="apps-view" aria-labelledby="apps-title">
+          <div class="section-heading">
+            <h1 id="apps-title" tabindex="-1">Apps</h1>
+            <div class="actions">
+              <button type="button" id="refresh-apps">Refresh status</button>
+              <button type="button" class="primary" id="show-add-app" aria-expanded="false" aria-controls="add-app-section">Add app</button>
+            </div>
+          </div>
+          <p>Connect App Store Server Notifications V2 for in-app purchases and subscriptions. Paid app downloads are not included.</p>
+          <section id="add-app-section" class="form-section" aria-labelledby="add-app-title" hidden>
+            <h2 id="add-app-title">Add an app</h2>
+            <form id="lookup-form">
+              <div class="field">
+                <label for="lookup-url">App Store URL or numeric Apple ID <span class="optional">(optional)</span></label>
+                <div class="input-action">
+                  <input id="lookup-url" name="url" type="text" autocomplete="off" placeholder="https://apps.apple.com/…/id123456789">
+                  <button id="lookup-button" type="submit">Look up app</button>
+                </div>
+                <p class="help">Imports public app details only. You can enter the details below manually, including for an unreleased app.</p>
+              </div>
+              <p id="lookup-message" class="form-message" role="status" hidden></p>
+            </form>
+            <form id="add-app-form">
+              <div class="form-grid">
+                <div class="field">
+                  <label for="app-name">App name</label>
+                  <input id="app-name" name="name" type="text" autocomplete="off" maxlength="80" required>
+                </div>
+                <div class="field">
+                  <label for="app-bundle-id">Bundle ID</label>
+                  <input id="app-bundle-id" name="bundleId" type="text" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="255" pattern="[A-Za-z0-9\-]+(\.[A-Za-z0-9\-]+)+" placeholder="com.example.myapp" required>
+                </div>
+                <div class="field">
+                  <label for="app-apple-id">Numeric Apple ID</label>
+                  <input id="app-apple-id" name="appleId" type="text" inputmode="numeric" pattern="[1-9][0-9]{0,14}" autocomplete="off" maxlength="15" required aria-describedby="apple-id-help">
+                  <p class="help" id="apple-id-help">Find this in App Store Connect → App information. This is not your Apple Account email.</p>
+                </div>
+                <div class="field">
+                  <label for="app-source">Current notification setup</label>
+                  <select id="app-source" name="source">
+                    <option value="apple">Direct from Apple</option>
+                    <option value="revenuecat">Already using RevenueCat</option>
+                  </select>
+                  <p class="help" id="source-help">You will copy this server’s URLs into App Store Connect. If an existing server already uses those URLs, stop and plan forwarding before replacing them.</p>
+                </div>
+              </div>
+              <p class="help">No developer private key is needed to receive notifications. Adding public app details does not verify that you control the app.</p>
+              <p id="add-app-message" class="form-message" role="alert" hidden></p>
+              <div class="actions">
+                <button class="primary" id="add-app-submit" type="submit">Add app and show setup</button>
+                <button id="cancel-add-app" type="button">Cancel</button>
+              </div>
+            </form>
+          </section>
+          <p id="apps-message" class="form-message" role="status" hidden></p>
+          <div id="app-list" aria-live="polite"></div>
+        </section>
+        <section id="activity-view" aria-labelledby="activity-title" hidden>
+          <div class="section-heading">
+            <h1 id="activity-title" tabindex="-1">Activity</h1>
+            <button type="button" id="refresh-events">Refresh activity</button>
+          </div>
+          <p>Sale amounts are transaction activity, not net proceeds or payouts. App Store Connect financial reports remain the source of record.</p>
+          <form id="event-filters" class="filter-form">
+            <div class="field">
+              <label for="event-app">App</label>
+              <select id="event-app" name="appId"><option value="">All apps</option></select>
+            </div>
+            <div class="field">
+              <label for="event-environment">Environment</label>
+              <select id="event-environment" name="environment">
+                <option value="Production">Production</option>
+                <option value="Sandbox">Sandbox</option>
+                <option value="Demo">Demo</option>
+                <option value="all">All environments</option>
+              </select>
+            </div>
+            <button type="submit">Apply filters</button>
+          </form>
+          <label class="check-field"><input id="auto-refresh" type="checkbox"> Refresh new activity every 15 seconds while this page is visible</label>
+          <p id="events-updated" class="help"></p>
+          <p id="events-message" class="form-message" role="status" hidden></p>
+          <ol id="event-list" class="event-list"></ol>
+          <button type="button" id="load-more-events" hidden>Load older activity</button>
+        </section>
+        <section id="settings-view" aria-labelledby="settings-title" hidden>
+          <div class="section-heading">
+            <h1 id="settings-title" tabindex="-1">Settings</h1>
+            <button type="button" id="refresh-settings">Refresh settings</button>
+          </div>
+          <section aria-labelledby="preferences-title">
+            <h2 id="preferences-title">Push preferences</h2>
+            <form id="preferences-form">
+              <fieldset id="preferences-fields" disabled>
+                <legend class="visually-hidden">Choose notifications</legend>
+                <label class="check-field"><input type="checkbox" name="sales"> Purchases and renewals</label>
+                <label class="check-field"><input type="checkbox" name="refunds"> Refunds and refund reversals</label>
+                <label class="check-field"><input type="checkbox" name="lifecycle"> Trials, auto-renew changes, billing issues, and expiry</label>
+                <label class="check-field"><input type="checkbox" name="sandbox"> Include sandbox notifications</label>
+                <label class="check-field"><input type="checkbox" name="hideAmounts"> Hide sale amounts in push notifications</label>
+              </fieldset>
+              <p class="help">Sandbox is for testing. Demo events are always labelled separately. Hiding amounts changes push content, not the signed event history.</p>
+              <p id="preferences-message" class="form-message" role="status" hidden></p>
+              <button type="submit" id="save-preferences" class="primary" disabled>Save preferences</button>
+            </form>
+          </section>
+          <section aria-labelledby="devices-title">
+            <h2 id="devices-title">Connected iPhones</h2>
+            <p>In the iPhone app, enter this server’s address, sign in to the same account, and allow notifications. To sign in on another computer, use Settings → Sign in on computer on your phone.</p>
+            <div id="server-address"></div>
+            <p id="apns-status" class="notice"></p>
+            <p id="devices-message" class="form-message" role="status" hidden></p>
+            <div id="device-list"></div>
+          </section>
+          <section aria-labelledby="deliveries-title">
+            <h2 id="deliveries-title">Recent push delivery attempts</h2>
+            <p class="help">“Accepted by APNs” means Apple accepted the push. It does not prove that a phone displayed it; notification permissions, Focus, and connectivity still apply.</p>
+            <p id="deliveries-message" class="form-message" role="status" hidden></p>
+            <div id="delivery-list"></div>
+          </section>
+        </section>
+      </div>
+    </main>
+    <footer>Private beta · Setup, event history, and iPhone push delivery</footer>
+    <noscript><p class="notice">Enable JavaScript to sign in and configure this notification server.</p></noscript>
+  </body>
+</html>
