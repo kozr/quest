@@ -5,7 +5,8 @@ import { ApnsClient, type PushResult, type PushTransport } from '../src/apns.js'
 import { createApplication, type ApplicationOptions } from '../src/app.js';
 import { Store, type DeviceRow } from '../src/database.js';
 import { DeliveryWorker } from '../src/worker.js';
-import {firebaseOptions,testStore,resetAccounts,rows,jobs} from './firebase-fixture.js';
+import {firebaseOptions,testStore,resetAccounts,rows,jobs,appleIdentity,pairBrowser} from './firebase-fixture.js';
+import {appleCredential} from './apple-auth-fixture.js';
 import {createSession,tokenHash} from '../src/auth.js';
 
 const configuration: ApplicationOptions = {
@@ -13,7 +14,6 @@ const configuration: ApplicationOptions = {
   production: false, registrationEnabled: true, demoEnabled: false,
   appleRootDirectory: '/not-used-by-this-test', apns: null,
 };
-const password = 'Regression-test-password!';
 const email = 'device-regression@example.test';
 const appInput = { name: 'Revenue fixture', bundleId: 'com.example.regression', appleId: '123456789', source: 'apple' };
 const tokenA = 'a'.repeat(64);
@@ -53,8 +53,8 @@ async function fixture(pushTransport: PushTransport = { send: async () => ({ ok:
     });
     return { status: response.status, headers: response.headers, body: await response.json() as any };
   };
-  const registered = await request('/api/auth/register', { method: 'POST', body: { email, password, client: 'ios' } });
-  assert.equal(registered.status, 201);
+  const registered = await request('/api/auth/apple', { method: 'POST', body: appleCredential(email) });
+  assert.equal(registered.status, 200);
   const token: string = registered.body.token;
   const app = await request('/api/apps', { method: 'POST', token, body: appInput });
   assert.equal(app.status, 201);
@@ -153,7 +153,7 @@ test('late invalid-token response cannot disable a newer registration or cancel 
 
 async function storeFixture(transport: PushTransport) {
   const store = testStore();await resetAccounts(store,['worker@example.test']);
-  const identity=await store.identity.signIn('worker@example.test','Worker-fixture-password!',true);
+  const identity=await appleIdentity(store,'worker@example.test');
   const token=await createSession(store,identity.user.id,identity.authTime);
   const timestamp = Date.now() - 1_000;
   const date = new Date(timestamp).toISOString();
@@ -199,9 +199,9 @@ test('remote browser removal revokes the phone session and its queued data while
   try {
     const device = await f.registerDevice();
     await f.sale('remote-revoke-sale');
-    const browser = await f.request('/api/auth/login', { method: 'POST', body: { email, password }, origin: configuration.publicUrl });
+    const browser = await pairBrowser(f.request,f.token,configuration.publicUrl);
     assert.equal(browser.status, 200);
-    const cookie = browser.headers.get('set-cookie')!.split(';')[0]!;
+    const cookie = browser.headers.getSetCookie().find((value:string)=>value.startsWith('iap_session='))!.split(';')[0]!;
     const removed = await f.request(`/api/devices/${device.id}`, { method: 'DELETE', cookie, origin: configuration.publicUrl });
     assert.equal(removed.status, 200);
     assert.equal((await f.request('/api/auth/me', { token: f.token })).status, 401);

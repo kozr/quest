@@ -1,10 +1,11 @@
 import express,{type Request,type Response,type NextFunction} from 'express';
 import {randomUUID} from 'node:crypto';
+import {Timestamp} from 'firebase-admin/firestore';
 import {resolve} from 'node:path';
 import {z} from 'zod';
 import type {Configuration} from './config.js';
 import {Store,newWebhookSecret,type AppRow,type DeviceRow} from './database.js';
-import {authenticate,clearSessionCookie,createSession,rateLimit,setSessionCookie,type AuthenticatedRequest} from './auth.js';
+import {authenticate,clearSessionCookie,createSession,rateLimit,tokenHash,type AuthenticatedRequest} from './auth.js';
 import {firebaseServices,ServiceError} from './firebase.js';
 import {AppleVerificationError,loadAppleRootCertificates,verifyAppleNotification,type AppleNotificationContext,type VerifiedAppleNotification} from './apple.js';
 import {normalizeAppleNotification} from './normalize.js';
@@ -22,7 +23,7 @@ export interface ApplicationOptions extends Configuration {
   /** Test-only repository injection, never selected via an HTTP parameter. */
   store?:Store;
 }
-const credentials=z.object({email:z.string().trim().email().max(254).transform(v=>v.toLowerCase()),password:z.string().min(12).max(128),client:z.literal('ios').optional()}).strict();
+const appleCredentials=z.object({idToken:z.string().min(1).max(16384),rawNonce:z.string().regex(/^[A-Za-z0-9_-]{43}$/),client:z.literal('ios')}).strict();
 const appInput=z.object({name:z.string().trim().min(1).max(80),bundleId:z.string().trim().min(3).max(255).regex(/^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/),appleId:z.string().trim().regex(/^[1-9]\d{0,14}$/),source:z.enum(['apple','revenuecat']),iconUrl:z.string().max(2048).nullable().optional()}).strict();
 const preferenceInput=z.object({sales:z.boolean().optional(),refunds:z.boolean().optional(),lifecycle:z.boolean().optional(),sandbox:z.boolean().optional(),hideAmounts:z.boolean().optional()}).strict();
 const deviceInput=z.object({token:z.string().regex(/^[a-fA-F0-9]{64,512}$/).refine(v=>v.length%2===0).transform(v=>v.toLowerCase()),name:z.string().trim().min(1).max(80),environment:z.enum(['production','sandbox'])}).strict();
@@ -67,25 +68,31 @@ export function createApplication(options:ApplicationOptions) {
     res.json({ok:true,status});
   });
   app.use('/api',express.json({limit:'32kb'}),(_req,res,next)=>{res.setHeader('Cache-Control','no-store');next();});
-  app.get('/api/config',(_req,res)=>res.json({serviceName:'IAP Notifications',registrationEnabled:options.registrationEnabled,demoEnabled:options.demoEnabled,apnsConfigured:!!transport,publicUrl:options.publicUrl}));
+  app.get('/api/config',(_req,res)=>res.json({serviceName:'IAP Notifications',authProvider:'apple',registrationEnabled:options.registrationEnabled,demoEnabled:options.demoEnabled,apnsConfigured:!!transport,publicUrl:options.publicUrl}));
   app.use('/api/pairing',pairingRouter(store,options.publicUrl));
-  app.use(['/api/auth/login','/api/auth/register'],limit('auth',20,15*60000),(req,res,next)=>{
+  app.post(['/api/auth/login','/api/auth/register'],(_req,res)=>res.status(410).json({error:'Password sign-in has been removed. Sign in with Apple on your iPhone, then scan the desktop QR code.'}));
+  app.use('/api/auth/apple',limit('auth',20,15*60000),(req,res,next)=>{
     if(req.headers.origin && req.headers.origin!==options.publicUrl) return res.status(403).json({error:'Sign in from this app’s own page.'});next();
   });
-  for(const action of ['register','login'] as const) app.post(`/api/auth/${action}`,async(req,res)=>{
-    if(action==='register' && !options.registrationEnabled) throw new ServiceError(403,'New account registration is disabled on this server.');
-    const input=credentials.parse(req.body);const identity=await store.identity.signIn(input.email,input.password,action==='register');
+  app.post('/api/auth/apple',async(req,res)=>{
+    const input=appleCredentials.parse(req.body);
+    const nonceHash=tokenHash(input.rawNonce);
+    if(await store.get('apple_sign_ins',nonceHash)) throw new ServiceError(401,'This Apple sign-in has already been used. Sign in with Apple again.');
+    const identity=await store.identity.signInWithApple(input.idToken,input.rawNonce);
     const {user,authTime}=identity;
     const token=await store.atomic(async s=>{
-      const profile=await s.get('users',user.id);
+      const [profile,used]=await Promise.all([s.get('users',user.id),s.get('apple_sign_ins',nonceHash)]);
+      if(used) throw new ServiceError(401,'This Apple sign-in has already been used. Sign in with Apple again.');
       // Firebase's public Auth API can create accounts independently of this UI.
       // A closed beta must not admit those accounts through the login endpoint.
       if(!profile && !options.registrationEnabled) throw new ServiceError(403,'This account has not been admitted to the beta.');
+      // Only hashes are retained. The 24h replay record outlives the 5m
+      // accepted credential age, including clock skew and asynchronous TTL.
+      await s.set('apple_sign_ins',nonceHash,{expireAt:Timestamp.fromMillis(Date.now()+86400000)});
       await s.set('users',user.id,{...user,updated_at:new Date().toISOString()},true);
       return createSession(s,user.id,authTime);
     });
-    if(input.client!=='ios') {await cancelBrowserPairing(store,req,res,secure);setSessionCookie(res,token,secure);}
-    res.status(action==='register' ? 201 : 200).json(input.client==='ios' ? {user,token} : {user});
+    res.json({user,token});
   });
   app.use('/api',authenticate(store,options.publicUrl));
   app.get('/api/auth/me',(req,res)=>res.json({user:authenticated(req).user}));

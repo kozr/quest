@@ -1,6 +1,7 @@
 import SwiftUI
 import UIKit
 import UserNotifications
+import AuthenticationServices
 
 @main
 struct IAPNotificationsApp: App {
@@ -114,19 +115,24 @@ private struct RootView: View {
 
 private struct AuthenticationView: View {
     @EnvironmentObject private var model: AppModel
-    @State private var email = ""
-    @State private var password = ""
-    @State private var isRegistering = false
+    @State private var appleAttempt: AppleAttempt?
     @State private var serverURL = ""
     @State private var allowLocalHTTP = false
     @State private var isServerExpanded = true
+
+    private struct AppleAttempt {
+        let nonce: String
+        let state: String
+        let serverURL: String
+        let allowLocalHTTP: Bool
+    }
 
     var body: some View {
         NavigationStack {
             Form {
                 Section {
                     Text("Sales and refund alerts for your apps.")
-                    Text("Sign in here, then approve your computer's QR code from Settings to continue in the browser without typing a password there.")
+                    Text("Sign in with Apple here, then scan and approve your computer's QR code from Settings. No desktop login or password needed.")
                         .font(.subheadline).foregroundStyle(.secondary)
                     if let message = model.pairingSignInNotice {
                         Label(message, systemImage: "qrcode.viewfinder")
@@ -161,35 +167,49 @@ private struct AuthenticationView: View {
                         Label(message, systemImage: "checkmark.circle").font(.subheadline)
                     }
                 }
-                Section(isRegistering ? "Create account" : "Sign in") {
-                    TextField("Email", text: $email)
-                        .textContentType(.username)
-                        .keyboardType(.emailAddress)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .accessibilityIdentifier("email")
-                    SecureField("Password", text: $password)
-                        .textContentType(isRegistering ? .newPassword : .password)
-                        .accessibilityIdentifier("password")
-                    if isRegistering {
-                        Text("Use 12–128 characters. Password recovery is not available in this core beta.")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                    Button(action: authenticate) {
-                        HStack {
-                            Text(isRegistering ? "Create account" : "Sign in")
-                            Spacer()
-                            if model.isAuthenticating { ProgressView() }
+                Section("Sign in") {
+                    SignInWithAppleButton(.signIn) { request in
+                        model.authError = nil
+                        do {
+                            let address = try ServerAddress.validate(serverURL, allowLocalHTTP: allowLocalHTTP)
+                            let attempt = AppleAttempt(nonce: try AppleSignInNonce.make(), state: UUID().uuidString,
+                                                       serverURL: address.absoluteString, allowLocalHTTP: allowLocalHTTP)
+                            appleAttempt = attempt
+                            request.requestedScopes = [.email]
+                            request.nonce = AppleSignInNonce.hash(attempt.nonce)
+                            request.state = attempt.state
+                        } catch { model.authError = error.localizedDescription }
+                    } onCompletion: { result in
+                        let attempt = appleAttempt
+                        appleAttempt = nil
+                        switch result {
+                        case .success(let authorization):
+                            guard let attempt,
+                                  let credential = authorization.credential as? ASAuthorizationAppleIDCredential,
+                                  credential.state == attempt.state,
+                                  let data = credential.identityToken,
+                                  let token = String(data: data, encoding: .utf8) else {
+                                model.authError = "Apple sign-in could not be completed. Please try again."
+                                return
+                            }
+                            Task { await model.authenticateWithApple(idToken: token, rawNonce: attempt.nonce,
+                                                                     url: attempt.serverURL, allowLocalHTTP: attempt.allowLocalHTTP) }
+                        case .failure(let error):
+                            if (error as? ASAuthorizationError)?.code != .canceled {
+                                model.authError = "Apple sign-in failed. Check your Apple Account in iPhone Settings and try again."
+                            }
                         }
                     }
-                    .accessibilityIdentifier("authenticate")
-                    .disabled(!canSubmit || model.isAuthenticating || model.isCheckingServer)
-                    Button(isRegistering ? "Already have an account? Sign in" : "Create an account") {
-                        isRegistering.toggle()
-                        model.authError = nil
-                        password = ""
-                    }
-                    .disabled(model.isAuthenticating)
+                    .signInWithAppleButtonStyle(.black)
+                    .frame(height: 50)
+                    .accessibilityIdentifier("signInWithApple")
+                    .disabled((try? ServerAddress.validate(serverURL, allowLocalHTTP: allowLocalHTTP)) == nil ||
+                              model.isAuthenticating || model.isCheckingServer || appleAttempt != nil)
+                    if model.isAuthenticating { ProgressView("Finishing Apple sign-in…") }
+                    Text(model.config?.registrationEnabled == false
+                         ? "This server is accepting existing beta accounts only."
+                         : "Your account is created on first sign-in. Hide My Email is supported.")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
                 if let error = model.authError { Section { ErrorMessage(message: error) } }
             }
@@ -201,15 +221,6 @@ private struct AuthenticationView: View {
         }
     }
 
-    private var canSubmit: Bool {
-        !serverURL.isEmpty && email.contains("@") && !password.isEmpty &&
-            password.count <= 128 && (!isRegistering || password.count >= 12)
-    }
-
-    private func authenticate() {
-        Task { await model.authenticate(email: email, password: password, register: isRegistering,
-                                        url: serverURL, allowLocalHTTP: allowLocalHTTP) }
-    }
 }
 
 private struct ActivityView: View {

@@ -13,7 +13,7 @@ export interface DeviceRow {
   created_at:string; last_seen_at:string; active:number; generation:number;
 }
 export interface EventRow extends ActivityEvent { user_id:string; economic_key:string|null; signed_date:number }
-export interface SessionRow { token_hash:string; user_id:string; auth_time:number; created_at:string; expires_at:string; expireAt:Timestamp }
+export interface SessionRow { token_hash:string; user_id:string; auth_time:number; provider:'apple.com'; created_at:string; expires_at:string; expireAt:Timestamp }
 export interface Job {
   id:string; user_id:string; event_id:string|null; app_id:string|null; device_id:string; device_name:string;
   session_hash:string; device_generation:number; kind:'event'|'test'; state:'pending'|'processing'|'sent'|'failed'|'cancelled';
@@ -76,7 +76,7 @@ export class Store {
   eventResponse(row:EventRow):ActivityEvent {const {user_id:_owner,economic_key:_key,signed_date:_signed,...event}=row;return event;}
   async session(hash:string):Promise<(SessionRow & {user:{id:string;email:string}})|undefined> {
     const row=await this.get<SessionRow>('sessions',hash);
-    if (!row || row.expires_at<=new Date().toISOString()) return;
+    if (!row || row.provider!=='apple.com' || row.expires_at<=new Date().toISOString()) return;
     const user=await this.identity.valid(row.user_id,row.auth_time);
     return user ? {...row,user} : undefined;
   }

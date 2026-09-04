@@ -56,8 +56,6 @@ footer { padding: 1rem; text-align: center; color: var(--muted); border-top: 1px
 #pairing-server { overflow-wrap: anywhere; }
 .pairing-simulator { margin-top: 1rem; }
 .pairing-simulator summary { min-height: 44px; }
-.email-fallback { margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--line); }
-.email-fallback summary { min-height: 44px; }
 .section-nav { display: flex; gap: .4rem; border-bottom: 1px solid var(--line); margin-bottom: 1.7rem; }
 .section-nav a { padding: .6rem 1rem; text-decoration: none; color: var(--muted); border-bottom: 3px solid transparent; }
 .section-nav a[aria-current="page"] { border-color: var(--action); color: var(--text); font-weight: 600; }

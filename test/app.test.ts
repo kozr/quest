@@ -1,7 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import {FieldValue} from 'firebase-admin/firestore';
+import {tokenHash} from '../src/auth.js';
 import { once } from 'node:events';
-import {firebaseOptions,testStore,resetAccounts,rows,jobs} from './firebase-fixture.js';
+import {firebaseOptions,testStore,resetAccounts,rows,jobs,pairBrowser} from './firebase-fixture.js';
+import {appleCredential} from './apple-auth-fixture.js';
 import {Store} from '../src/database.js';
 import { createApplication, type ApplicationOptions } from '../src/app.js';
 import { AppleVerificationError, type VerifiedAppleNotification } from '../src/apple.js';
@@ -9,7 +12,6 @@ import type { PushTransport, PushResult } from '../src/apns.js';
 
 const options: ApplicationOptions={port:4317,host:'127.0.0.1',publicUrl:'http://localhost:4317',...firebaseOptions,production:false,
   registrationEnabled:true,demoEnabled:true,appleRootDirectory:'/not-configured',apns:null};
-const password='A-long-test-password!';
 const input={name:'Test App',bundleId:'com.example.test',appleId:'123456789',source:'apple'};
 const encoded=(payload:object)=>`eyJhbGciOiJFUzI1NiJ9.${Buffer.from(JSON.stringify(payload)).toString('base64url')}.test`;
 
@@ -32,8 +34,8 @@ async function fixture(overrides: Partial<ApplicationOptions>={}) {
     return {status:response.status,body:await response.json() as any,headers:response.headers};
   }
   async function register(email='first@example.test') {
-    const result=await request('/api/auth/register',{method:'POST',body:{email,password,client:'ios'}});
-    assert.equal(result.status,201);return result.body.token as string;
+    const result=await request('/api/auth/apple',{method:'POST',body:appleCredential(email)});
+    assert.equal(result.status,200,JSON.stringify(result.body));return result.body.token as string;
   }
   async function add(token:string,source='apple') {
     const result=await request('/api/apps',{method:'POST',token,body:{...input,source}});
@@ -52,22 +54,82 @@ test('Firebase Auth protects accounts; Firestore stores hashed sessions but no p
     assert.notEqual(session.token_hash,token);
     assert.equal((await rows(f.store,'users'))[0].password_hash,undefined);
     assert.equal((await f.store.identity.auth.getUserByEmail('first@example.test')).uid,me.body.user.id);
-    assert.equal((await f.request('/api/auth/login',{method:'POST',body:{email:'first@example.test',password:'wrong-but-long-password'}})).status,401);
+    assert.equal((await f.request('/api/auth/login',{method:'POST',body:{email:'first@example.test',password:'wrong-but-long-password'}})).status,410);
     await f.request('/api/auth/logout',{method:'POST',token});
     assert.equal((await f.request('/api/auth/me',{token})).status,401);
   } finally {await f.close();}
 });
 
+test('Apple sign-in is single-use under concurrent replay and keeps raw credentials out of Firestore',async()=>{
+  const f=await fixture();try {
+    const credential=appleCredential('first@example.test');
+    const results=await Promise.all([0,1,2].map(()=>f.request('/api/auth/apple',{method:'POST',body:credential})));
+    assert.deepEqual(results.map(result=>result.status).sort(),[200,401,401]);
+    const sessions=await rows(f.store,'sessions');assert.equal(sessions.length,1);assert.equal(sessions[0].provider,'apple.com');
+    assert.equal((await rows(f.store,'apple_sign_ins')).length,1);
+    const stored=JSON.stringify([sessions,await rows(f.store,'apple_sign_ins'),await rows(f.store,'users')]);
+    assert(!stored.includes(credential.rawNonce));assert(!stored.includes(credential.idToken));
+    assert.equal((await f.request('/api/auth/apple',{method:'POST',body:credential})).status,401);
+    const fresh=await f.request('/api/auth/apple',{method:'POST',body:appleCredential('first@example.test')});
+    assert.equal(fresh.status,200);assert.equal(fresh.body.user.id,results.find(result=>result.status===200)!.body.user.id);
+  } finally {await f.close();}
+});
+
+test('Apple nonce mismatch, expired credentials, stale/future issue time, and foreign issuer fail closed',async()=>{
+  const f=await fixture();try {
+    const now=Math.floor(Date.now()/1000);
+    for(const claims of [{nonce:'wrong'},{exp:now-1},{iat:now-301},{iat:now+120},{iss:'https://accounts.google.com'}]) {
+      assert.equal((await f.request('/api/auth/apple',{method:'POST',body:appleCredential('first@example.test',claims)})).status,401);
+    }
+    assert.equal((await rows(f.store,'sessions')).length,0);
+    assert.equal((await rows(f.store,'users')).length,0);
+  } finally {await f.close();}
+});
+
+test('Apple login requires the native contract; no password route or web-cookie fallback remains',async()=>{
+  const f=await fixture();try {
+    for(const action of ['login','register']) {
+      const result=await f.request(`/api/auth/${action}`,{method:'POST',body:{email:'first@example.test',password:'No-longer-supported!'}});
+      assert.equal(result.status,410);assert.equal(result.body.token,undefined);assert.equal(result.headers.get('set-cookie'),null);
+    }
+    for(const client of [undefined,'web']) {
+      assert.equal((await f.request('/api/auth/apple',{method:'POST',body:{...appleCredential('first@example.test'),client}})).status,400);
+    }
+    const result=await f.request('/api/auth/apple',{method:'POST',body:appleCredential('first@example.test')});
+    assert.equal(result.status,200);assert.equal(result.headers.get('set-cookie'),null);
+  } finally {await f.close();}
+});
+
+test('legacy sessions and sessions whose Apple provider was removed are rejected',async()=>{
+  const f=await fixture();try {
+    const legacy=await f.register();
+    await f.store.collection('sessions').doc(tokenHash(legacy)).update({provider:FieldValue.delete()});
+    assert.equal((await f.request('/api/auth/me',{token:legacy})).status,401);
+    const fresh=await f.register();
+    const {user}=(await f.request('/api/auth/me',{token:fresh})).body;
+    await f.store.identity.auth.updateUser(user.id,{providersToUnlink:['apple.com']});
+    assert.equal((await f.request('/api/auth/me',{token:fresh})).status,401);
+  } finally {await f.close();}
+});
+
+test('Hide My Email accounts sign in without requiring a personal email address',async()=>{
+  const f=await fixture();try {
+    const email=`relay-${Date.now()}@privaterelay.appleid.com`;
+    const token=await f.register(email);
+    assert.equal((await f.request('/api/auth/me',{token})).body.user.email,email);
+  } finally {await f.close();}
+});
+
 test('browser cookies are HttpOnly, do not return tokens, and require same-origin mutations',async()=>{
   const f=await fixture();try {
-    const response=await f.request('/api/auth/register',{method:'POST',body:{email:'browser@example.test',password},origin:options.publicUrl});
-    assert.equal(response.status,201);assert.equal(response.body.token,undefined);
-    const cookie=response.headers.get('set-cookie')!;assert.match(cookie,/HttpOnly/);assert.match(cookie,/SameSite=Strict/);
+    const response=await pairBrowser(f.request,await f.register('browser@example.test'),options.publicUrl);
+    assert.equal(response.status,200);assert.equal(response.body.token,undefined);
+    const cookie=response.headers.getSetCookie().find(value=>value.startsWith('iap_session='))!;assert.match(cookie,/HttpOnly/);assert.match(cookie,/SameSite=Strict/);
     const value=cookie.split(';')[0];
     assert.equal((await f.request('/api/apps',{method:'POST',cookie:value,body:input})).status,403);
     assert.equal((await f.request('/api/apps',{method:'POST',cookie:value,origin:'https://evil.example',body:input})).status,403);
     assert.equal((await f.request('/api/apps',{method:'POST',cookie:value,origin:options.publicUrl,body:input})).status,201);
-    assert.equal((await f.request('/api/auth/login',{method:'POST',origin:'https://evil.example',body:{email:'browser@example.test',password}})).status,403);
+    assert.equal((await f.request('/api/auth/apple',{method:'POST',origin:'https://evil.example',body:appleCredential('browser@example.test')})).status,403);
   } finally {await f.close();}
 });
 
@@ -106,7 +168,7 @@ test('production can disable self registration and demonstration endpoints',asyn
     assert.equal((await f.request(`/api/apps/${app.id}/demo`,{method:'POST',token,body:{kind:'sale'}})).status,403);
   }finally{await f.close();}
   const closed=await fixture({registrationEnabled:false});try {
-    assert.equal((await closed.request('/api/auth/register',{method:'POST',body:{email:'x@y.test',password}})).status,403);
+    assert.equal((await closed.request('/api/auth/apple',{method:'POST',body:appleCredential('x@y.test')})).status,403);
   }finally{await closed.close();}
 });
 

@@ -1,22 +1,22 @@
 # Firebase backend + Vercel web deployment
 
-The code is migrated and locally tested; **no cloud project, billable resources, public deployment, or TestFlight build was created by this migration**. Choose a dedicated Firebase project before deployment. Existing unrelated projects must not be reused by assumption.
+The code is migrated and locally tested; **no billable resources, public deployment, or TestFlight build was created by this migration**. The user selected the dedicated Firebase project **the app quest** (`the-app-quest`) in Arc. Authentication setup was opened; the Apple provider has not yet been saved/enabled by this change. Existing unrelated projects must not be reused by assumption.
 
 ## Architecture
 
-- Firebase Auth verifies email/password credentials through the server. The native/web API remains compatible; passwords and Firebase refresh tokens are never written to Firestore. Opaque service sessions are hashed and revocable, and each request checks Firebase's account/revocation state.
+- Firebase Auth verifies native Apple ID tokens and raw nonces through `accounts:signInWithIdp`. The service pins `apple.com`, verifies the returned Firebase ID token/provider, and atomically consumes each nonce with session creation. No passwords or Firebase refresh tokens are retained. Sessions must carry Apple provenance; old password sessions fail closed. Each authenticated request also checks Firebase's account, Apple-provider and revocation state.
 - Firestore is server-only (deny-all client rules). An Apple webhook transaction writes the receipt, normalized event, economic dedupe marker and outbox jobs atomically before returning HTTP 200.
 - `queuePush` reacts to committed outbox jobs and enqueues a named Cloud Task. `deliverPush` claims a fenced lease, validates the device/session/preferences, and sends APNs. `recoverPush` runs every five minutes to recover stranded work. Task delivery is at-least-once; APNs collapse IDs reduce duplicates but cannot guarantee exactly-once display after a crash.
-- `cleanupApp` performs resumable, bounded deletion after app tombstoning. Sessions, pairing challenges and rate-limit buckets have TTL policies. Expiry checks do not rely on the TTL deletion schedule.
+- `cleanupApp` performs resumable, bounded deletion after app tombstoning. Sessions, pairing challenges, Apple nonce replay records and rate-limit buckets have TTL policies. Expiry checks do not rely on the TTL deletion schedule.
 - Vercel serves `web/` and rewrites `/api/*`, `/webhooks/*`, and `/healthz` to the Firebase `api` function. Browser cookies remain same-origin. The phone and generated QR both use the final Vercel/custom-domain origin.
 
 ## Project setup (operator action)
 
 1. Create/select a **dedicated** Firebase project and choose its Firestore location before adding production data. Functions default to `us-central1`; choose a nearby region if required and set `IAP_FUNCTION_REGION` consistently for Firebase and Vercel. A region change after deployment is a separate migration.
-2. Enable Email/Password under Firebase Authentication. Create a Firestore **Standard / Native mode** database. Deployment replaces this project's Firestore rules with deny-all rules, so do not use an unrelated existing app's database.
+2. Enable **Apple only** under Firebase Authentication; leave Email/Password and all other providers disabled. Register the companion's final iOS bundle ID as a Firebase Apple app. The native-only credential flow does not require a web Services ID; desktop authenticates by QR, never an Apple web redirect. Configure Sign in with Apple for the same App ID in Apple Developer and retain the Xcode entitlement. Create a Firestore **Standard / Native mode** database. Deployment replaces this project's Firestore rules with deny-all rules, so do not use an unrelated existing app's database.
 3. Enable the billing plan required by Functions, Cloud Tasks, and Scheduler, with explicit owner approval. Configure billing alerts (alerts are not hard spending caps), conservative quotas and monitoring. Local emulator development requires no billing.
 4. Pick the final Vercel/custom-domain URL and copy the Firebase project's Web API Key from project settings. The API key identifies the project; it is not an Admin credential. Use Application Default Credentials/service identities for server access, never a committed service-account key.
-5. Configure the companion's Apple team, bundle ID and Push Notifications entitlement, and obtain its APNs `.p8` key. This is separate from customers' apps.
+5. Configure the companion's Apple team, bundle ID, Sign in with Apple and Push Notifications entitlements, and obtain its APNs `.p8` key. This is separate from customers' apps. Apple sign-in keys and APNs keys have different roles; never reuse one by assumption. Before App Store release, implement account deletion and Apple token revocation and configure the required Apple OAuth code-flow credentials for revocation.
 
 ## Function environment
 
@@ -46,7 +46,7 @@ The `api` and `deliverPush` functions bind this secret. Public Apple root certif
 
 Verify service identities have only the needed Firestore/Firebase Auth permissions, queue-enqueue permission for `queuePush`/`recoverPush`, and task-invoker/service-account-use permissions required by Firebase task queues. **Do not make `deliverPush` publicly invokable**. Confirm the Cloud Task queue exists with the declared retry/rate limits and inspect actual enqueue/delivery logs after deployment. The emulator tests validate the delivery logic, not cloud IAM.
 
-If TTL/index deployment prompts, verify the three `expireAt` policies and composite indexes in `firestore.indexes.json`; wait until all indexes are ready. Emulator tests do not enforce production composite-index requirements.
+If TTL/index deployment prompts, verify the four `expireAt` policies and composite indexes in `firestore.indexes.json`; wait until all indexes are ready. Emulator tests do not enforce production composite-index requirements.
 
 ## Vercel setup
 
@@ -64,7 +64,7 @@ Preview deployments must not silently pair into production. Their origin will be
 ## Smoke checks before inviting testers
 
 1. `/healthz` returns 200 and `/api/config` shows the exact final origin and expected feature flags.
-2. Sign in on the native companion at that origin. Scan/approve a desktop QR; only that waiting browser should sign in. Confirm logout and remote device removal.
+2. Sign in with Apple on the native companion at that origin. Test both shared email and Hide My Email, cancellation, repeated sign-in and a revoked/disabled account. Scan/approve a desktop QR; only that waiting browser should sign in. Confirm logout and remote device removal. Emulator credentials are synthetic and do not prove live Apple audience/signature validation.
 3. Create an app and request a test push. Confirm a durable job, Cloud Task dispatch, APNs acceptance and actual physical-phone display.
 4. Deliver an Apple-signed sandbox notification. Verify Sandbox connection status only, then resend to confirm no extra event/push.
 5. Check Firestore rules, Auth revocation, TTL/index readiness, task IAM, failed-job alerts, backups/retention and cleanup-function retries. Configure edge abuse controls and validate trusted-proxy/client-IP behavior; default Express does not trust arbitrary forwarding headers.

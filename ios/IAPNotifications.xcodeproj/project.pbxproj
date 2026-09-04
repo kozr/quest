@@ -55,7 +55,7 @@
                 BuildIndependentTargetsInParallel = YES;
                 LastUpgradeCheck = 2640;
                 TargetAttributes = {
-                    D00000000000000000000001 = {CreatedOnToolsVersion = 26.4; SystemCapabilities = {com.apple.Push = {enabled = 1; }; }; };
+                    D00000000000000000000001 = {CreatedOnToolsVersion = 26.4; SystemCapabilities = {com.apple.Push = {enabled = 1; }; com.apple.SignInWithApple = {enabled = 1; }; }; };
                     D00000000000000000000002 = {CreatedOnToolsVersion = 26.4; TestTargetID = D00000000000000000000001; };
                 };
             };

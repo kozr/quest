@@ -35,7 +35,7 @@
         <div id="pairing-panel">
           <p>Use the account on your phone to open this computer’s workspace. No password is needed here.</p>
           <ol class="pairing-instructions">
-            <li>Open IAP Notifications on your iPhone and sign in.</li>
+            <li>Open IAP Notifications on your iPhone and sign in with Apple.</li>
             <li>Go to Settings → Sign in on computer, then scan this QR code.</li>
             <li>Match the code below and approve the sign-in on your phone.</li>
           </ol>
@@ -64,28 +64,7 @@
           <p id="pairing-network-help" class="help" hidden></p>
           <p class="help">Only approve a sign-in you started on this computer. Never scan a sign-in code someone sends you.</p>
         </div>
-        <details id="email-fallback" class="email-fallback">
-          <summary id="email-fallback-label">Use email instead</summary>
-          <p class="help">Opening email sign-in cancels this QR code. Your account is the same on the phone and browser.</p>
-          <div class="actions" id="auth-modes" aria-label="Account options">
-            <button type="button" id="sign-in-mode" aria-pressed="true">Sign in</button>
-            <button type="button" id="register-mode" aria-pressed="false">Create account</button>
-          </div>
-          <form id="auth-form">
-            <div class="field">
-              <label for="auth-email">Email</label>
-              <input id="auth-email" name="email" type="email" autocomplete="username" maxlength="254" required>
-            </div>
-            <div class="field">
-              <label for="auth-password">Password</label>
-              <input id="auth-password" name="password" type="password" autocomplete="current-password" maxlength="128" required aria-describedby="password-help">
-              <p class="help" id="password-help">Use your account password. Password reset is not available in this beta.</p>
-            </div>
-            <p id="auth-message" class="form-message" role="alert" hidden></p>
-            <button class="primary" id="auth-submit" type="submit">Sign in</button>
-          </form>
-          <p class="help">This is a local/private beta foundation. Account recovery and email verification are not available yet.</p>
-        </details>
+        <p class="help">Apple sign-in is available in the iPhone app. This computer connects only after you approve it on your phone.</p>
       </section>
       <div id="workspace" hidden>
         <nav class="section-nav" aria-label="Workspace">

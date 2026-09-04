@@ -141,7 +141,7 @@ final class AppModel: ObservableObject {
         } catch { authError = error.localizedDescription }
     }
 
-    func authenticate(email: String, password: String, register: Bool, url: String, allowLocalHTTP: Bool) async {
+    func authenticateWithApple(idToken: String, rawNonce: String, url: String, allowLocalHTTP: Bool) async {
         guard !isAuthenticating else { return }
         isAuthenticating = true
         authError = nil
@@ -151,13 +151,12 @@ final class AppModel: ObservableObject {
             let anonymousClient = APIClient(baseURL: address, token: nil)
             let currentConfig: ServerConfig = try await anonymousClient.request("/api/config")
             config = currentConfig
-            if register && !currentConfig.registrationEnabled {
-                throw ClientError.message("New accounts are disabled on this server. Sign in with an existing account.")
+            guard currentConfig.authProvider == "apple" else {
+                throw ClientError.message("This server does not support Apple sign-in yet. Update the server and try again.")
             }
-            struct AuthBody: Encodable { let email: String; let password: String; let client = "ios" }
+            struct AuthBody: Encodable { let idToken: String; let rawNonce: String; let client = "ios" }
             let response: AuthResponse = try await anonymousClient.send(
-                register ? "/api/auth/register" : "/api/auth/login",
-                body: AuthBody(email: email.trimmingCharacters(in: .whitespacesAndNewlines), password: password))
+                "/api/auth/apple", body: AuthBody(idToken: idToken, rawNonce: rawNonce))
             guard let token = response.token, !token.isEmpty else {
                 throw ClientError.message("This server did not return a native session token. Check that it supports the iOS API.")
             }

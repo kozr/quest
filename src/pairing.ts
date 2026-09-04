@@ -82,7 +82,7 @@ export function pairingRouter(store:Store,publicUrl:string) {
       if(row.state!=='approved') throw new PairingError(409,'This QR code has not been approved or has already been used.');
       const session=await approval(s,row);
       if(!session) throw new PairingError(401,'The phone’s sign-in expired. Sign in on your phone and get a new code.');
-      // Inherit the original Firebase auth_time so password resets revoke QR-derived sessions too.
+      // Inherit Firebase auth_time so account revocation ends QR-derived sessions too.
       const token=await createSession(s,session.user_id,session.auth_time);
       await s.set('browser_pairings',id,{state:'consumed',approved_user_id:null,approver_session_hash:null,approval_token_hash:''},true);
       return {user:session.user,token};

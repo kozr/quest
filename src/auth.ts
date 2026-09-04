@@ -11,7 +11,7 @@ export function tokenHash(token:string) {return createHash('sha256').update(toke
 export async function createSession(store:Store,userId:string,authTime:number) {
   const token=randomBytes(32).toString('base64url');
   const now=new Date();const expiry=now.getTime()+SESSION_SECONDS*1000;
-  const row:SessionRow={token_hash:tokenHash(token),user_id:userId,auth_time:authTime,created_at:now.toISOString(),expires_at:new Date(expiry).toISOString(),expireAt:Timestamp.fromMillis(expiry)};
+  const row:SessionRow={token_hash:tokenHash(token),user_id:userId,auth_time:authTime,provider:'apple.com',created_at:now.toISOString(),expires_at:new Date(expiry).toISOString(),expireAt:Timestamp.fromMillis(expiry)};
   await store.set('sessions',row.token_hash,row);return token;
 }
 export function setSessionCookie(res:Response,token:string,secure:boolean) {res.cookie(COOKIE_NAME,token,{httpOnly:true,secure,sameSite:'strict',path:'/',maxAge:SESSION_SECONDS*1000});}

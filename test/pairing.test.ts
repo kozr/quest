@@ -5,6 +5,7 @@ import { test, type TestContext } from 'node:test';
 import { createApplication, type ApplicationOptions } from '../src/app.js';
 import { createSession, tokenHash } from '../src/auth.js';
 import {firebaseOptions,testStore,resetAccounts,rows} from './firebase-fixture.js';
+import {appleCredential} from './apple-auth-fixture.js';
 
 const configuration: ApplicationOptions = {
   port: 4317, host: '127.0.0.1', publicUrl: 'http://localhost:4317', ...firebaseOptions,
@@ -61,11 +62,10 @@ async function fixture(t: TestContext, overrides: Partial<ApplicationOptions> = 
     });
     return { status: response.status, headers: response.headers, body: await response.json() };
   };
-  // Use the real session generator and authentication middleware; password
-  // creation is unrelated to these pairing security tests.
+  // Use emulator Apple credentials with the real session/authentication path.
   const account = async (email: string) => {
-    const result=await request('/api/auth/register',{method:'POST',body:{email,password:'Pairing-account-password!',client:'ios'}});
-    assert.equal(result.status,201,JSON.stringify(result.body));
+    const result=await request('/api/auth/apple',{method:'POST',body:appleCredential(email)});
+    assert.equal(result.status,200,JSON.stringify(result.body));
     return {user:result.body.user,token:result.body.token};
   };
   const mobile = await account('phone-owner@example.test');
@@ -386,26 +386,20 @@ test('regenerating a browser QR cancels its previous pending or approved challen
   assert.equal(await f.sessions(), 2);
 });
 
-test('manual browser login or registration invalidates an outstanding approved QR before issuing that account session', async (t) => {
+test('removed password routes cannot replace the account approving a browser QR', async (t) => {
   const f = await fixture(t);
-  const password = 'Pairing-manual-login-password!';
-  await f.store.identity.auth.updateUser(f.other.user.id,{password});
   for (const action of ['login', 'register']) {
     const challenge = await f.start();
     assert.equal((await f.approve(challenge)).status, 200);
     const email = action === 'login' ? f.other.user.email : 'manual-registration@example.test';
     const manual = await f.request(`/api/auth/${action}`, {
-      method: 'POST', body: { email, password }, cookie: challenge.cookie, origin: f.options.publicUrl,
+      method: 'POST', body: { email, password:'Removed-password-flow!' }, cookie: challenge.cookie, origin: f.options.publicUrl,
     });
-    assert.equal(manual.status, action === 'login' ? 200 : 201, JSON.stringify(manual.body));
-    assert.equal(manual.body.user.email, email);
-    assert.equal(manual.body.token, undefined);
-    assert.match(setCookie(manual, 'iap_pairing')!, /^iap_pairing=;/);
-    const session = cookiePair(manual, 'iap_session');
-    assert.equal((await f.request('/api/auth/me', { cookie: session })).body.user.email, email);
-    assert.equal((await f.status(challenge)).body.status, 'cancelled');
-    rejected(await f.redeem(challenge), 'Redeeming a QR after manual authentication');
-    rejected(await f.approve(challenge), 'Approving a QR after manual authentication');
+    assert.equal(manual.status,410);
+    rejected(manual,'Password authentication is unavailable');
+    const redeemed=await f.redeem(challenge);
+    assert.equal(redeemed.status,200);
+    assert.equal(redeemed.body.user.email,f.mobile.user.email);
   }
 });
 

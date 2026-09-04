@@ -7,6 +7,7 @@ struct Account: Codable, Equatable {
 
 struct ServerConfig: Decodable {
     let serviceName: String
+    let authProvider: String?
     let registrationEnabled: Bool
     let demoEnabled: Bool
     let apnsConfigured: Bool

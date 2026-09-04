@@ -2,7 +2,8 @@ import {test,type TestContext} from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
 import {once} from 'node:events';
-import {testStore,rows,jobs,firebaseOptions} from './firebase-fixture.js';
+import {testStore,rows,jobs,firebaseOptions,appleIdentity} from './firebase-fixture.js';
+import {appleCredential} from './apple-auth-fixture.js';
 import {Store,newWebhookSecret,type AppRow,type Job} from '../src/database.js';
 import {createSession,tokenHash} from '../src/auth.js';
 import {DeliveryWorker,RetryDelivery} from '../src/worker.js';
@@ -12,8 +13,8 @@ import {purgeApp} from '../src/functions.js';
 import type {ActivityEvent} from '../src/types.js';
 
 async function fixture(t:TestContext) {
-  const store=testStore();const password='Firestore-integration-password!';const email=`firebase-${randomUUID()}@example.test`;
-  const identity=await store.identity.signIn(email,password,true);const uid=identity.user.id;
+  const store=testStore();const email=`firebase-${randomUUID()}@example.test`;
+  const identity=await appleIdentity(store,email);const uid=identity.user.id;
   await store.set('users',uid,identity.user);
   const token=await createSession(store,uid,identity.authTime);
   const app:AppRow={id:randomUUID(),user_id:uid,name:'Firestore fixture',bundle_id:'test.firestore.fixture',apple_id:'123456789',source:'apple',icon_url:null,webhook_secret:newWebhookSecret(),created_at:new Date().toISOString(),last_production_at:null,last_sandbox_at:null,active:true};
@@ -22,7 +23,7 @@ async function fixture(t:TestContext) {
   const now=new Date().toISOString();
   const event:ActivityEvent={id:randomUUID(),appId:app.id,appName:app.name,kind:'sale',title:'New sale',detail:'Verified fixture',amountMilliunits:4990,currency:'USD',productId:'fixture.product',transactionId:'tx-fixture',environment:'Production',occurredAt:now,receivedAt:now,notificationType:'ONE_TIME_CHARGE',subtype:null,isMonetary:true};
   t.after(async()=>{await store.identity.auth.deleteUser(uid);});
-  return {store,identity,uid,password,email,token,app,device,event};
+  return {store,identity,uid,email,token,app,device,event};
 }
 test('concurrent Firestore webhook retries commit exactly one receipt, event, and outbox job',async t=>{
   const f=await fixture(t);
@@ -81,12 +82,13 @@ test('closed-beta login does not admit accounts created directly through Firebas
   const app=createApplication({port:4317,host:'127.0.0.1',publicUrl:'http://localhost:4317',...firebaseOptions,production:false,registrationEnabled:false,demoEnabled:false,appleRootDirectory:'/unused',apns:null,store:f.store}).app;
   const server=app.listen(0,'127.0.0.1');await once(server,'listening');t.after(()=>new Promise<void>(r=>server.close(()=>r())));
   const address=server.address();assert(address && typeof address!=='string');
-  const response=await fetch(`http://127.0.0.1:${address.port}/api/auth/login`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:f.email,password:f.password,client:'ios'})});
+  const response=await fetch(`http://127.0.0.1:${address.port}/api/auth/apple`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(appleCredential(f.email))});
   assert.equal(response.status,403);assert.equal(response.headers.get('set-cookie'),null);
 });
 test('Firestore rules deny direct reads/writes even to an authenticated owner',async t=>{
   const f=await fixture(t);
-  const auth=await fetch(`http://${process.env.FIREBASE_AUTH_EMULATOR_HOST}/identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=demo-key`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:f.email,password:f.password,returnSecureToken:true})});
+  const credential=appleCredential(f.email);
+  const auth=await fetch(`http://${process.env.FIREBASE_AUTH_EMULATOR_HOST}/identitytoolkit.googleapis.com/v1/accounts:signInWithIdp?key=demo-key`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({requestUri:'http://localhost',postBody:new URLSearchParams({providerId:'apple.com',id_token:credential.idToken,nonce:credential.rawNonce}).toString(),returnSecureToken:true})});
   const {idToken}=await auth.json() as {idToken:string};assert.ok(idToken);
   const url=`http://${process.env.FIRESTORE_EMULATOR_HOST}/v1/projects/demo-iap-notifications/databases/(default)/documents/${f.store.prefix}users/${f.uid}`;
   for(const authorization of ['',`Bearer ${idToken}`]) {

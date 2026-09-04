@@ -4,8 +4,6 @@ const state = {
   config: null,
   user: null,
   epoch: 0,
-  authMode: 'login',
-  authenticating: false,
   section: 'apps',
   apps: [],
   appsLoaded: false,
@@ -24,7 +22,7 @@ const state = {
 };
 let fieldSequence = 0;
 const pairing = {
-  mode: 'qr', current: null, status: 'idle', generation: 0, starting: false,
+  current: null, status: 'idle', generation: 0, starting: false,
   task: null, cancellation: null, timer: null, countdown: null, controller: null, suspended: false,
 };
 
@@ -150,8 +148,7 @@ function pairingTask(operation) {
   return task;
 }
 
-// Drain a possible redemption before email authentication. A late QR response
-// must never replace the account chosen through the email fallback.
+// Drain a possible redemption before cancelling or regenerating its QR.
 function cancelPairing() {
   pairing.generation += 1;
   clearPairingTimers();
@@ -184,8 +181,8 @@ function cancelPairing() {
 }
 
 function pairingIsVisible() {
-  return Boolean(state.config) && !$('auth-view').hidden && !state.user && !state.authenticating &&
-    pairing.mode === 'qr' && !pairing.suspended && document.visibilityState === 'visible';
+  return Boolean(state.config) && !$('auth-view').hidden && !state.user &&
+    !pairing.suspended && document.visibilityState === 'visible';
 }
 
 function updatePairingExpiry() {
@@ -238,7 +235,7 @@ async function startPairing() {
 }
 
 async function performStartPairing() {
-  if (state.user || state.authenticating || pairing.mode !== 'qr' || pairing.status === 'starting') return;
+  if (state.user || pairing.status === 'starting') return;
   if (!pairingIsVisible()) {
     pairing.status = 'paused';
     return;
@@ -311,7 +308,7 @@ async function pollPairing() {
         message('pairing-status', 'Approved on your iPhone. Signing in…', 'success');
         pairingControls();
         const { user } = await api('/api/pairing/redeem', { method: 'POST', data: { id: current.id }, allowUnauthorized: true });
-        if (generation === pairing.generation && pairing.mode === 'qr') await showSignedIn(user);
+        if (generation === pairing.generation) await showSignedIn(user);
       } else {
         const descriptions = {
           denied: 'Sign-in was declined on your iPhone. Get a new QR code if you want to try again.',
@@ -390,26 +387,8 @@ function copyField(label, value) {
   ]);
 }
 
-function setAuthMode(mode) {
-  state.authMode = mode === 'register' && state.config?.registrationEnabled ? 'register' : 'login';
-  const registering = state.authMode === 'register';
-  $('auth-title').textContent = pairing.mode === 'qr' ? 'Sign in with your iPhone' : registering ? 'Create an account' : 'Sign in with email';
-  $('auth-submit').textContent = registering ? 'Create account' : 'Sign in';
-  $('auth-password').autocomplete = registering ? 'new-password' : 'current-password';
-  $('auth-password').minLength = 12;
-  $('password-help').textContent = registering
-    ? 'Use 12–128 characters and save this password securely. Password reset is not available in this beta.'
-    : 'Use your account password. Password reset is not available in this beta.';
-  $('sign-in-mode').setAttribute('aria-pressed', String(!registering));
-  $('register-mode').setAttribute('aria-pressed', String(registering));
-  message('auth-message');
-}
-
 function showSignedOut() {
   resetPairing();
-  pairing.mode = 'qr';
-  $('email-fallback').open = false;
-  $('email-fallback-label').textContent = 'Use email instead';
   $('pairing-panel').hidden = false;
   state.epoch += 1;
   state.user = null;
@@ -431,7 +410,6 @@ function showSignedOut() {
   $('auto-refresh').checked = false;
   $('session-email').textContent = '';
   for (const id of ['app-list', 'event-list', 'device-list', 'delivery-list', 'server-address']) $(id).replaceChildren();
-  $('auth-password').value = '';
   $('add-app-form').reset();
   $('lookup-form').reset();
   $('add-app-section').hidden = true;
@@ -446,7 +424,6 @@ function showSignedOut() {
   $('workspace').hidden = true;
   $('session').hidden = true;
   $('auth-view').hidden = false;
-  setAuthMode('login');
   void startPairing();
 }
 
@@ -455,7 +432,6 @@ async function showSignedIn(user) {
   state.epoch += 1;
   state.user = user;
   $('session-email').textContent = user.email;
-  $('auth-password').value = '';
   $('auth-view').hidden = true;
   $('loading-view').hidden = true;
   $('unavailable-view').hidden = true;
@@ -851,7 +827,6 @@ async function start() {
     const name = state.config.serviceName || 'IAP Notifications';
     $('service-name').textContent = name;
     document.title = name;
-    $('register-mode').hidden = !state.config.registrationEnabled;
     let user;
     try {
       ({ user } = await api('/api/auth/me', { allowUnauthorized: true }));
@@ -888,30 +863,7 @@ $('pairing-copy').addEventListener('click', async () => {
     await navigator.clipboard.writeText(pairing.current.qrUrl);
     if (generation === pairing.generation) notify('One-use QR link copied. Keep it private and open it only in your own simulator.');
   } catch {
-    if (generation === pairing.generation) message('pairing-status', 'Clipboard access is unavailable here. Scan the QR code, or use email sign-in.', 'error');
-  }
-});
-$('email-fallback').addEventListener('toggle', async () => {
-  if (state.user) return;
-  const mode = $('email-fallback').open ? 'email' : 'qr';
-  if (pairing.mode === mode) return;
-  pairing.mode = mode;
-  $('pairing-panel').hidden = mode === 'email';
-  $('email-fallback-label').textContent = mode === 'email' ? 'Use QR code instead' : 'Use email instead';
-  setAuthMode(state.authMode);
-  $('auth-submit').disabled = true;
-  if (mode === 'email') message('auth-message', 'Cancelling the QR sign-in request…');
-  try {
-    await cancelPairing();
-    if (pairing.mode !== mode || state.user) return;
-    if (mode === 'email') message('auth-message');
-    else await startPairing();
-  } catch (error) {
-    if (pairing.mode !== mode || state.user) return;
-    if (mode === 'email') message('auth-message', `${error.message} Submit again to retry safely.`, 'error');
-    else finishPairing('error', `${error.message} Get a new QR code to try again.`, 'error');
-  } finally {
-    $('auth-submit').disabled = state.authenticating;
+    if (generation === pairing.generation) message('pairing-status', 'Clipboard access is unavailable here. Scan this QR code from Settings in the iPhone app.', 'error');
   }
 });
 
@@ -932,36 +884,6 @@ window.addEventListener('pagehide', () => {
 window.addEventListener('pageshow', () => {
   pairing.suspended = false;
   resumePairing();
-});
-$('sign-in-mode').addEventListener('click', () => setAuthMode('login'));
-$('register-mode').addEventListener('click', () => setAuthMode('register'));
-$('auth-form').addEventListener('submit', async (event) => {
-  event.preventDefault();
-  if (!$('auth-form').reportValidity()) return;
-  const control = $('auth-submit');
-  if (control.disabled) return;
-  state.authenticating = true;
-  control.disabled = true;
-  $('sign-in-mode').disabled = true;
-  $('register-mode').disabled = true;
-  message('auth-message', state.authMode === 'register' ? 'Creating your account…' : 'Signing in…');
-  try {
-    await cancelPairing();
-    const { user } = await api(`/api/auth/${state.authMode}`, {
-      method: 'POST', allowUnauthorized: true,
-      data: { email: $('auth-email').value.trim(), password: $('auth-password').value },
-    });
-    message('auth-message');
-    await showSignedIn(user);
-  } catch (error) {
-    message('auth-message', error.message, 'error');
-  } finally {
-    state.authenticating = false;
-    control.disabled = false;
-    $('sign-in-mode').disabled = false;
-    $('register-mode').disabled = false;
-    if (!state.user && pairing.mode === 'qr') void startPairing();
-  }
 });
 
 $('logout-button').addEventListener('click', async () => {

@@ -1,12 +1,13 @@
 import { test, expect, type Page, type APIRequestContext } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
+import {appleCredential} from './apple-auth-fixture.js';
 
 interface Pairing { id:string; qrUrl:string; qrImageUrl:string; code:string; expiresAt:string }
 
 async function phoneAccount(request:APIRequestContext) {
   const email=`phone-${randomUUID()}@example.test`;
-  const result=await request.post('/api/auth/register',{data:{email,password:'A-long-QR-test-password!',client:'ios'}});
-  expect(result.status()).toBe(201);
+  const result=await request.post('/api/auth/apple',{data:appleCredential(email)});
+  expect(result.status()).toBe(200);
   const body=await result.json();
   return {email,token:body.token as string};
 }
@@ -28,8 +29,8 @@ test('signed-in phone approves QR and desktop enters that account without creden
   page.on('pageerror',error=>exceptions.push(error.message));
   const pairing=await openQR(page);
   await expect(page.getByRole('heading',{name:'Sign in with your iPhone',exact:true})).toBeVisible();
-  await expect(page.locator('#auth-email')).toBeHidden();
-  await expect(page.locator('#auth-password')).toBeHidden();
+  await expect(page.locator('input[type="email"], input[type="password"], #email-fallback')).toHaveCount(0);
+  await expect(page.getByText('Open IAP Notifications on your iPhone and sign in with Apple.',{exact:true})).toBeVisible();
   await expect(page.locator('#pairing-qr')).toHaveAttribute('src',/^data:image\/png;base64,/);
   expect(await page.locator('#pairing-qr').evaluate((img:HTMLImageElement)=>img.complete && img.naturalWidth>0)).toBe(true);
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);

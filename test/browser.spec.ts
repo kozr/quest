@@ -1,15 +1,23 @@
 import { test, expect, type Page, type TestInfo } from '@playwright/test';
 
-const password = 'Local-browser-smoke-only-48!';
+import {appleCredential} from './apple-auth-fixture.js';
+
+async function signInViaPhone(page:Page,email:string) {
+  const phone=await page.request.post('/api/auth/apple',{data:appleCredential(email)});
+  expect(phone.status()).toBe(200);
+  const {token}=await phone.json();
+  const nextQR=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/pairing/start' && response.status()===201);
+  if(page.url().startsWith('http')) await page.reload();
+  else await page.goto('/');
+  const {pairing}=await (await nextQR).json();
+  const approval=await page.request.post('/api/pairing/approve',{headers:{Authorization:`Bearer ${token}`},data:{id:pairing.id,token:new URL(pairing.qrUrl).searchParams.get('token')}});
+  expect(approval.status()).toBe(200);
+  await expect(page.locator('#workspace')).toBeVisible();
+}
 
 async function register(page: Page, info: TestInfo) {
   const email = `mvp-smoke-${info.project.name}-${Date.now()}-${info.workerIndex}@example.test`;
-  await page.goto('/');
-  await page.locator('#email-fallback-label').click();
-  await page.getByRole('button', { name: 'Create account', exact: true }).click();
-  await page.getByLabel('Email', { exact: true }).fill(email);
-  await page.getByLabel('Password', { exact: true }).fill(password);
-  await page.locator('#auth-submit').click();
+  await signInViaPhone(page,email);
   await expect(page.getByRole('heading', { name: 'Apps', exact: true })).toBeVisible();
   return email;
 }
@@ -80,11 +88,7 @@ test('account, app setup, real/demo separation, preferences and logout work end 
 
   await page.getByRole('button', { name: 'Sign out', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Sign in with your iPhone', exact: true })).toBeVisible();
-  await page.reload();
-  await page.locator('#email-fallback-label').click();
-  await page.getByLabel('Email', { exact: true }).fill(email);
-  await page.getByLabel('Password', { exact: true }).fill(password);
-  await page.locator('#auth-submit').click();
+  await signInViaPhone(page,email);
   await expect(page.getByRole('heading', { name: 'Settings', exact: true })).toBeVisible();
   await page.getByRole('link', { name: 'Apps', exact: true }).click();
   await expect(page.locator('#app-list .app-item')).toHaveCount(2);

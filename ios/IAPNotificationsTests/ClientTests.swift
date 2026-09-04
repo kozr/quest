@@ -2,6 +2,17 @@ import XCTest
 @testable import IAPNotifications
 
 final class ClientTests: XCTestCase {
+    func testAppleNonceIsSecureLengthUniqueAndSHA256Bound() throws {
+        let values = try (0..<100).map { _ in try AppleSignInNonce.make() }
+        XCTAssertEqual(Set(values).count, 100)
+        for value in values {
+            XCTAssertEqual(value.count, 43)
+            XCTAssertNotNil(value.range(of: "^[A-Za-z0-9_-]{43}$", options: .regularExpression))
+            XCTAssertEqual(AppleSignInNonce.hash(value).count, 64)
+        }
+        XCTAssertEqual(AppleSignInNonce.hash("abc"), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
+    }
+
     func testServerOriginRejectsCredentialsPathsAndQuery() {
         for address in ["https://user:password@example.com", "https://example.com/api", "https://example.com?token=secret", "https://example.com#fragment", "file:///tmp/server", "example.com"] {
             XCTAssertThrowsError(try ServerAddress.validate(address, allowLocalHTTP: true), address)

@@ -1,6 +1,16 @@
-# MVP validation — September 3, 2026
+# MVP validation — September 4, 2026
 
-## Firebase migration
+## Apple-only authentication
+
+- **115 API/unit/security tests + 10 desktop/mobile browser tests pass**, zero failures/skips. The 108-test Firebase baseline was retained and updated to Apple emulator credentials. Seven additional cases cover single-use concurrent replay, raw credential non-persistence, nonce/issuer/time rejection, native-only contract and removed password routes, legacy/provider-removed sessions, private relay email, Firebase exchange nonce serialization, and provider/email/revocation rejection (some grouped within one case).
+- Browser authentication now uses the real phone-approved QR endpoints in every workflow, including returning to an existing account after logout. No email/password form or fallback exists. The first browser run exposed a test-helper navigation issue; preserving the current URL fixed it, and the complete rerun passed.
+- iPhone **Debug build-for-testing** and **Release Simulator build** compile. All 15 native XCTest cases compile; XCTest runtime itself was not repeated because the prior runner stalled. Actual shared Swift runtime smoke checks pass **28/28 Debug + 28/28 Release**, now including secure Apple nonce generation/encoding/uniqueness and the SHA-256 known vector.
+- Installed/launched the Debug build on the existing IAP Notifications MVP simulator; visually verified the native Apple button and removal of password fields. Desktop/mobile QR screenshots are readable without horizontal overflow. This verifies the app screen, not an Apple system authorization sheet or physical-device login.
+- The Impeccable detector ran once in degraded regex mode (optional parser modules unavailable). Its missing-image-source warning refers to the intentionally hidden, dynamically populated QR image; browser tests verify a loaded PNG with nonzero natural dimensions. No visual redesign was performed.
+- TypeScript check/build and JavaScript syntax checks pass. Existing QR approval, revocation, origin isolation, device removal and push-worker behavior remain covered.
+- **Live setup remains pending:** Arc shows the Apple provider form in `the-app-quest`, disabled and unsaved. No provider/billing change was saved, no Apple app identifier/signing credentials were provisioned, and nothing was deployed to Vercel or TestFlight in this change. Real Apple signature/audience validation, device sign-in, APNs, cloud IAM and production routing remain unverified. In-app deletion/Apple token revocation remains an App Store release prerequisite.
+
+## Firebase migration (previous baseline)
 
 - The previous 97 API/unit/security tests pass with Firebase Auth and Firestore emulators replacing SQLite. No tests were disabled. The 22 QR security cases still cover browser binding, approval/redemption races, expiry and account isolation.
 - 11 additional Firebase tests pass: concurrent receipt/economic deduplication, app uniqueness, fenced task leases, tombstone/purge behavior, Auth disable/revocation, closed-beta admission, deny-all Firestore rules (including an authenticated owner), and production emulator rejection.

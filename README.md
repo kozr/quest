@@ -18,7 +18,7 @@ In another terminal, copy `.env.example` to `.env.local`, then:
 npm run dev
 ```
 
-Open **http://localhost:4317** to see a sign-in QR. Create an account/sign in in the iPhone companion, then use **Settings → Sign in on computer** to scan and approve the desktop QR. The desktop opens the same account without asking for credentials. For web-only local testing, **Use email instead** is available as a fallback. Then add an app by its public Apple URL or manually and open its connection details. Nothing is pre-seeded. The default server listens only on your Mac; **Apple cannot send events to localhost**.
+Open **http://localhost:4317** to see a sign-in QR. Sign in with Apple in the iPhone companion, then use **Settings → Sign in on computer** to scan and approve the desktop QR. The desktop opens the same account without asking for credentials. Apple is the only identity provider; there is no email/password fallback. Automated tests use explicitly synthetic Apple credentials accepted only by the local Firebase Auth emulator. A real Apple sheet requires the Apple/Firebase setup described in [the iOS guide](ios/README.md). Then add an app by its public Apple URL or manually and open its connection details. Nothing is pre-seeded. The default server listens only on your Mac; **Apple cannot send events to localhost**.
 
 `npm run dev` and `npm start` load `.env.local`. Both Auth and Firestore emulators must be running for the default `demo-iap-notifications` project. Local emulator data is ephemeral unless explicitly exported. Never commit keys or environment files. Production rejects emulator settings.
 
@@ -31,7 +31,7 @@ npm start
 
 ## What works
 
-- Firebase Auth email/password accounts, hashed revocable service sessions, HttpOnly browser cookies, native bearer tokens, origin protection, and Firestore-backed shared rate limiting. Firebase manages passwords; the app database never stores them.
+- Native Sign in with Apple, verified by Firebase Auth; SHA-256-bound, single-use nonces; hashed revocable service sessions, HttpOnly QR browser cookies, native bearer tokens, origin protection, and shared rate limiting. Apple/Firebase credentials are not retained in Firestore or Keychain. Legacy password sessions are rejected; accounts/data are not deleted.
 - Mobile-approved desktop QR sign-in: two-minute single-use requests, locally generated QR images, independent browser/approval secrets, code comparison and explicit phone approval. No second desktop password is required.
 - Public App Store URL metadata import with manual fallback; per-account app management and separate production/sandbox endpoints.
 - Direct Apple V2 intake and RevenueCat's **Apple-notification forwarding** (not RevenueCat's differently shaped normalized webhook API).
@@ -42,7 +42,7 @@ npm start
 - APNs HTTP/2 delivery, persisted retry/backoff, failed-delivery visibility, invalid-token retirement, and device/session revocation.
 - Native SwiftUI iPhone companion: login, desktop QR scanning/approval, activity, app status, preferences, push registration, and test push. See [the iOS setup guide](ios/README.md).
 
-## Try the pipeline without credentials
+## Try the demo pipeline
 
 After connecting an app, select **Create demo sale** or **Create demo refund** in the browser. Inspect it under **Activity → Demo**. Demo activity is labelled and never verifies the Apple connection or appears in the Production feed. Disable these endpoints with `ENABLE_DEMO=false`.
 
@@ -112,7 +112,7 @@ This is a **local/private-beta core**, not a completed public SaaS launch. It ha
 
 - Firestore is shared storage, but this is still a small private beta, not a load-tested multi-region platform. Reverse proxies are not blindly trusted; configure edge abuse protection and verify client IP behavior before public rollout. Firestore reads/writes, Tasks, Scheduler, and Functions can incur costs.
 - Production defaults registration and demos to **off**. Temporarily enable `ALLOW_REGISTRATION=true` to create the first production account through the app, then disable it if desired. Directly creating a Firebase Auth user does not admit that user into a closed beta; the app profile must already exist.
-- Email/password mobile auth with QR desktop handoff; no Sign in with Apple, email verification, password reset, MFA, or billing yet. QR approval is not phishing-proof: compare codes and approve only a browser you opened yourself. Paired browser sessions are independent after redemption; sign out separately on shared computers. Do not onboard paying public users until account recovery, deletion, abuse protection, backup/retention and operational policies are ready.
+- Apple-only mobile auth with QR desktop handoff. No app-managed passwords, alternate providers, or billing. QR approval is not phishing-proof: compare codes and approve only a browser you opened yourself. Paired browser sessions are independent after redemption; sign out separately on shared computers. In-app account deletion with Apple token revocation is still a release prerequisite; do not submit this as an App Store-ready build or onboard paying public users until deletion, abuse protection, backup/retention and operational policies are ready.
 - No historical imports, exact proceeds, paid-app download sales, ad revenue, entitlements, paywalls, refund-consumption submissions, or refund decisions.
 - No quiet-hours scheduler, widgets, teams, Android, Slack or other integrations.
 - Visual direction, branding, App Store assets/signing, HTTPS hosting and live end-to-end Apple/APNs validation remain to be supplied/configured.
