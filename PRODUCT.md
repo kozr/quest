@@ -10,7 +10,7 @@
 
 ## MVP implementation choices
 
-These are implementation assumptions, not new user requirements: mobile email/password auth until Apple sign-in is configured, two-minute single-use QR desktop pairing with explicit phone approval (email fallback remains available), a single Node process with SQLite for easy local execution, conventional web forms/native SwiftUI lists, production/sandbox/demo separation, and APNs as the push transport. The purpose of this pass is to prove a safe, durable receive → activity → push loop, not branding or analytics.
+The user selected Firebase for the backend. The MVP uses Firebase Auth, Firestore, Cloud Functions and Cloud Tasks; Vercel serves the web UI. Mobile email/password sign-in and two-minute, single-use QR desktop pairing remain unchanged. Conventional web forms/native SwiftUI lists, production/sandbox/demo separation and direct APNs delivery remain intentional. This pass proves the durable receive → activity → push loop, not branding or analytics.
 
 ## Explicitly deferred
 

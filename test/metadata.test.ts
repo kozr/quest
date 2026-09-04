@@ -19,6 +19,6 @@ test('production configuration requires HTTPS and defaults registration/demo to 
   assert.throws(()=>readConfiguration({NODE_ENV:'production',PUBLIC_URL:'http://example.com'}));
   assert.throws(()=>readConfiguration({PUBLIC_URL:'https://example.com/subpath'}));
   assert.throws(()=>readConfiguration({APNS_TEAM_ID:'SOMEID'}));
-  const config=readConfiguration({NODE_ENV:'production',PUBLIC_URL:'https://example.com'});
+  const config=readConfiguration({NODE_ENV:'production',PUBLIC_URL:'https://example.com',FIREBASE_PROJECT_ID:'test-project',IAP_FIREBASE_WEB_API_KEY:'test-key'});
   assert.equal(config.demoEnabled,false);assert.equal(config.registrationEnabled,false);
 });

@@ -31,7 +31,7 @@ export class ApnsClient implements PushTransport {
   private jwtCreatedAt = 0;
   private sessions = new Map<string,ClientHttp2Session>();
   constructor(private readonly config: ApnsConfiguration) {
-    this.key = createPrivateKey(readFileSync(config.privateKeyPath));
+    this.key = createPrivateKey(config.privateKey ?? readFileSync(config.privateKeyPath!));
     if (this.key.asymmetricKeyType !== 'ec' || this.key.asymmetricKeyDetails?.namedCurve !== 'prime256v1') {
       throw new Error('APNS_PRIVATE_KEY_PATH must contain the Apple P-256 APNs private key.');
     }

@@ -9,6 +9,7 @@ Same-origin JSON API, all timestamps ISO-8601 UTC. Errors are `{ "error": "Usefu
 - `GET /api/auth/me` → `{ user }`
 - `POST /api/auth/logout` → `{ ok: true }`, revokes this session. Native app should unregister its device before logout.
 - Native requests use `Authorization: Bearer <token>`. Web uses same-origin cookies; do not put tokens in localStorage. Mutating cookie requests must have the matching Origin.
+- Email/password verification is delegated to Firebase Auth over HTTPS. Existing clients keep the same contract: returned opaque tokens are revocable service sessions, **not Firebase ID tokens**. Firebase UID is the user ID. Every authenticated request checks Firebase disabled/deleted/revoked-account state. No Firebase client SDK or `GoogleService-Info.plist` is required for this server-brokered MVP.
 
 ### Phone-approved desktop sign-in
 
@@ -22,7 +23,7 @@ The primary flow is **sign in on the phone → scan the desktop QR → explicitl
 - `POST /api/pairing/redeem`, `{ id }` → `{ user }`, sets the normal HttpOnly session cookie and clears the pairing cookie. Requires the creating browser's secret, matching Origin, a signed-out browser, and an approved, unexpired request whose approving phone session is still valid. No session token is returned in JSON.
 - `POST /api/pairing/cancel`, `{ id }` → `{ ok: true }`, bound to the browser cookie and Origin. Manual browser login/register/logout also invalidates that browser's outstanding request.
 
-Requests expire after **two minutes** and can be approved/redeemed only once. The six-digit code is a visual comparison aid, not a login credential. QR approval tokens and browser secrets are independent and stored only as hashes. Expired records are purged when another QR is created. A redeemed browser session lasts up to 30 days, like email sign-in, and is independent of subsequent phone logout. Sign out separately on a shared computer.
+Requests expire after **two minutes** and can be approved/redeemed only once, using Firestore transactions. The six-digit code is a visual comparison aid, not a credential. QR and browser secrets are independent and stored only as hashes; spent approval hashes are cleared. Firestore TTL eventually removes expired records, but authorization always checks expiry synchronously. Browser sessions last up to 30 days and are independent of subsequent phone logout. They inherit the phone's original Firebase authentication time, so account-wide Firebase revocation also invalidates paired browsers. Sign out separately on a shared computer.
 
 Origin checks, short expiry, and explicit comparison/approval reduce accidental authorization but cannot make QR relay phishing impossible: approve only a browser you personally opened. This is a first-party pairing protocol, not an OAuth implementation or a claim of phishing-resistant authentication.
 
@@ -31,7 +32,7 @@ Origin checks, short expiry, and explicit comparison/approval reduce accidental 
 - `GET /api/apps` → `{ apps: ConnectedApp[] }`
 - `POST /api/apps/lookup`, `{ url }` → `{ name, bundleId, appleId, iconUrl, appStoreUrl }`. Lookup is optional and failure must allow manual entry. Only recognized Apple URLs or numeric IDs are accepted. It imports public metadata, not ownership.
 - `POST /api/apps`, `{ name, bundleId, appleId, source: "apple" | "revenuecat", iconUrl?: string }` → `{ app: ConnectedApp }` (201).
-- `DELETE /api/apps/:id` → `{ ok: true }`; removes that app, events and queued jobs after confirmation.
+- `DELETE /api/apps/:id` → `{ ok: true }`; immediately retires endpoints and hides activity. A retrying cloud trigger purges events and jobs; a tombstone remains.
 - `POST /api/apps/:id/rotate-webhook` → `{ app }`; explicit confirmation, old endpoint immediately stops accepting events.
 - App includes `webhookUrls.production`, `.sandbox`, separate `lastProductionEventAt` / `lastSandboxEventAt`. Until first signed event, show “Waiting for Apple”. Demo events never update these fields.
 - Source `revenuecat`: instruct user to retain RevenueCat’s Apple URLs and configure its Apple notification forwarding URL. RevenueCat forwarding can contain both environments: use the special URL returned as `forwardingUrl` alongside app data (same connection, routing based on untrusted hint only followed by full verification).
@@ -48,7 +49,7 @@ Origin checks, short expiry, and explicit comparison/approval reduce accidental 
 - Defaults sales/refunds true; lifecycle/sandbox/hideAmounts false.
 - `GET /api/devices` → `{ devices: RegisteredDevice[] }`
 - `POST /api/devices`, `{ token: "<APNs hex token>", name, environment: "production" | "sandbox" }` → `{ device }`. Account-bound, called again when token changes. HTTP should not be used on a physical phone except explicit local development.
-- `DELETE /api/devices/:id` → `{ ok: true }`; immediately disables device and cancels pending jobs. When another session (such as the browser) disconnects a phone, that phone's session is also revoked so it cannot silently re-register. A phone disconnecting itself may still complete its normal logout call.
+- `DELETE /api/devices/:id` → `{ ok: true }`; immediately disables device; the worker marks pending jobs cancelled when it processes them, before any new APNs send. A push already accepted by APNs cannot be recalled. Remote disconnection also revokes the phone's service session. Self-disconnection permits the phone to complete logout. Device/job audit records remain private to the original account.
 - `POST /api/devices/:id/test` → `{ queued: true }` (202), or actionable 503 when server APNs credentials are missing.
 - `GET /api/deliveries?limit=30` → `{ deliveries: [{ id, eventId, deviceId, deviceName, state, attempts, lastError, createdAt, updatedAt }] }`. States pending/processing/sent/failed/cancelled. `sent` means APNs accepted, not proved device display.
 

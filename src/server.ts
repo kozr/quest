@@ -7,7 +7,7 @@ const server=app.listen(config.port,config.host,()=>{
   console.log(`IAP Notifications: ${config.publicUrl}`);
   console.log(config.apns ? 'APNs configured. Delivery worker enabled.' : 'APNs not configured. Activity works; phone push requires APNs credentials.');
   if(!config.production) console.log('Local MVP mode. Demo events are separate from verified Apple activity.');
-  worker.start();
+  if(!config.production) worker.start();
 });
 let shuttingDown=false;
 async function shutdown() {

@@ -4,13 +4,15 @@ export interface ApnsConfiguration {
   teamId: string;
   keyId: string;
   topic: string;
-  privateKeyPath: string;
+  privateKeyPath?: string;
+  privateKey?: string;
 }
 export interface Configuration {
   port: number;
   host: string;
   publicUrl: string;
-  databasePath: string;
+  firebaseProjectId: string;
+  firebaseWebApiKey: string;
   production: boolean;
   registrationEnabled: boolean;
   demoEnabled: boolean;
@@ -29,20 +31,26 @@ export function readConfiguration(env = process.env): Configuration {
   if (!['http:', 'https:'].includes(publicUrl.protocol) || (production && publicUrl.protocol !== 'https:')) {
     throw new Error('PUBLIC_URL must use HTTPS in production.');
   }
-  const fields = [env.APNS_TEAM_ID, env.APNS_KEY_ID, env.APNS_TOPIC, env.APNS_PRIVATE_KEY_PATH];
+  const firebaseProjectId=env.FIREBASE_PROJECT_ID ?? env.GCLOUD_PROJECT ?? env.GOOGLE_CLOUD_PROJECT;
+  if (!firebaseProjectId) throw new Error('Set FIREBASE_PROJECT_ID. Local development requires a demo- project and Firebase emulators.');
+  const emulated=!!(env.FIRESTORE_EMULATOR_HOST || env.FIREBASE_AUTH_EMULATOR_HOST);
+  if (emulated && (production || !firebaseProjectId.startsWith('demo-') || !env.FIRESTORE_EMULATOR_HOST || !env.FIREBASE_AUTH_EMULATOR_HOST)) throw new Error('Local mode requires BOTH Firebase emulators, a demo- project ID, and NODE_ENV=development.');
+  if (!emulated && !env.IAP_FIREBASE_WEB_API_KEY) throw new Error('Set IAP_FIREBASE_WEB_API_KEY for Firebase authentication.');
+  const fields = [env.APNS_TEAM_ID, env.APNS_KEY_ID, env.APNS_TOPIC, env.APNS_PRIVATE_KEY ?? env.APNS_PRIVATE_KEY_PATH];
   if (fields.some(Boolean) && !fields.every(Boolean)) throw new Error('Set all four APNS_* values, or leave all four empty.');
   return {
     port,
     host: env.HOST ?? '127.0.0.1',
     publicUrl: publicUrl.origin,
-    databasePath: env.DATABASE_PATH ?? resolve('data/iap.sqlite'),
+    firebaseProjectId,
+    firebaseWebApiKey: env.IAP_FIREBASE_WEB_API_KEY ?? 'demo-key',
     production,
     registrationEnabled: env.ALLOW_REGISTRATION ? env.ALLOW_REGISTRATION === 'true' : !production,
     demoEnabled: env.ENABLE_DEMO ? env.ENABLE_DEMO === 'true' : !production,
     appleRootDirectory: env.APPLE_ROOT_CERTS_DIR ?? resolve('certificates'),
     apns: fields.every(Boolean) ? {
       teamId: env.APNS_TEAM_ID!, keyId: env.APNS_KEY_ID!, topic: env.APNS_TOPIC!,
-      privateKeyPath: resolve(env.APNS_PRIVATE_KEY_PATH!),
+      ...(env.APNS_PRIVATE_KEY ? {privateKey:env.APNS_PRIVATE_KEY} : {privateKeyPath:resolve(env.APNS_PRIVATE_KEY_PATH!)}),
     } : null,
   };
 }

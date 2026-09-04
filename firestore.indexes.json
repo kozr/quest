@@ -1,0 +1,13 @@
+{
+  "indexes": [
+    {"collectionGroup":"events","queryScope":"COLLECTION","fields":[{"fieldPath":"user_id","order":"ASCENDING"},{"fieldPath":"appId","order":"ASCENDING"},{"fieldPath":"environment","order":"ASCENDING"},{"fieldPath":"receivedAt","order":"DESCENDING"},{"fieldPath":"__name__","order":"DESCENDING"}]},
+    {"collectionGroup":"events","queryScope":"COLLECTION","fields":[{"fieldPath":"user_id","order":"ASCENDING"},{"fieldPath":"appId","order":"ASCENDING"},{"fieldPath":"receivedAt","order":"DESCENDING"},{"fieldPath":"__name__","order":"DESCENDING"}]},
+    {"collectionGroup":"delivery_jobs","queryScope":"COLLECTION","fields":[{"fieldPath":"user_id","order":"ASCENDING"},{"fieldPath":"created_at","order":"DESCENDING"}]},
+    {"collectionGroup":"delivery_jobs","queryScope":"COLLECTION","fields":[{"fieldPath":"state","order":"ASCENDING"},{"fieldPath":"next_attempt_at","order":"ASCENDING"}]}
+  ],
+  "fieldOverrides": [
+    {"collectionGroup":"sessions","fieldPath":"expireAt","ttl":true,"indexes":[]},
+    {"collectionGroup":"browser_pairings","fieldPath":"expireAt","ttl":true,"indexes":[]},
+    {"collectionGroup":"rate_limits","fieldPath":"expireAt","ttl":true,"indexes":[]}
+  ]
+}

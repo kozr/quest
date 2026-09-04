@@ -1,71 +1,65 @@
-import { Store, shouldNotify, type DeviceRow, type EventRow } from './database.js';
-import { pushPayload, type PushTransport, type PushResult } from './apns.js';
+import {randomUUID} from 'node:crypto';
+import {Store,shouldNotify,type DeviceRow,type EventRow,type Job} from './database.js';
+import {pushPayload,type PushTransport,type PushResult} from './apns.js';
 
-interface Job { id: string; event_id: string | null; device_id: string; attempts: number; created_at: string }
+export class RetryDelivery extends Error {}
 export class DeliveryWorker {
-  private timer: ReturnType<typeof setInterval> | undefined;
-  private running = false;
-  private inFlight: Promise<void> | undefined;
-  constructor(private store: Store, private transport: PushTransport | null) {}
-  start() {
-    if (this.timer) return;
-    this.timer = setInterval(()=>{void this.tick().catch(()=>console.error('Delivery worker failed; queued jobs will be retried.'));},1500);
-    this.timer.unref();
-  }
-  async stop() {
-    if (this.timer) clearInterval(this.timer);
-    this.timer=undefined;
-    await this.inFlight;
-    this.transport?.close?.();
-  }
+  private timer:ReturnType<typeof setInterval>|undefined;
+  private inFlight:Promise<void>|undefined;
+  constructor(private store:Store,private transport:PushTransport|null) {}
+  /** Local emulator runner only. Production dispatch is Cloud Tasks, not an interval. */
+  start() {if(!this.timer) {this.timer=setInterval(()=>{void this.tick().catch(()=>console.error('Delivery retry pending.'));},1500);this.timer.unref();}}
+  async stop() {if(this.timer) clearInterval(this.timer);this.timer=undefined;await this.inFlight;this.transport?.close?.();}
   async tick() {
-    if (this.running || !this.transport) return;
-    this.running=true;
-    this.inFlight=this.processBatch();
-    try { await this.inFlight; } finally { this.running=false; this.inFlight=undefined; }
+    if(this.inFlight || !this.transport) return;
+    this.inFlight=(async()=>{
+      const jobs=await this.store.query<Job>(this.store.collection('delivery_jobs').where('state','in',['pending','processing']).where('next_attempt_at','<=',Date.now()).orderBy('next_attempt_at').limit(20));
+      for(const job of jobs) try {await this.deliver(job.id);} catch(error) {if(!(error instanceof RetryDelivery)) throw error;}
+    })();
+    try {await this.inFlight;} finally {this.inFlight=undefined;}
   }
-  private async processBatch() {
-    for (let index=0;index<10;index++) {
-      const now=Date.now();
-      const job=this.store.transaction(()=>{
-        const row=this.store.db.prepare(`SELECT * FROM delivery_jobs WHERE (state='pending' AND next_attempt_at<=?)
-          OR (state='processing' AND lease_until<=?) ORDER BY next_attempt_at ASC LIMIT 1`).get(now,now) as unknown as Job | undefined;
-        if (!row) return;
-        this.store.db.prepare(`UPDATE delivery_jobs SET state='processing',attempts=attempts+1,lease_until=?,updated_at=? WHERE id=?`)
-          .run(now+60000,new Date(now).toISOString(),row.id);
-        return {...row,attempts:row.attempts+1};
+  /** Safe under concurrent task retries: a unique lease fences late completions. */
+  async deliver(id:string):Promise<void> {
+    if(!this.transport) throw new RetryDelivery('APNs is not configured.');
+    const leaseId=randomUUID();const now=Date.now();
+    const job=await this.store.atomic(async s=>{
+      const row=await s.get<Job>('delivery_jobs',id);
+      if(!row || !['pending','processing'].includes(row.state)) return;
+      if((row.state==='processing' && (row.lease_until ?? 0)>now) || row.next_attempt_at>now) throw new RetryDelivery('Delivery is leased or not yet due.');
+      const claimed:Job={...row,state:'processing',attempts:row.attempts+1,lease_until:now+60000,lease_id:leaseId,updated_at:new Date(now).toISOString()};
+      await s.set('delivery_jobs',id,claimed);return claimed;
+    });
+    if(!job) return;
+    const device=await this.store.get<DeviceRow>('devices',job.device_id);
+    const session=device ? await this.store.session(device.session_hash) : undefined;
+    if(!device?.active || device.user_id!==job.user_id || device.session_hash!==job.session_hash || device.generation!==job.device_generation || !session) {await this.finish(job,'cancelled','Device disconnected or session expired.');return;}
+    if(now-Date.parse(job.created_at)>86400000) {await this.finish(job,'cancelled','Notification is more than 24 hours old.');return;}
+    const row=job.event_id ? await this.store.get<EventRow>('events',job.event_id) : undefined;
+    const app=row ? await this.store.getApp(row.appId,job.user_id) : undefined;
+    const event=row && app ? this.store.eventResponse(row) : null;
+    const preferences=await this.store.preferences(device.user_id);
+    if(job.event_id && (!event || !shouldNotify(event,preferences))) {await this.finish(job,'cancelled','App removed or notification preferences changed.');return;}
+    let result:PushResult;
+    try {result=await this.transport.send(device,pushPayload(event,preferences),job.id);}
+    catch {result={ok:false,retryable:true,error:'Push transport unavailable.'};}
+    if(result.ok) await this.finish(job,'sent',null);
+    else if(result.invalidDevice) {
+      await this.store.atomic(async s=>{
+        const [current,delivery]=await Promise.all([s.get<DeviceRow>('devices',device.id),s.get<Job>('delivery_jobs',job.id)]);
+        if(delivery?.state!=='processing' || delivery.lease_id!==job.lease_id) return;
+        await s.set('delivery_jobs',job.id,{state:'failed',last_error:result.error ?? 'Device token is invalid.',lease_until:null,lease_id:null,updated_at:new Date().toISOString()},true);
+        if(current?.last_seen_at===device.last_seen_at && (result.invalidatedAt===undefined || Date.parse(current.last_seen_at)<=result.invalidatedAt)) await s.set('devices',device.id,{active:0},true);
       });
-      if (!job) return;
-      const device=this.store.db.prepare(`SELECT devices.* FROM devices JOIN sessions ON sessions.token_hash=devices.session_hash
-        WHERE devices.id=? AND devices.active=1 AND sessions.expires_at>?`).get(job.device_id,new Date().toISOString()) as unknown as DeviceRow | undefined;
-      if (!device) { this.finish(job.id,'cancelled','Device disconnected or session expired.'); continue; }
-      if (Date.now()-Date.parse(job.created_at)>24*60*60*1000) { this.finish(job.id,'cancelled','Notification is more than 24 hours old.'); continue; }
-      const row=job.event_id ? this.store.db.prepare('SELECT * FROM events WHERE id=?').get(job.event_id) as unknown as EventRow | undefined : undefined;
-      const event=row ? this.store.eventResponse(row) : null;
-      const preferences=this.store.preferences(device.user_id);
-      if (job.event_id && (!event || !shouldNotify(event,preferences))) {this.finish(job.id,'cancelled','Notification preferences changed.'); continue;}
-      let result: PushResult;
-      try { result=await this.transport!.send(device,pushPayload(event,preferences),job.id); }
-      catch { result={ok:false,retryable:true,error:'Push transport unavailable.'}; }
-      if (result.ok) this.finish(job.id,'sent',null);
-      else if (result.invalidDevice) {
-        this.store.transaction(()=>{
-          this.finish(job.id,'failed',result.error ?? 'Device token is invalid.');
-          const current=this.store.db.prepare('SELECT last_seen_at FROM devices WHERE id=?').get(device.id);
-          if (current?.last_seen_at===device.last_seen_at &&
-              (result.invalidatedAt===undefined || Date.parse(String(current.last_seen_at))<=result.invalidatedAt)) {
-            this.store.disableDevice(device.id);
-          }
-        });
-      } else if (result.retryable && job.attempts<8) {
-        const retryAt=Date.now()+Math.min(3600000,5000*2**(job.attempts-1));
-        this.store.db.prepare(`UPDATE delivery_jobs SET state='pending',last_error=?,next_attempt_at=?,lease_until=NULL,updated_at=?
-          WHERE id=? AND state='processing'`).run(result.error ?? 'Temporary push failure.',retryAt,new Date().toISOString(),job.id);
-      } else this.finish(job.id,'failed',result.error ?? 'APNs rejected this notification.');
-    }
+    } else if(result.retryable && job.attempts<8) {
+      await this.finish(job,'pending',result.error ?? 'Temporary push failure.',Date.now()+Math.min(3600000,5000*2**(job.attempts-1)));
+      throw new RetryDelivery('Retryable APNs error.');
+    } else await this.finish(job,'failed',result.error ?? 'APNs rejected this notification.');
   }
-  private finish(id: string, state: 'sent'|'failed'|'cancelled', error: string | null) {
-    this.store.db.prepare(`UPDATE delivery_jobs SET state=?,last_error=?,lease_until=NULL,updated_at=? WHERE id=? AND state='processing'`)
-      .run(state,error,new Date().toISOString(),id);
+  private async finish(job:Job,state:Job['state'],error:string|null,retryAt?:number) {
+    await this.store.atomic(async s=>{
+      const current=await s.get<Job>('delivery_jobs',job.id);
+      if(current?.state!=='processing' || current.lease_id!==job.lease_id) return;
+      await s.set('delivery_jobs',job.id,{state,last_error:error,lease_until:null,lease_id:null,updated_at:new Date().toISOString(),...(retryAt!==undefined ? {next_attempt_at:retryAt} : {})},true);
+    });
   }
 }

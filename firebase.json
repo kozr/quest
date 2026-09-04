@@ -1,0 +1,16 @@
+{
+  "functions": [{
+    "source": ".",
+    "codebase": "iap-notifications",
+    "runtime": "nodejs22",
+    "ignore": ["node_modules", ".git", ".firebase", ".vercel", ".codex", ".agents", ".impeccable", ".DS_Store", "ios", "test", "test-results", "playwright-report", "data", "docs", "*.log", "*.sqlite*", "**/*.p8", "**/*.pem", "**/*service-account*.json", ".env*", ".secret*", "src", "scripts"],
+    "predeploy": ["npm --prefix \"$RESOURCE_DIR\" run build", "npm --prefix \"$RESOURCE_DIR\" run certificates"]
+  }],
+  "firestore": {"rules": "firestore.rules", "indexes": "firestore.indexes.json"},
+  "emulators": {
+    "auth": {"host": "127.0.0.1", "port": 9098},
+    "firestore": {"host": "127.0.0.1", "port": 8088},
+    "ui": {"enabled": false},
+    "singleProjectMode": true
+  }
+}

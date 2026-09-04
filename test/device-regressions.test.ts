@@ -5,9 +5,11 @@ import { ApnsClient, type PushResult, type PushTransport } from '../src/apns.js'
 import { createApplication, type ApplicationOptions } from '../src/app.js';
 import { Store, type DeviceRow } from '../src/database.js';
 import { DeliveryWorker } from '../src/worker.js';
+import {firebaseOptions,testStore,resetAccounts,rows,jobs} from './firebase-fixture.js';
+import {createSession,tokenHash} from '../src/auth.js';
 
 const configuration: ApplicationOptions = {
-  port: 4317, host: '127.0.0.1', publicUrl: 'http://localhost:4317', databasePath: ':memory:',
+  port: 4317, host: '127.0.0.1', publicUrl: 'http://localhost:4317', ...firebaseOptions,
   production: false, registrationEnabled: true, demoEnabled: false,
   appleRootDirectory: '/not-used-by-this-test', apns: null,
 };
@@ -18,8 +20,9 @@ const tokenA = 'a'.repeat(64);
 const tokenB = 'b'.repeat(64);
 
 async function fixture(pushTransport: PushTransport = { send: async () => ({ ok: true }) }) {
+  const store=testStore();await resetAccounts(store,[email]);
   const instance = createApplication({
-    ...configuration, pushTransport,
+    ...configuration, pushTransport,store,
     // Test-only injection exercises the entire authenticated registration and
     // durable webhook/queue pipeline without ever accepting unsigned production data.
     verify: async (payload, context) => ({
@@ -86,16 +89,17 @@ test('A → B → A token registration leaves one active installation and never 
     await f.sale('rotation-sale-b');
     const returned = await f.registerDevice(tokenA);
     assert.equal(returned.id, first.id);
-    assert.deepEqual(f.store.db.prepare('SELECT id,active FROM devices ORDER BY token').all().map((row) => ({ ...row })), [
+    assert.deepEqual((await rows(f.store,'devices')).sort((a,b)=>a.token.localeCompare(b.token)).map(({id,active})=>({id,active})), [
       { id: first.id, active: 1 }, { id: second.id, active: 0 },
     ]);
-    assert.deepEqual(f.store.db.prepare('SELECT state FROM delivery_jobs ORDER BY created_at').all().map((row) => row.state), ['cancelled', 'cancelled']);
+    await f.worker.tick();
+    assert.deepEqual((await jobs(f.store)).map(row=>row.state), ['cancelled', 'cancelled']);
     await f.sale('rotation-sale-current');
     await f.worker.tick();
     assert.equal(sent.length, 1);
     assert.equal(sent[0]!.token, tokenA);
-    assert.equal(f.store.db.prepare("SELECT COUNT(*) AS count FROM events WHERE is_monetary=1").get()!.count, 3);
-    assert.equal(f.store.db.prepare("SELECT COUNT(*) AS count FROM delivery_jobs WHERE state='sent'").get()!.count, 1);
+    assert.equal((await rows(f.store,'events')).filter(e=>e.isMonetary).length,3);
+    assert.equal((await jobs(f.store)).filter(j=>j.state==='sent').length,1);
   } finally { await f.close(); }
 });
 
@@ -104,7 +108,7 @@ test('same-token registration version increases even when stored timestamp is ah
   try {
     const original = await f.registerDevice();
     const previous = Date.now() + 60_000;
-    f.store.db.prepare('UPDATE devices SET last_seen_at=? WHERE id=?').run(new Date(previous).toISOString(), original.id);
+    await f.store.set('devices',original.id,{last_seen_at:new Date(previous).toISOString()},true);
     const refreshed = await f.registerDevice();
     assert.equal(refreshed.id, original.id);
     assert.equal(Date.parse(refreshed.lastSeenAt), previous + 1);
@@ -136,9 +140,10 @@ test('late invalid-token response cannot disable a newer registration or cancel 
     await f.sale('inflight-new');
     release!({ ok: false, invalidDevice: true, error: 'Unregistered' });
     await tick;
-    assert.equal(f.store.db.prepare('SELECT active FROM devices WHERE id=?').get(device.id)!.active, 1);
+    assert.equal((await f.store.get<DeviceRow>('devices',device.id))!.active,1);
+    await f.worker.tick();
     assert.equal(calls, 2);
-    assert.deepEqual(f.store.db.prepare('SELECT state FROM delivery_jobs ORDER BY created_at').all().map((row) => row.state), ['failed', 'sent']);
+    assert.deepEqual((await jobs(f.store)).map(row=>row.state), ['failed', 'sent']);
   } finally {
     release?.({ ok: false, retryable: true, error: 'Test teardown' });
     await tick;
@@ -146,27 +151,26 @@ test('late invalid-token response cannot disable a newer registration or cancel 
   }
 });
 
-function storeFixture(transport: PushTransport) {
-  const store = new Store(':memory:');
+async function storeFixture(transport: PushTransport) {
+  const store = testStore();await resetAccounts(store,['worker@example.test']);
+  const identity=await store.identity.signIn('worker@example.test','Worker-fixture-password!',true);
+  const token=await createSession(store,identity.user.id,identity.authTime);
   const timestamp = Date.now() - 1_000;
   const date = new Date(timestamp).toISOString();
-  store.db.prepare('INSERT INTO users VALUES (?,?,?,?)').run('user', 'worker@example.test', 'not-used-for-auth', date);
-  store.db.prepare('INSERT INTO sessions VALUES (?,?,?,?)').run('session', 'user', date, new Date(Date.now() + 86_400_000).toISOString());
-  store.db.prepare('INSERT INTO preferences (user_id) VALUES (?)').run('user');
-  store.db.prepare('INSERT INTO devices (id,user_id,session_hash,token,environment,name,created_at,last_seen_at) VALUES (?,?,?,?,?,?,?,?)')
-    .run('device', 'user', 'session', tokenA, 'sandbox', 'Worker fixture', date, date);
-  return { store, timestamp, worker: new DeliveryWorker(store, transport) };
+  await store.set('users',identity.user.id,identity.user);
+  await store.set('devices','device',{id:'device',user_id:identity.user.id,session_hash:tokenHash(token),token:tokenA,environment:'sandbox',name:'Worker fixture',created_at:date,last_seen_at:date,active:1,generation:1});
+  return { store, userId:identity.user.id,timestamp, worker: new DeliveryWorker(store, transport) };
 }
 
 test('historical APNs 410 invalidation does not disable a registration that is already newer', async () => {
   let timestamp = 0;
-  const f = storeFixture({ send: async () => ({ ok: false, invalidDevice: true, invalidatedAt: timestamp - 1, error: 'Unregistered' }) });
+  const f = await storeFixture({ send: async () => ({ ok: false, invalidDevice: true, invalidatedAt: timestamp - 1, error: 'Unregistered' }) });
   timestamp = f.timestamp;
   try {
-    f.store.enqueue('device');
+    await f.store.enqueue('device',f.userId);
     await f.worker.tick();
-    assert.equal(f.store.db.prepare('SELECT active FROM devices').get()!.active, 1);
-    assert.equal(f.store.db.prepare('SELECT state FROM delivery_jobs').get()!.state, 'failed');
+    assert.equal((await rows(f.store,'devices'))[0].active,1);
+    assert.equal((await jobs(f.store))[0].state,'failed');
   } finally { await f.worker.stop(); f.store.close(); }
 });
 
@@ -174,18 +178,18 @@ test('current, later, and undated invalid-token responses still disable the devi
   for (const delta of [0, 1_000, undefined]) {
     let timestamp = 0;
     let calls = 0;
-    const f = storeFixture({ send: async () => {
+    const f = await storeFixture({ send: async () => {
       calls++;
       return { ok: false, invalidDevice: true, invalidatedAt: delta === undefined ? undefined : timestamp + delta, error: 'Unregistered' };
     } });
     timestamp = f.timestamp;
     try {
-      f.store.enqueue('device');
-      f.store.enqueue('device');
+      await f.store.enqueue('device',f.userId);
+      await f.store.enqueue('device',f.userId);
       await f.worker.tick();
       assert.equal(calls, 1);
-      assert.equal(f.store.db.prepare('SELECT active FROM devices').get()!.active, 0);
-      assert.deepEqual(f.store.db.prepare('SELECT state FROM delivery_jobs ORDER BY created_at').all().map((row) => row.state), ['failed', 'cancelled']);
+      assert.equal((await rows(f.store,'devices'))[0].active,0);
+      assert.deepEqual((await jobs(f.store)).map(row=>row.state),['failed','cancelled']);
     } finally { await f.worker.stop(); f.store.close(); }
   }
 });
@@ -203,9 +207,10 @@ test('remote browser removal revokes the phone session and its queued data while
     assert.equal((await f.request('/api/auth/me', { token: f.token })).status, 401);
     assert.equal((await f.request('/api/devices', { method: 'POST', token: f.token, body: { token: tokenA, name: 'Stale phone', environment: 'sandbox' } })).status, 401);
     assert.equal((await f.request('/api/auth/me', { cookie })).status, 200);
-    assert.equal(f.store.db.prepare('SELECT COUNT(*) AS count FROM devices').get()!.count, 0);
-    assert.equal(f.store.db.prepare('SELECT COUNT(*) AS count FROM delivery_jobs').get()!.count, 0);
-    assert.equal(f.store.db.prepare('SELECT COUNT(*) AS count FROM events').get()!.count, 1);
+    await f.worker.tick();
+    assert.equal((await rows(f.store,'devices'))[0].active,0);
+    assert.equal((await jobs(f.store))[0].state,'cancelled');
+    assert.equal((await rows(f.store,'events')).length,1);
   } finally { await f.close(); }
 });
 
@@ -216,8 +221,9 @@ test('native self-unregister keeps its session alive long enough to complete exp
     await f.sale('self-unregister-sale');
     assert.equal((await f.request(`/api/devices/${device.id}`, { method: 'DELETE', token: f.token })).status, 200);
     assert.equal((await f.request('/api/auth/me', { token: f.token })).status, 200);
-    assert.equal(f.store.db.prepare('SELECT active FROM devices WHERE id=?').get(device.id)!.active, 0);
-    assert.equal(f.store.db.prepare('SELECT state FROM delivery_jobs').get()!.state, 'cancelled');
+    await f.worker.tick();
+    assert.equal((await f.store.get<DeviceRow>('devices',device.id))!.active,0);
+    assert.equal((await jobs(f.store))[0].state,'cancelled');
     assert.equal((await f.request('/api/auth/logout', { method: 'POST', token: f.token })).status, 200);
     assert.equal((await f.request('/api/auth/me', { token: f.token })).status, 401);
   } finally { await f.close(); }

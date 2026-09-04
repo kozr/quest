@@ -1,5 +1,19 @@
 # MVP validation — September 3, 2026
 
+## Firebase migration
+
+- The previous 97 API/unit/security tests pass with Firebase Auth and Firestore emulators replacing SQLite. No tests were disabled. The 22 QR security cases still cover browser binding, approval/redemption races, expiry and account isolation.
+- 11 additional Firebase tests pass: concurrent receipt/economic deduplication, app uniqueness, fenced task leases, tombstone/purge behavior, Auth disable/revocation, closed-beta admission, deny-all Firestore rules (including an authenticated owner), and production emulator rejection.
+- 10 desktop/mobile browser tests pass against the Firebase-backed API, including real phone-bearer approval and automatic desktop sign-in. Browser tests now use a fresh Firestore namespace per run.
+- Final combined run: **108 API/unit/security tests + 10 browser tests passed**, zero failures/skips. TypeScript check/build and Vercel Build Output generation pass. Firebase function exports compile; local tests exercise the delivery worker and cleanup code, not deployed Cloud Tasks/IAM.
+- Local verification used Firebase CLI 15.29.0, Auth emulator, Firestore emulator 1.22.0 and a temporary Java 21 runtime. No production Firebase data was read/written by tests. The old SQLite file was left untouched.
+- **Not verified/deployed:** Firebase project provisioning, cloud IAM/index readiness, live Tasks/Functions delivery, Vercel production routing, physical APNs, or TestFlight. Project selection/billing approval and Apple signing/APNs credentials remain prerequisites.
+- The native client contract is unchanged, so no Firebase SDK/plist is needed in this server-brokered version. Native signing/runtime limitations below still apply.
+- Computer Use reloaded the live localhost preview and confirmed a fresh two-minute QR with “Waiting for you to scan and approve on your iPhone.”
+- Dependency installation reported 15 moderate advisories across the full dependency tree. Two subsequent production-only `npm audit` requests timed out at the npm advisory endpoint, so an up-to-date production advisory assessment remains unresolved; recheck before public launch. No forced/breaking dependency upgrades were applied.
+
+## Earlier SQLite/native baseline (historical)
+
 - `npm run check` and `npm run build`: pass.
 - `npm test`: **97 passed**, zero failed/skipped. Includes 22 QR-pairing security tests (independent browser/approval secrets, expiry, single-use races, origin enforcement, revoked phone sessions, regeneration and manual-auth invalidation), actual ephemeral ES256 chain/nested-signature tampering, API auth/CSRF/tenant isolation, event normalization/deduplication, persistence, APNs queue behavior, and device rotation/revocation races. No real Apple sale or APNs credentials were used.
 - `npm run test:browser`: **10 passed** across desktop (1440px) and mobile (390px). Real local phone-bearer approval automatically signs the browser into the matching account without desktop credentials. Denial, missing-cookie regeneration, session persistence, and existing account/app/demo/preference flows pass. Separately labelled synthetic fixtures cover expiry presentation, delivery failures and pagination. QR screenshots inspected with no horizontal overflow. Tests use port 4318 and an isolated test database; the main workspace is not seeded with test accounts.

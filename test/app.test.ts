@@ -1,14 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import {firebaseOptions,testStore,resetAccounts,rows,jobs} from './firebase-fixture.js';
+import {Store} from '../src/database.js';
 import { createApplication, type ApplicationOptions } from '../src/app.js';
 import { AppleVerificationError, type VerifiedAppleNotification } from '../src/apple.js';
 import type { PushTransport, PushResult } from '../src/apns.js';
 
-const options: ApplicationOptions={port:4317,host:'127.0.0.1',publicUrl:'http://localhost:4317',databasePath:':memory:',production:false,
+const options: ApplicationOptions={port:4317,host:'127.0.0.1',publicUrl:'http://localhost:4317',...firebaseOptions,production:false,
   registrationEnabled:true,demoEnabled:true,appleRootDirectory:'/not-configured',apns:null};
 const password='A-long-test-password!';
 const input={name:'Test App',bundleId:'com.example.test',appleId:'123456789',source:'apple'};
@@ -20,7 +19,9 @@ function verified(uuid='notification-one',environment:'Production'|'Sandbox'='Pr
 }
 
 async function fixture(overrides: Partial<ApplicationOptions>={}) {
-  const instance=createApplication({...options,...overrides});
+  const store=overrides.store ?? testStore();
+  if(!overrides.store) await resetAccounts(store,['first@example.test','second@example.test','browser@example.test','other@example.test']);
+  const instance=createApplication({...options,...overrides,store});
   const server=instance.app.listen(0,'127.0.0.1');
   await once(server,'listening');
   const address=server.address();
@@ -42,14 +43,15 @@ async function fixture(overrides: Partial<ApplicationOptions>={}) {
   return {...instance,request,register,add,close};
 }
 
-test('authentication protects accounts and stores only hashed sessions/passwords',async()=>{
+test('Firebase Auth protects accounts; Firestore stores hashed sessions but no passwords',async()=>{
   const f=await fixture();try {
     assert.equal((await f.request('/api/apps')).status,401);
     const token=await f.register();
     const me=await f.request('/api/auth/me',{token});assert.equal(me.body.user.email,'first@example.test');
-    const session=f.store.db.prepare('SELECT token_hash FROM sessions').get()!;
+    const session=(await rows(f.store,'sessions'))[0];
     assert.notEqual(session.token_hash,token);
-    assert.match(String(f.store.db.prepare('SELECT password_hash FROM users').get()!.password_hash),/^scrypt\$/);
+    assert.equal((await rows(f.store,'users'))[0].password_hash,undefined);
+    assert.equal((await f.store.identity.auth.getUserByEmail('first@example.test')).uid,me.body.user.id);
     assert.equal((await f.request('/api/auth/login',{method:'POST',body:{email:'first@example.test',password:'wrong-but-long-password'}})).status,401);
     await f.request('/api/auth/logout',{method:'POST',token});
     assert.equal((await f.request('/api/auth/me',{token})).status,401);
@@ -202,15 +204,16 @@ test('rotating a URL retires old endpoints and resets verification state',async(
 });
 
 test('a storage failure rolls back acknowledgment records and events',async()=>{
+  const original=Store.prototype.set;
   const f=await fixture({verify:async()=>verified()});try{
     const token=await f.register();const app=await f.add(token);
-    f.store.db.exec("CREATE TRIGGER fail_event BEFORE INSERT ON events BEGIN SELECT RAISE(ABORT, 'simulated storage failure'); END;");
+    Store.prototype.set=async function(name,id,value,merge) {if(name==='events') throw new Error('Simulated write failure');return original.call(this,name,id,value,merge);};
     assert.equal((await f.request(new URL(app.webhookUrls.production).pathname,{method:'POST',body:{signedPayload:'fixture'}})).status,503);
-    assert.equal(f.store.db.prepare('SELECT COUNT(*) AS n FROM notifications').get()!.n,0);
+    assert.equal((await rows(f.store,'notifications')).length,0);
     assert.equal((await f.request('/api/apps',{token})).body.apps[0].lastProductionEventAt,null);
-    f.store.db.exec('DROP TRIGGER fail_event');
+    Store.prototype.set=original;
     assert.equal((await f.request(new URL(app.webhookUrls.production).pathname,{method:'POST',body:{signedPayload:'fixture'}})).status,200);
-  }finally{await f.close();}
+  }finally{Store.prototype.set=original;await f.close();}
 });
 
 test('device logout, revocation and token ownership change cancel stale delivery access',async()=>{
@@ -221,11 +224,11 @@ test('device logout, revocation and token ownership change cancel stale delivery
     await f.request(`/api/apps/${app.id}/demo`,{method:'POST',token:a,body:{kind:'sale'}});
     assert.equal((await f.request('/api/deliveries',{token:a})).body.deliveries.length,1);
     await f.request('/api/devices',{method:'POST',token:b,body:payload});
-    assert.equal((await f.request('/api/devices',{token:a})).body.devices.length,0);
-    assert.equal((await f.request('/api/deliveries',{token:a})).body.deliveries.length,0);
-    assert.equal((await f.request(`/api/devices/${first.id}`,{method:'DELETE',token:a})).status,404);
+    assert.equal((await f.request('/api/devices',{token:a})).body.devices[0].active,false);
+    // Firestore keeps a tenant-owned audit trail. Old jobs can never follow the new owner.
+    assert.equal((await f.request('/api/deliveries',{token:b})).body.deliveries.length,0);
     await f.request('/api/auth/logout',{method:'POST',token:b});
-    assert.equal(f.store.db.prepare('SELECT COUNT(*) AS n FROM devices').get()!.n,0);
+    assert.equal((await f.request('/api/auth/me',{token:b})).status,401);
   }finally{await f.close();}
 });
 
@@ -244,10 +247,10 @@ test('durable worker retries failures then records APNs acceptance and respects 
     const token=await f.register();const app=await f.add(token);
     await f.request('/api/devices',{method:'POST',token,body:{token:'f'.repeat(64),name:'Phone',environment:'sandbox'}});
     await f.request(`/api/apps/${app.id}/demo`,{method:'POST',token,body:{kind:'sale'}});
-    await f.worker.tick();let job=f.store.db.prepare('SELECT * FROM delivery_jobs').get()!;assert.equal(job.state,'pending');assert.equal(job.attempts,1);
+    await f.worker.tick();let job=(await jobs(f.store))[0];assert.equal(job.state,'pending');assert.equal(job.attempts,1);
     await f.request('/api/preferences',{method:'PATCH',token,body:{hideAmounts:true}});
-    f.store.db.prepare('UPDATE delivery_jobs SET next_attempt_at=0 WHERE id=?').run(job.id!);
-    await f.worker.tick();job=f.store.db.prepare('SELECT * FROM delivery_jobs').get()!;assert.equal(job.state,'sent');assert.equal(job.attempts,2);
+    await f.store.set('delivery_jobs',job.id,{next_attempt_at:0},true);
+    await f.worker.tick();job=(await jobs(f.store))[0];assert.equal(job.state,'sent');assert.equal(job.attempts,2);
     assert.match(sent[0].aps.alert.body,/USD/);assert.doesNotMatch(sent[1].aps.alert.body,/USD/);
   }finally{await f.close();}
 });
@@ -259,24 +262,22 @@ test('invalid APNs token disables the device and cancels further jobs',async()=>
     await f.request(`/api/apps/${app.id}/demo`,{method:'POST',token,body:{kind:'sale'}});
     await f.request(`/api/apps/${app.id}/demo`,{method:'POST',token,body:{kind:'refund'}});
     await f.worker.tick();assert.equal(calls,1);
-    assert.deepEqual(f.store.db.prepare('SELECT state FROM delivery_jobs ORDER BY created_at').all().map(r=>r.state),['failed','cancelled']);
+    assert.deepEqual((await jobs(f.store)).map(r=>r.state),['failed','cancelled']);
     assert.equal((await f.request('/api/devices',{token})).body.devices[0].active,false);
   }finally{await f.close();}
 });
 
-test('activity and pending jobs survive closing and reopening the database',async()=>{
-  const directory=mkdtempSync(join(tmpdir(),'iap-persistence-test-'));const databasePath=join(directory,'test.sqlite');
-  try{
-    const first=await fixture({databasePath});let token='';
+test('activity and pending jobs survive closing and reopening a Firestore-backed server',async()=>{
+    const store=testStore();await resetAccounts(store,['first@example.test']);
+    const first=await fixture({store});let token='';
     try {token=await first.register();const app=await first.add(token);
       await first.request('/api/devices',{method:'POST',token,body:{token:'2'.repeat(64),name:'Phone',environment:'sandbox'}});
       await first.request(`/api/apps/${app.id}/demo`,{method:'POST',token,body:{kind:'sale'}});
     }finally{await first.close();}
-    const second=await fixture({databasePath,pushTransport:{send:async()=>({ok:true})}});
+    const second=await fixture({store:testStore(store.prefix),pushTransport:{send:async()=>({ok:true})}});
     try {assert.equal((await second.request('/api/events?environment=Demo',{token})).body.events.length,1);await second.worker.tick();
       assert.equal((await second.request('/api/deliveries',{token})).body.deliveries[0].state,'sent');
     }finally{await second.close();}
-  }finally{rmSync(directory,{recursive:true,force:true});}
 });
 
 test('activity pagination is stable and avoids duplicate pages',async()=>{

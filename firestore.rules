@@ -1,0 +1,8 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // All access goes through the authenticated API. Never expose APNs tokens,
+    // webhook secrets, pairing records, or delivery jobs to client SDKs.
+    match /{document=**} { allow read, write: if false; }
+  }
+}

@@ -3,10 +3,11 @@ import { once } from 'node:events';
 import { randomUUID } from 'node:crypto';
 import { test, type TestContext } from 'node:test';
 import { createApplication, type ApplicationOptions } from '../src/app.js';
-import { createSession, hashPassword, tokenHash } from '../src/auth.js';
+import { createSession, tokenHash } from '../src/auth.js';
+import {firebaseOptions,testStore,resetAccounts,rows} from './firebase-fixture.js';
 
 const configuration: ApplicationOptions = {
-  port: 4317, host: '127.0.0.1', publicUrl: 'http://localhost:4317', databasePath: ':memory:',
+  port: 4317, host: '127.0.0.1', publicUrl: 'http://localhost:4317', ...firebaseOptions,
   production: false, registrationEnabled: true, demoEnabled: true,
   appleRootDirectory: '/not-needed-for-pairing', apns: null,
 };
@@ -34,7 +35,8 @@ function changed(value: string): string {
 
 async function fixture(t: TestContext, overrides: Partial<ApplicationOptions> = {}) {
   const options = { ...configuration, ...overrides };
-  const instance = createApplication(options);
+  const store=testStore();await resetAccounts(store,['phone-owner@example.test','another-owner@example.test','manual-registration@example.test']);
+  const instance = createApplication({...options,store});
   const server = instance.app.listen(0, '127.0.0.1');
   await once(server, 'listening');
   t.after(async () => {
@@ -61,16 +63,14 @@ async function fixture(t: TestContext, overrides: Partial<ApplicationOptions> = 
   };
   // Use the real session generator and authentication middleware; password
   // creation is unrelated to these pairing security tests.
-  const account = (email: string) => {
-    const user = { id: randomUUID(), email };
-    instance.store.db.prepare('INSERT INTO users (id,email,password_hash,created_at) VALUES (?,?,?,?)')
-      .run(user.id, user.email, 'not-used-for-password-authentication', new Date().toISOString());
-    instance.store.db.prepare('INSERT INTO preferences (user_id) VALUES (?)').run(user.id);
-    return { user, token: createSession(instance.store, user.id) };
+  const account = async (email: string) => {
+    const result=await request('/api/auth/register',{method:'POST',body:{email,password:'Pairing-account-password!',client:'ios'}});
+    assert.equal(result.status,201,JSON.stringify(result.body));
+    return {user:result.body.user,token:result.body.token};
   };
-  const mobile = account('phone-owner@example.test');
-  const other = account('another-owner@example.test');
-  const sessions = () => Number(instance.store.db.prepare('SELECT COUNT(*) AS count FROM sessions').get()!.count);
+  const mobile = await account('phone-owner@example.test');
+  const other = await account('another-owner@example.test');
+  const sessions = async () => (await rows(store,'sessions')).length;
   const start = async (cookie?: string): Promise<Challenge> => {
     const response = await request('/api/pairing/start', { method: 'POST', body: {}, origin: options.publicUrl, cookie });
     assert.equal(response.status, 201, JSON.stringify(response.body));
@@ -111,8 +111,8 @@ test('pairing start creates a two-minute PNG QR challenge, independent secrets, 
   assert.match(cookie, /SameSite=Strict/i);
   assert.doesNotMatch(cookie, new RegExp(challenge.token));
   assert.equal(setCookie(challenge.response, 'iap_session'), undefined);
-  assert.equal(f.sessions(), 2, 'A QR challenge alone cannot create a login session.');
-  const row = f.store.db.prepare('SELECT * FROM browser_pairings WHERE id=?').get(challenge.id)!;
+  assert.equal(await f.sessions(), 2, 'A QR challenge alone cannot create a login session.');
+  const row = (await f.store.get<any>('browser_pairings',challenge.id))!;
   assert.equal(row.state, 'pending');
   assert.equal(row.approved_user_id, null);
   assert.equal(row.approver_session_hash, null);
@@ -152,9 +152,9 @@ test('matching native approval plus the original browser secret creates exactly 
   assert.equal(inspected.body.pairing.publicUrl, f.options.publicUrl);
   assert.ok(typeof inspected.body.pairing.browserName === 'string' && inspected.body.pairing.browserName.length > 0);
   rejected(await f.redeem(challenge), 'Redeeming before mobile approval');
-  assert.equal(f.sessions(), 2);
+  assert.equal(await f.sessions(), 2);
   assert.equal((await f.approve(challenge)).status, 200);
-  assert.equal(f.sessions(), 2, 'Approval alone must not create a bearer or browser session.');
+  assert.equal(await f.sessions(), 2, 'Approval alone must not create a bearer or browser session.');
   assert.equal((await f.status(challenge)).body.status, 'approved');
   const redeemed = await f.redeem(challenge);
   assert.equal(redeemed.status, 200);
@@ -162,12 +162,12 @@ test('matching native approval plus the original browser secret creates exactly 
   assert.equal(redeemed.body.token, undefined);
   const cookie = cookiePair(redeemed, 'iap_session');
   assert.notEqual(cookie.slice('iap_session='.length), challenge.token);
-  assert.equal(f.sessions(), 3);
+  assert.equal(await f.sessions(), 3);
   assert.deepEqual((await f.request('/api/auth/me', { cookie })).body.user, f.mobile.user);
-  assert.equal(f.store.db.prepare('SELECT state FROM browser_pairings WHERE id=?').get(challenge.id)!.state, 'consumed');
+  assert.equal((await f.store.get<any>('browser_pairings',challenge.id))!.state, 'consumed');
   rejected(await f.redeem(challenge), 'Replaying a consumed QR');
   rejected(await f.approve(challenge), 'Approving a consumed QR');
-  assert.equal(f.sessions(), 3);
+  assert.equal(await f.sessions(), 3);
 });
 
 test('unauthenticated pairing status reveals no account identity or secret even after approval', async (t) => {
@@ -193,7 +193,7 @@ test('approval token, six-digit code, and ID do not substitute for the initiatin
   for (const cookie of [undefined, `iap_pairing=${challenge.token}`, `iap_pairing=${challenge.code}`, `iap_pairing=${challenge.id}`]) {
     rejected(await f.request('/api/pairing/redeem', { method: 'POST', token: challenge.token, cookie, origin: f.options.publicUrl, body: { id: challenge.id } }), 'QR token without original browser secret');
   }
-  assert.equal(f.sessions(), 2);
+  assert.equal(await f.sessions(), 2);
   assert.equal((await f.redeem(challenge)).status, 200, 'Failed attacks must not consume the rightful browser challenge.');
 });
 
@@ -266,7 +266,7 @@ test('explicit denial is terminal and cannot be changed into an approval or brow
   assert.equal((await f.status(challenge)).body.status, 'denied');
   rejected(await f.approve(challenge), 'Approval after denial');
   rejected(await f.redeem(challenge), 'Redemption after denial');
-  assert.equal(f.sessions(), 2);
+  assert.equal(await f.sessions(), 2);
 });
 
 test('the initiating browser can cancel pending or approved pairing without creating a session', async (t) => {
@@ -280,7 +280,7 @@ test('the initiating browser can cancel pending or approved pairing without crea
     rejected(await f.approve(challenge), 'Approval after cancellation');
     rejected(await f.redeem(challenge), 'Redemption after cancellation');
   }
-  assert.equal(f.sessions(), 2);
+  assert.equal(await f.sessions(), 2);
 });
 
 test('expiry blocks inspection, approval, and redemption, including an approval made before expiry', async (t) => {
@@ -288,13 +288,13 @@ test('expiry blocks inspection, approval, and redemption, including an approval 
   for (const approveFirst of [false, true]) {
     const challenge = await f.start();
     if (approveFirst) assert.equal((await f.approve(challenge)).status, 200);
-    f.store.db.prepare('UPDATE browser_pairings SET expires_at=? WHERE id=?').run(Date.now() - 1, challenge.id);
+    await f.store.set('browser_pairings',challenge.id,{expires_at:Date.now()-1},true);
     assert.equal((await f.status(challenge)).body.status, 'expired');
     rejected(await f.inspect(challenge), 'Inspection after expiry');
     rejected(await f.approve(challenge), 'Approval after expiry');
     rejected(await f.redeem(challenge), 'Redemption after expiry');
   }
-  assert.equal(f.sessions(), 2);
+  assert.equal(await f.sessions(), 2);
 });
 
 test('logging out the approving phone before redemption invalidates its approval', async (t) => {
@@ -304,16 +304,16 @@ test('logging out the approving phone before redemption invalidates its approval
   assert.equal((await f.request('/api/auth/logout', { method: 'POST', token: f.mobile.token })).status, 200);
   assert.equal((await f.request('/api/auth/me', { token: f.mobile.token })).status, 401);
   rejected(await f.redeem(challenge), 'Redeeming after approver logout');
-  assert.equal(f.sessions(), 1);
+  assert.equal(await f.sessions(), 1);
 });
 
 test('expiry of the approving phone session also invalidates an otherwise unexpired challenge', async (t) => {
   const f = await fixture(t);
   const challenge = await f.start();
   assert.equal((await f.approve(challenge)).status, 200);
-  f.store.db.prepare('UPDATE sessions SET expires_at=? WHERE token_hash=?').run(new Date(Date.now() - 1).toISOString(), tokenHash(f.mobile.token));
+  await f.store.set('sessions',tokenHash(f.mobile.token),{expires_at:new Date(Date.now()-1).toISOString()},true);
   rejected(await f.redeem(challenge), 'Redeeming after approver session expiry');
-  assert.equal(f.sessions(), 2);
+  assert.equal(await f.sessions(), 2);
 });
 
 test('concurrent different-account approvals select exactly one immutable approver', async (t) => {
@@ -324,7 +324,7 @@ test('concurrent different-account approvals select exactly one immutable approv
   const rejectedApproval = results.find((result) => result.status !== 200)!;
   rejected(rejectedApproval, 'Losing concurrent approval');
   const winner = results[0]!.status === 200 ? f.mobile : f.other;
-  const row = f.store.db.prepare('SELECT approved_user_id,approver_session_hash FROM browser_pairings WHERE id=?').get(challenge.id)!;
+  const row = (await f.store.get<any>('browser_pairings',challenge.id))!;
   assert.equal(row.approved_user_id, winner.user.id);
   assert.equal(row.approver_session_hash, tokenHash(winner.token));
   const redeemed = await f.redeem(challenge);
@@ -339,8 +339,8 @@ test('concurrent browser redemptions consume the challenge once and create only 
   const results = await Promise.all([f.redeem(challenge), f.redeem(challenge)]);
   assert.equal(results.filter((result) => result.status === 200).length, 1);
   rejected(results.find((result) => result.status !== 200)!, 'Losing concurrent redemption');
-  assert.equal(f.sessions(), 3);
-  assert.equal(f.store.db.prepare('SELECT state FROM browser_pairings WHERE id=?').get(challenge.id)!.state, 'consumed');
+  assert.equal(await f.sessions(), 3);
+  assert.equal((await f.store.get<any>('browser_pairings',challenge.id))!.state, 'consumed');
 });
 
 test('an already signed-in browser cannot start pairing or silently switch accounts on redemption', async (t) => {
@@ -355,13 +355,13 @@ test('an already signed-in browser cannot start pairing or silently switch accou
   assert.equal(response.status, 409);
   rejected(response, 'Redemption into an already authenticated browser');
   assert.deepEqual((await f.request('/api/auth/me', { cookie: existingCookie })).body.user, f.other.user);
-  assert.equal(f.sessions(), 2);
+  assert.equal(await f.sessions(), 2);
 });
 
 test('a stale browser session cookie does not prevent legitimate fresh QR login', async (t) => {
   const f = await fixture(t);
-  const expiredBrowser = createSession(f.store, f.other.user.id);
-  f.store.db.prepare('UPDATE sessions SET expires_at=? WHERE token_hash=?').run(new Date(Date.now() - 1).toISOString(), tokenHash(expiredBrowser));
+  const expiredBrowser = await createSession(f.store, f.other.user.id,Math.floor(Date.now()/1000));
+  await f.store.set('sessions',tokenHash(expiredBrowser),{expires_at:new Date(Date.now()-1).toISOString()},true);
   const challenge = await f.start(`iap_session=${expiredBrowser}`);
   assert.equal((await f.approve(challenge)).status, 200);
   const result = await f.redeem(challenge, `${challenge.cookie}; iap_session=${expiredBrowser}`);
@@ -383,13 +383,13 @@ test('regenerating a browser QR cancels its previous pending or approved challen
     assert.equal((await f.status(replacement)).body.status, 'pending');
     assert.equal((await f.inspect(replacement)).status, 200);
   }
-  assert.equal(f.sessions(), 2);
+  assert.equal(await f.sessions(), 2);
 });
 
 test('manual browser login or registration invalidates an outstanding approved QR before issuing that account session', async (t) => {
   const f = await fixture(t);
   const password = 'Pairing-manual-login-password!';
-  f.store.db.prepare('UPDATE users SET password_hash=? WHERE id=?').run(await hashPassword(password), f.other.user.id);
+  await f.store.identity.auth.updateUser(f.other.user.id,{password});
   for (const action of ['login', 'register']) {
     const challenge = await f.start();
     assert.equal((await f.approve(challenge)).status, 200);
@@ -414,7 +414,7 @@ test('browser logout explicitly cancels an outstanding QR even while its approvi
   for (const approveFirst of [false, true]) {
     const challenge = await f.start();
     if (approveFirst) assert.equal((await f.approve(challenge)).status, 200);
-    const browserToken = createSession(f.store, f.other.user.id);
+    const browserToken = await createSession(f.store, f.other.user.id,Math.floor(Date.now()/1000));
     const logout = await f.request('/api/auth/logout', {
       method: 'POST', cookie: `${challenge.cookie}; iap_session=${browserToken}`, origin: f.options.publicUrl,
     });
@@ -427,7 +427,7 @@ test('browser logout explicitly cancels an outstanding QR even while its approvi
   }
 });
 
-test('subsequent starts remove expired pending, approved, and consumed hashes without revoking an already redeemed session', async (t) => {
+test('expiry is enforced before asynchronous Firestore TTL cleanup, without revoking a redeemed session', async (t) => {
   const f = await fixture(t);
   const pending = await f.start();
   const approved = await f.start();
@@ -437,12 +437,11 @@ test('subsequent starts remove expired pending, approved, and consumed hashes wi
   const redeemed = await f.redeem(consumed);
   assert.equal(redeemed.status, 200);
   const browserSession = cookiePair(redeemed, 'iap_session');
-  f.store.db.prepare('UPDATE browser_pairings SET expires_at=?').run(Date.now() - 1);
+  for(const old of [pending,approved,consumed]) await f.store.set('browser_pairings',old.id,{expires_at:Date.now()-1},true);
   const fresh = await f.start();
-  const rows = f.store.db.prepare('SELECT id FROM browser_pairings').all();
-  assert.deepEqual(rows.map((row) => row.id), [fresh.id]);
+  assert.equal((await f.status(fresh)).body.status,'pending');
   for (const old of [pending, approved, consumed]) {
-    rejected(await f.status(old), 'Status for an expired and removed QR');
+    assert.equal((await f.status(old)).body.status,'expired');
     rejected(await f.redeem(old), 'Redemption for an expired and removed QR');
   }
   assert.deepEqual((await f.request('/api/auth/me', { cookie: browserSession })).body.user, f.mobile.user);
