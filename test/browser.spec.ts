@@ -42,6 +42,13 @@ test('account, app setup, real/demo separation, preferences and logout work end 
   expect(await page.evaluate(() => [localStorage.length, sessionStorage.length])).toEqual([0, 0]);
 
   await addApp(page, info.project.name);
+  const connectLink = page.getByRole('link', { name: 'Open App Store Connect (opens in a new tab)', exact: true });
+  await expect(connectLink).toBeVisible();
+  await expect(connectLink).toHaveAttribute('href', 'https://appstoreconnect.apple.com/apps/123456789/distribution/info#:~:text=App%20Store%20Server%20Notifications');
+  await expect(connectLink).toHaveAttribute('target', '_blank');
+  await expect(connectLink).toHaveAttribute('rel', 'noopener noreferrer');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy();
+  await page.screenshot({ path: info.outputPath(`${info.project.name}-setup.png`), fullPage: true });
   await expect(page.getByLabel('Production webhook URL', { exact: true })).toHaveValue(/\/production$/);
   await expect(page.getByLabel('Sandbox webhook URL', { exact: true })).toHaveValue(/\/sandbox$/);
   await expect(page.locator('.connection-list p').filter({ hasText: 'Waiting for Apple · No signed event received' })).toHaveCount(2);

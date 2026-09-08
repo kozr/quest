@@ -496,8 +496,15 @@ function setupDetails(app) {
       href: 'https://www.revenuecat.com/docs/platform-resources/server-notifications/apple-server-notifications', target: '_blank', rel: 'noopener noreferrer',
     }, 'RevenueCat Apple notification setup guide')));
   } else {
+    section.append(element('p', {}, element('a', {
+      class: 'button-link',
+      href: `https://appstoreconnect.apple.com/apps/${encodeURIComponent(app.appleId)}/distribution/info#:~:text=App%20Store%20Server%20Notifications`,
+      target: '_blank', rel: 'noopener noreferrer',
+      'aria-label': 'Open App Store Connect (opens in a new tab)',
+    }, 'Open App Store Connect')));
+    section.append(element('p', { class: 'help' }, 'Opens in a new tab. Apple may ask you to sign in. If the page doesn’t scroll to the section, find App Store Server Notifications on the App Information page.'));
     section.append(element('ol', {}, [
-      element('li', {}, 'Open App Store Connect → Apps → your app → App information → App Store Server Notifications.'),
+      element('li', {}, 'Open App Store Server Notifications using the button above.'),
       element('li', {}, 'Use Version 2 and save the production URL below. Save the sandbox URL separately for testing.'),
       element('li', {}, 'Wait for the first signed Apple event. You can test sandbox with a sandbox purchase; Apple’s test-notification API requires separate In-App Purchase API credentials.'),
     ]));
