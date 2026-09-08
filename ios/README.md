@@ -32,7 +32,7 @@ Unit tests are in the shared scheme. Choose an installed simulator in Xcode and 
 
 ## Physical phone and push delivery
 
-The project uses bundle ID `com.kozr.quest` and developer team `ZMNPR5G4ZL`. Release defaults to `https://quest-liart-iota.vercel.app`. A minimal beta icon is included; branding is deferred. Signing private keys are not stored in the repository. TestFlight upload is not yet complete.
+The project uses bundle ID `com.kozr.quest` and developer team `ZMNPR5G4ZL`. Release defaults to `https://quest-liart-iota.vercel.app`. A minimal beta icon is included; branding is deferred. Signing private keys are not stored in the repository. Version `0.1.0 (1)` was uploaded successfully to App Store Connect on September 8, 2026, at 13:26 Pacific and entered processing. TestFlight tester availability is not yet verified; APNs still requires its real push key.
 
 1. Keep **Push Notifications** and **Sign in with Apple** enabled for `com.kozr.quest`. That bundle is registered in Firebase project `the-app-quest`; **Apple** is the only enabled provider. The native-only flow needs no web Services ID or Firebase client SDK/plist. The server exchanges Apple credentials with Firebase and returns an opaque service session. Real-device testing needs an Apple Account with two-factor authentication signed into iCloud.
 2. Configure the backend APNs credentials and topic to match that bundle identifier. Debug builds register against sandbox APNs; Release builds register against production APNs. These APNs environments describe the companion build, independently of an event's Apple Production/Sandbox environment.

@@ -7,7 +7,8 @@
 - Firestore Standard database in `us-central1`: deny-all client rules deployed, four composite indexes READY, four expiry policies ACTIVE.
 - All five functions deployed. Live Vercel `/healthz` returns HTTP 200 with a successful Firestore read. Private `deliverPush` queue is RUNNING with the declared limits; its Cloud Run IAM policy has no public invoker.
 - Firebase iOS registration: `com.kozr.quest`, app ID `1:539152982713:ios:a44b20d6ee50a09ede3168`.
-- **Not complete:** APNs key configuration, live Apple sign-in/device notification verification, App Store Connect record and TestFlight upload. Apple Developer website still requires owner sign-in. Signed archiving reached codesign and is awaiting system/keychain resolution.
+- App Store Connect record created via Xcode: **Quest — App Revenue Alerts**, bundle `com.kozr.quest`. Production archive `ios/build/Quest-production.xcarchive` successfully uploaded on September 8 at 13:26 Pacific; Xcode reported `Upload succeeded` and `Uploaded package is processing` for version `0.1.0 (1)`.
+- **Not complete:** APNs key configuration, live Apple sign-in/device notification verification, Apple processing completion and tester availability/invitation. Apple Developer website still requires owner sign-in; TestFlight upload itself is complete.
 - APNs is explicitly disabled in production (`apnsConfigured: false`). Functions bind `APNS_PRIVATE_KEY` only when `APNS_TOPIC` is configured. Set all APNs metadata and the real secret, then redeploy; do not use dummy credentials.
 - Google provisioned the default runtime account with Editor; a dedicated least-privilege runtime identity remains a hardening task before public launch. Container build images have a one-day cleanup policy.
 
