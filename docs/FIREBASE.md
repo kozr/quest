@@ -1,6 +1,17 @@
 # Firebase backend + Vercel web deployment
 
-The code is migrated and locally tested; **no billable resources, public deployment, or TestFlight build was created by this migration**. The user selected the dedicated Firebase project **the app quest** (`the-app-quest`) in Arc. Authentication setup was opened; the Apple provider has not yet been saved/enabled by this change. Existing unrelated projects must not be reused by assumption.
+## Live deployment — September 8, 2026
+
+- Production web: https://quest-liart-iota.vercel.app, Vercel project `kozrs-projects/quest`, connected to `kozr/quest`.
+- Dedicated Firebase project `the-app-quest`: Apple-only provider enabled, owner-approved Blaze billing with CAD 10 email budget alert (not a spending cap).
+- Firestore Standard database in `us-central1`: deny-all client rules deployed, four composite indexes READY, four expiry policies ACTIVE.
+- All five functions deployed. Live Vercel `/healthz` returns HTTP 200 with a successful Firestore read. Private `deliverPush` queue is RUNNING with the declared limits; its Cloud Run IAM policy has no public invoker.
+- Firebase iOS registration: `com.kozr.quest`, app ID `1:539152982713:ios:a44b20d6ee50a09ede3168`.
+- **Not complete:** APNs key configuration, live Apple sign-in/device notification verification, App Store Connect record and TestFlight upload. Apple Developer website still requires owner sign-in. Signed archiving reached codesign and is awaiting system/keychain resolution.
+- APNs is explicitly disabled in production (`apnsConfigured: false`). Functions bind `APNS_PRIVATE_KEY` only when `APNS_TOPIC` is configured. Set all APNs metadata and the real secret, then redeploy; do not use dummy credentials.
+- Google provisioned the default runtime account with Editor; a dedicated least-privilege runtime identity remains a hardening task before public launch. Container build images have a one-day cleanup policy.
+
+Existing unrelated projects must not be reused by assumption.
 
 ## Architecture
 

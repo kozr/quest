@@ -1,4 +1,14 @@
-# MVP validation — September 4, 2026
+# MVP validation — September 8, 2026
+
+## Production deployment verification
+
+- All 115 API/security and 10 desktop/mobile browser tests rerun successfully using isolated Firebase emulators and project-local Java 21; no live customer fixtures were used.
+- Updated iOS Release simulator build succeeds with `com.kozr.quest`, beta app icon, and production HTTPS default. Signed archive reached codesign but has not completed; this is not a TestFlight upload.
+- Vercel production health check returns HTTP 200 through Firebase with a real Firestore read. Production config reports Apple-only authentication, demo disabled, correct HTTPS origin, and APNs explicitly unavailable pending the Apple key.
+- Live QR smoke test returns 201, correct production origin, Secure/HttpOnly/SameSite=Strict cookie, and browser-bound status HTTP 200. Foreign-origin creation returns 403. The test created only a short-lived unauthenticated pairing challenge; no Apple account login was simulated in production.
+- All five Firebase functions deployed; four composite indexes READY and four TTL policies ACTIVE. Cloud Task queue RUNNING; no public invoker on delivery function. Apple device login, APNs acceptance/display, App Store Connect and TestFlight remain unverified/incomplete.
+
+The sections below record historical baselines and do not override the deployment status above.
 
 ## Apple-only authentication
 

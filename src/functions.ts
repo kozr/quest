@@ -9,14 +9,17 @@ import {firebaseServices} from './firebase.js';
 import {Store,type Job} from './database.js';
 
 const region=process.env.IAP_FUNCTION_REGION ?? 'us-central1';
+// Deploy login/webhook storage before APNs is provisioned; never use a dummy key.
+// Adding APNS_TOPIC requires the real Secret Manager key and a redeploy.
+const pushSecrets=process.env.APNS_TOPIC ? ['APNS_PRIVATE_KEY'] : [];
 let application:ReturnType<typeof createApplication>|undefined;
 // Lazy initialization lets the CLI discover functions without production credentials.
 function runtime() {return application ??= createApplication(readConfiguration({...process.env,NODE_ENV:'production'}));}
 function services() {return firebaseServices({firebaseProjectId:process.env.GCLOUD_PROJECT ?? process.env.FIREBASE_PROJECT_ID!,firebaseWebApiKey:process.env.IAP_FIREBASE_WEB_API_KEY!});}
 function store() {const firebase=services();return new Store(firebase.db,firebase.identity);}
 
-export const api=onRequest({region,memory:'512MiB',timeoutSeconds:60,maxInstances:10,secrets:['APNS_PRIVATE_KEY'],invoker:'public'},(req,res)=>runtime().app(req,res));
-export const deliverPush=onTaskDispatched({region,memory:'256MiB',timeoutSeconds:60,maxInstances:5,secrets:['APNS_PRIVATE_KEY'],
+export const api=onRequest({region,memory:'512MiB',timeoutSeconds:60,maxInstances:10,secrets:pushSecrets,invoker:'public'},(req,res)=>runtime().app(req,res));
+export const deliverPush=onTaskDispatched({region,memory:'256MiB',timeoutSeconds:60,maxInstances:5,secrets:pushSecrets,
   retryConfig:{maxAttempts:100,maxRetrySeconds:86400,minBackoffSeconds:10,maxBackoffSeconds:3600,maxDoublings:8},
   rateLimits:{maxConcurrentDispatches:10,maxDispatchesPerSecond:20},
 },async req=>{

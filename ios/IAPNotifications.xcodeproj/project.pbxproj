@@ -1,131 +1,410 @@
 // !$*UTF8*$!
 {
-    archiveVersion = 1;
-    classes = {};
-    objectVersion = 56;
-    objects = {
-        A00000000000000000000001 = {isa = PBXBuildFile; fileRef = B00000000000000000000001; };
-        A00000000000000000000002 = {isa = PBXBuildFile; fileRef = B00000000000000000000002; };
-        A00000000000000000000003 = {isa = PBXBuildFile; fileRef = B00000000000000000000003; };
-        A00000000000000000000004 = {isa = PBXBuildFile; fileRef = B00000000000000000000004; };
-        A00000000000000000000005 = {isa = PBXBuildFile; fileRef = B00000000000000000000005; };
-        A00000000000000000000006 = {isa = PBXBuildFile; fileRef = B00000000000000000000012; };
-        A00000000000000000000007 = {isa = PBXBuildFile; fileRef = B00000000000000000000013; };
-        B00000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IAPNotificationsApp.swift; sourceTree = "<group>"; };
-        B00000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
-        B00000000000000000000003 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
-        B00000000000000000000004 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
-        B00000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClientTests.swift; sourceTree = "<group>"; };
-        B00000000000000000000006 = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "Info-Debug.plist"; sourceTree = "<group>"; };
-        B00000000000000000000007 = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "Info-Release.plist"; sourceTree = "<group>"; };
-        B00000000000000000000008 = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = IAPNotifications.entitlements; sourceTree = "<group>"; };
-        B00000000000000000000010 = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = IAPNotifications.app; sourceTree = BUILT_PRODUCTS_DIR; };
-        B00000000000000000000011 = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = IAPNotificationsTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-        B00000000000000000000012 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Pairing.swift; sourceTree = "<group>"; };
-        B00000000000000000000013 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingView.swift; sourceTree = "<group>"; };
-        C00000000000000000000001 = {isa = PBXGroup; children = (C00000000000000000000002, C00000000000000000000003, C00000000000000000000004); sourceTree = "<group>"; };
-        C00000000000000000000002 = {isa = PBXGroup; children = (B00000000000000000000001, B00000000000000000000002, B00000000000000000000003, B00000000000000000000004, B00000000000000000000012, B00000000000000000000013, B00000000000000000000006, B00000000000000000000007, B00000000000000000000008); path = IAPNotifications; sourceTree = "<group>"; };
-        C00000000000000000000003 = {isa = PBXGroup; children = (B00000000000000000000005); path = IAPNotificationsTests; sourceTree = "<group>"; };
-        C00000000000000000000004 = {isa = PBXGroup; children = (B00000000000000000000010, B00000000000000000000011); name = Products; sourceTree = "<group>"; };
-        D00000000000000000000001 = {
-            isa = PBXNativeTarget;
-            buildConfigurationList = F00000000000000000000002;
-            buildPhases = (E00000000000000000000001, E00000000000000000000002, E00000000000000000000003);
-            buildRules = (); dependencies = ();
-            name = IAPNotifications;
-            productName = IAPNotifications;
-            productReference = B00000000000000000000010;
-            productType = "com.apple.product-type.application";
-        };
-        D00000000000000000000002 = {
-            isa = PBXNativeTarget;
-            buildConfigurationList = F00000000000000000000003;
-            buildPhases = (E00000000000000000000004, E00000000000000000000005, E00000000000000000000006);
-            buildRules = (); dependencies = (D00000000000000000000004);
-            name = IAPNotificationsTests;
-            productName = IAPNotificationsTests;
-            productReference = B00000000000000000000011;
-            productType = "com.apple.product-type.bundle.unit-test";
-        };
-        D00000000000000000000003 = {isa = PBXContainerItemProxy; containerPortal = D00000000000000000000010; proxyType = 1; remoteGlobalIDString = D00000000000000000000001; remoteInfo = IAPNotifications; };
-        D00000000000000000000004 = {isa = PBXTargetDependency; target = D00000000000000000000001; targetProxy = D00000000000000000000003; };
-        D00000000000000000000010 = {
-            isa = PBXProject;
-            attributes = {
-                BuildIndependentTargetsInParallel = YES;
-                LastUpgradeCheck = 2640;
-                TargetAttributes = {
-                    D00000000000000000000001 = {CreatedOnToolsVersion = 26.4; SystemCapabilities = {com.apple.Push = {enabled = 1; }; com.apple.SignInWithApple = {enabled = 1; }; }; };
-                    D00000000000000000000002 = {CreatedOnToolsVersion = 26.4; TestTargetID = D00000000000000000000001; };
-                };
-            };
-            buildConfigurationList = F00000000000000000000001;
-            compatibilityVersion = "Xcode 14.0";
-            developmentRegion = en;
-            hasScannedForEncodings = 0;
-            knownRegions = (en, Base);
-            mainGroup = C00000000000000000000001;
-            productRefGroup = C00000000000000000000004;
-            projectDirPath = ""; projectRoot = "";
-            targets = (D00000000000000000000001, D00000000000000000000002);
-        };
-        E00000000000000000000001 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A00000000000000000000001, A00000000000000000000002, A00000000000000000000003, A00000000000000000000004, A00000000000000000000006, A00000000000000000000007); runOnlyForDeploymentPostprocessing = 0; };
-        E00000000000000000000002 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
-        E00000000000000000000003 = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
-        E00000000000000000000004 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A00000000000000000000005); runOnlyForDeploymentPostprocessing = 0; };
-        E00000000000000000000005 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
-        E00000000000000000000006 = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
-        F00000000000000000000001 = {isa = XCConfigurationList; buildConfigurations = (F00000000000000000000011, F00000000000000000000012); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
-        F00000000000000000000002 = {isa = XCConfigurationList; buildConfigurations = (F00000000000000000000021, F00000000000000000000022); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
-        F00000000000000000000003 = {isa = XCConfigurationList; buildConfigurations = (F00000000000000000000031, F00000000000000000000032); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
-        F00000000000000000000011 = {isa = XCBuildConfiguration; name = Debug; buildSettings = {
-            ALWAYS_SEARCH_USER_PATHS = NO; CLANG_ENABLE_MODULES = YES; CLANG_ENABLE_OBJC_ARC = YES;
-            COPY_PHASE_STRIP = NO; DEBUG_INFORMATION_FORMAT = dwarf; ENABLE_TESTABILITY = YES;
-            GCC_C_LANGUAGE_STANDARD = gnu17; GCC_OPTIMIZATION_LEVEL = 0;
-            GCC_PREPROCESSOR_DEFINITIONS = ("DEBUG=1", "$(inherited)");
-            IPHONEOS_DEPLOYMENT_TARGET = 17.0; ONLY_ACTIVE_ARCH = YES; SDKROOT = iphoneos;
-            SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)"; SWIFT_OPTIMIZATION_LEVEL = "-Onone";
-        }; };
-        F00000000000000000000012 = {isa = XCBuildConfiguration; name = Release; buildSettings = {
-            ALWAYS_SEARCH_USER_PATHS = NO; CLANG_ENABLE_MODULES = YES; CLANG_ENABLE_OBJC_ARC = YES;
-            COPY_PHASE_STRIP = NO; DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym"; ENABLE_NS_ASSERTIONS = NO;
-            GCC_C_LANGUAGE_STANDARD = gnu17; IPHONEOS_DEPLOYMENT_TARGET = 17.0; SDKROOT = iphoneos;
-            SWIFT_COMPILATION_MODE = wholemodule; SWIFT_OPTIMIZATION_LEVEL = "-O"; VALIDATE_PRODUCT = YES;
-        }; };
-        F00000000000000000000021 = {isa = XCBuildConfiguration; name = Debug; buildSettings = {
-            APS_ENVIRONMENT = development; CODE_SIGN_ENTITLEMENTS = IAPNotifications/IAPNotifications.entitlements;
-            CODE_SIGN_STYLE = Automatic; CURRENT_PROJECT_VERSION = 1; DEVELOPMENT_TEAM = "";
-            GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = "IAPNotifications/Info-Debug.plist";
-            LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks");
-            MARKETING_VERSION = 0.1.0; PRODUCT_BUNDLE_IDENTIFIER = com.example.IAPNotifications; PRODUCT_NAME = "$(TARGET_NAME)";
-            SUPPORTED_PLATFORMS = "iphoneos iphonesimulator"; SUPPORTS_MACCATALYST = NO;
-            SWIFT_EMIT_LOC_STRINGS = YES; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = 1;
-        }; };
-        F00000000000000000000022 = {isa = XCBuildConfiguration; name = Release; buildSettings = {
-            APS_ENVIRONMENT = production; CODE_SIGN_ENTITLEMENTS = IAPNotifications/IAPNotifications.entitlements;
-            CODE_SIGN_STYLE = Automatic; CURRENT_PROJECT_VERSION = 1; DEVELOPMENT_TEAM = "";
-            GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = "IAPNotifications/Info-Release.plist";
-            LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks");
-            MARKETING_VERSION = 0.1.0; PRODUCT_BUNDLE_IDENTIFIER = com.example.IAPNotifications; PRODUCT_NAME = "$(TARGET_NAME)";
-            SUPPORTED_PLATFORMS = "iphoneos iphonesimulator"; SUPPORTS_MACCATALYST = NO;
-            SWIFT_EMIT_LOC_STRINGS = YES; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = 1;
-        }; };
-        F00000000000000000000031 = {isa = XCBuildConfiguration; name = Debug; buildSettings = {
-            BUNDLE_LOADER = "$(TEST_HOST)"; CODE_SIGN_STYLE = Automatic; CURRENT_PROJECT_VERSION = 1;
-            GENERATE_INFOPLIST_FILE = YES; IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-            LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks", "@loader_path/Frameworks");
-            PRODUCT_BUNDLE_IDENTIFIER = com.example.IAPNotificationsTests; PRODUCT_NAME = "$(TARGET_NAME)";
-            SUPPORTED_PLATFORMS = "iphoneos iphonesimulator"; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = 1;
-            TEST_HOST = "$(BUILT_PRODUCTS_DIR)/IAPNotifications.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/IAPNotifications";
-        }; };
-        F00000000000000000000032 = {isa = XCBuildConfiguration; name = Release; buildSettings = {
-            BUNDLE_LOADER = "$(TEST_HOST)"; CODE_SIGN_STYLE = Automatic; CURRENT_PROJECT_VERSION = 1;
-            GENERATE_INFOPLIST_FILE = YES; IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-            LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks", "@loader_path/Frameworks");
-            PRODUCT_BUNDLE_IDENTIFIER = com.example.IAPNotificationsTests; PRODUCT_NAME = "$(TARGET_NAME)";
-            SUPPORTED_PLATFORMS = "iphoneos iphonesimulator"; SWIFT_VERSION = 5.0; TARGETED_DEVICE_FAMILY = 1;
-            TEST_HOST = "$(BUILT_PRODUCTS_DIR)/IAPNotifications.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/IAPNotifications";
-        }; };
-    };
-    rootObject = D00000000000000000000010;
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		A00000000000000000000008 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000014; };
+		A00000000000000000000001 /* IAPNotificationsApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000001 /* IAPNotificationsApp.swift */; };
+		A00000000000000000000002 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000002 /* Models.swift */; };
+		A00000000000000000000003 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000003 /* APIClient.swift */; };
+		A00000000000000000000004 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000004 /* AppModel.swift */; };
+		A00000000000000000000005 /* ClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000005 /* ClientTests.swift */; };
+		A00000000000000000000006 /* Pairing.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000012 /* Pairing.swift */; };
+		A00000000000000000000007 /* PairingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000013 /* PairingView.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		D00000000000000000000003 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = D00000000000000000000010 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = D00000000000000000000001;
+			remoteInfo = IAPNotifications;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		B00000000000000000000014 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = IAPNotifications/Assets.xcassets; sourceTree = SOURCE_ROOT; };
+		B00000000000000000000001 /* IAPNotificationsApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IAPNotificationsApp.swift; sourceTree = "<group>"; };
+		B00000000000000000000002 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		B00000000000000000000003 /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
+		B00000000000000000000004 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
+		B00000000000000000000005 /* ClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClientTests.swift; sourceTree = "<group>"; };
+		B00000000000000000000006 /* Info-Debug.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "Info-Debug.plist"; sourceTree = "<group>"; };
+		B00000000000000000000007 /* Info-Release.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "Info-Release.plist"; sourceTree = "<group>"; };
+		B00000000000000000000008 /* IAPNotifications.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = IAPNotifications.entitlements; sourceTree = "<group>"; };
+		B00000000000000000000010 /* IAPNotifications.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = IAPNotifications.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		B00000000000000000000011 /* IAPNotificationsTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = IAPNotificationsTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		B00000000000000000000012 /* Pairing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Pairing.swift; sourceTree = "<group>"; };
+		B00000000000000000000013 /* PairingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingView.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		E00000000000000000000002 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E00000000000000000000005 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		C00000000000000000000001 = {
+			isa = PBXGroup;
+			children = (
+				C00000000000000000000002 /* IAPNotifications */,
+				C00000000000000000000003 /* IAPNotificationsTests */,
+				C00000000000000000000004 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		C00000000000000000000002 /* IAPNotifications */ = {
+			isa = PBXGroup;
+			children = (
+				B00000000000000000000001 /* IAPNotificationsApp.swift */,
+				B00000000000000000000002 /* Models.swift */,
+				B00000000000000000000003 /* APIClient.swift */,
+				B00000000000000000000004 /* AppModel.swift */,
+				B00000000000000000000012 /* Pairing.swift */,
+				B00000000000000000000013 /* PairingView.swift */,
+				B00000000000000000000006 /* Info-Debug.plist */,
+				B00000000000000000000007 /* Info-Release.plist */,
+				B00000000000000000000008 /* IAPNotifications.entitlements */,
+			);
+			path = IAPNotifications;
+			sourceTree = "<group>";
+		};
+		C00000000000000000000003 /* IAPNotificationsTests */ = {
+			isa = PBXGroup;
+			children = (
+				B00000000000000000000005 /* ClientTests.swift */,
+			);
+			path = IAPNotificationsTests;
+			sourceTree = "<group>";
+		};
+		C00000000000000000000004 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				B00000000000000000000010 /* IAPNotifications.app */,
+				B00000000000000000000011 /* IAPNotificationsTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		D00000000000000000000001 /* IAPNotifications */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F00000000000000000000002 /* Build configuration list for PBXNativeTarget "IAPNotifications" */;
+			buildPhases = (
+				E00000000000000000000001 /* Sources */,
+				E00000000000000000000002 /* Frameworks */,
+				E00000000000000000000003 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = IAPNotifications;
+			productName = IAPNotifications;
+			productReference = B00000000000000000000010 /* IAPNotifications.app */;
+			productType = "com.apple.product-type.application";
+		};
+		D00000000000000000000002 /* IAPNotificationsTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F00000000000000000000003 /* Build configuration list for PBXNativeTarget "IAPNotificationsTests" */;
+			buildPhases = (
+				E00000000000000000000004 /* Sources */,
+				E00000000000000000000005 /* Frameworks */,
+				E00000000000000000000006 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				D00000000000000000000004 /* PBXTargetDependency */,
+			);
+			name = IAPNotificationsTests;
+			productName = IAPNotificationsTests;
+			productReference = B00000000000000000000011 /* IAPNotificationsTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		D00000000000000000000010 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 2640;
+				TargetAttributes = {
+					D00000000000000000000001 = {
+						CreatedOnToolsVersion = 26.4;
+						SystemCapabilities = {
+							com.apple.Push = {
+								enabled = 1;
+							};
+							com.apple.SignInWithApple = {
+								enabled = 1;
+							};
+						};
+					};
+					D00000000000000000000002 = {
+						CreatedOnToolsVersion = 26.4;
+						TestTargetID = D00000000000000000000001;
+					};
+				};
+			};
+			buildConfigurationList = F00000000000000000000001 /* Build configuration list for PBXProject "IAPNotifications" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = C00000000000000000000001;
+			productRefGroup = C00000000000000000000004 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				D00000000000000000000001 /* IAPNotifications */,
+				D00000000000000000000002 /* IAPNotificationsTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		E00000000000000000000003 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A00000000000000000000008 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E00000000000000000000006 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		E00000000000000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A00000000000000000000001 /* IAPNotificationsApp.swift in Sources */,
+				A00000000000000000000002 /* Models.swift in Sources */,
+				A00000000000000000000003 /* APIClient.swift in Sources */,
+				A00000000000000000000004 /* AppModel.swift in Sources */,
+				A00000000000000000000006 /* Pairing.swift in Sources */,
+				A00000000000000000000007 /* PairingView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E00000000000000000000004 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A00000000000000000000005 /* ClientTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		D00000000000000000000004 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = D00000000000000000000001 /* IAPNotifications */;
+			targetProxy = D00000000000000000000003 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		F00000000000000000000011 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		F00000000000000000000012 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		F00000000000000000000021 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APS_ENVIRONMENT = development;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = IAPNotifications/IAPNotifications.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = ZMNPR5G4ZL;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "IAPNotifications/Info-Debug.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.kozr.quest;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		F00000000000000000000022 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APS_ENVIRONMENT = production;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = IAPNotifications/IAPNotifications.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = ZMNPR5G4ZL;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "IAPNotifications/Info-Release.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.kozr.quest;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		F00000000000000000000031 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.kozr.quest.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/IAPNotifications.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/IAPNotifications";
+			};
+			name = Debug;
+		};
+		F00000000000000000000032 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.kozr.quest.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/IAPNotifications.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/IAPNotifications";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		F00000000000000000000001 /* Build configuration list for PBXProject "IAPNotifications" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F00000000000000000000011 /* Debug */,
+				F00000000000000000000012 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		F00000000000000000000002 /* Build configuration list for PBXNativeTarget "IAPNotifications" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F00000000000000000000021 /* Debug */,
+				F00000000000000000000022 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		F00000000000000000000003 /* Build configuration list for PBXNativeTarget "IAPNotificationsTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F00000000000000000000031 /* Debug */,
+				F00000000000000000000032 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = D00000000000000000000010 /* Project object */;
 }

@@ -1,0 +1,12 @@
+ios/
+node_modules/
+data/
+test/
+test-results/
+certificates/
+dist/
+*.log
+.env*
+*.p8
+*.pem
+**/*service-account*.json

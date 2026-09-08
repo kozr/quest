@@ -130,7 +130,7 @@ struct ServerSettings: Codable {
         #if DEBUG
         return .init(url: "http://localhost:4317", allowLocalHTTP: true)
         #else
-        return .init(url: "", allowLocalHTTP: false)
+        return .init(url: "https://quest-liart-iota.vercel.app", allowLocalHTTP: false)
         #endif
     }
 }
