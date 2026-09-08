@@ -135,14 +135,21 @@ struct PairingView: View {
         } header: {
             Text("Compare the matching code")
         }
-        TimelineView(.periodic(from: .now, by: 1)) { context in
-            let expired = review.expiration.map { $0 <= context.date } ?? true
-            Section {
+        Section {
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                let expired = review.expiration.map { $0 <= context.date } ?? true
                 if expired {
                     Label("This request expired. Get a new QR code on your computer.", systemImage: "clock.badge.exclamationmark")
                 } else if let expiration = review.expiration {
                     HStack { Text("Expires in"); Spacer(); Text(expiration, style: .timer).monospacedDigit() }
                 }
+            }
+        }
+        // A TimelineView is one Form row. Never put opposing actions inside it:
+        // automatic Form button styling can turn that row into a shared target.
+        Section {
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                let expired = review.expiration.map { $0 <= context.date } ?? true
                 Button {
                     Task { await model.approvePairing() }
                 } label: {
@@ -151,16 +158,30 @@ struct PairingView: View {
                         Spacer()
                         if model.pairingIsBusy { ProgressView() }
                     }
+                    .frame(minHeight: 44)
                 }
+                .buttonStyle(.borderedProminent)
                 .disabled(!codeMatches || expired || model.pairingIsBusy)
                 .accessibilityIdentifier("approvePairing")
-                Button("Deny request", role: .destructive) {
-                    Task { await model.denyPairing() }
-                }
-                .disabled(model.pairingIsBusy)
-                Button("Scan another QR code") { model.resetPairing() }
-                    .disabled(model.pairingIsBusy)
             }
+        }
+        Section {
+            Button(role: .destructive) {
+                Task { await model.denyPairing() }
+            } label: {
+                Text("Deny request").frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            }
+            .buttonStyle(.borderless)
+            .disabled(model.pairingIsBusy)
+            .accessibilityIdentifier("denyPairing")
+        }
+        Section {
+            Button { model.resetPairing() } label: {
+                Text("Scan another QR code").frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            }
+            .buttonStyle(.borderless)
+            .disabled(model.pairingIsBusy)
+            .accessibilityIdentifier("resetPairing")
         }
     }
 

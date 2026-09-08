@@ -2,6 +2,14 @@
 
 ## Production deployment verification
 
+### Native approval tap-target fix — build 2
+
+- Removed multiple opposing actions from a single `TimelineView`/Form row. Countdown and Approve have separate rows; Approve, Deny and Reset now have independent sections and explicit button styles with minimum 44-point labels.
+- Preserved code-match, expiration and in-flight guards; server approval/denial logic is unchanged.
+- `scripts/PairingTapCheck.swift` is an offline simulator harness compiled alongside the real `PairingView.swift`, instead of the production model/app. It cannot sign in or make network requests and is not included in the application target.
+- Computer-use verification on the IAP Notifications MVP simulator: Approve disabled before code match; enabled after matching; tap Approve → counts `1/0/0`; tap Deny → `1/1/0`; tap Reset → `1/1/1`. Distinct accessible buttons and visible separate sections confirmed.
+- Signed Release archive `ios/build/Quest-approval-fix.xcarchive` completed successfully as `0.1.0 (2)`.
+
 - All 115 API/security and 10 desktop/mobile browser tests rerun successfully using isolated Firebase emulators and project-local Java 21; no live customer fixtures were used.
 - Updated iOS Release simulator build and signed production archive succeed with `com.kozr.quest`, beta app icon, and production HTTPS default. App Store Connect record **Quest — App Revenue Alerts** was created through Xcode. Version `0.1.0 (1)` upload succeeded September 8 at 13:26 Pacific; Apple reported the package processing. Tester availability and processing completion remain unverified.
 - Vercel production health check returns HTTP 200 through Firebase with a real Firestore read. Production config reports Apple-only authentication, demo disabled, correct HTTPS origin, and APNs explicitly unavailable pending the Apple key.
