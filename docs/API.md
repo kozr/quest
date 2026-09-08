@@ -38,6 +38,12 @@ Origin checks, short expiry, and explicit comparison/approval reduce accidental 
 - App includes `webhookUrls.production`, `.sandbox`, separate `lastProductionEventAt` / `lastSandboxEventAt`. Until first signed event, show “Waiting for Apple”. Demo events never update these fields.
 - Source `revenuecat`: instruct user to retain RevenueCat’s Apple URLs and configure its Apple notification forwarding URL. RevenueCat forwarding can contain both environments: use the special URL returned as `forwardingUrl` alongside app data (same connection, routing based on untrusted hint only followed by full verification).
 
+## Optional Apple connection test
+
+- `POST /api/apps/:id/apple-test`, `{ environment: "Sandbox" | "Production", keyId, issuerId, privateKey }` → `{ testNotificationToken }` (202). Authenticated, owner-only, five requests per user per minute. Requests an Apple TEST notification; does not mark the app connected.
+- `POST /api/apps/:id/apple-test/status`, same credentials plus `testNotificationToken` → `{ state: "waiting" | "received", receivedAt, appleDelivery }`. Thirty checks per user per minute. Verifies Apple’s returned signed TEST payload against the account’s app/environment and looks up the matching committed webhook receipt, bound to the current endpoint generation. Does not write activity or connection status.
+- Credentials are request-scoped and never persisted. The web client clears the key after completion/cancellation and polls for at most one minute. Apple errors are sanitized; no Apple error body or key is returned. No notification URL/app ID can be supplied to redirect outbound calls.
+
 ## Activity
 
 - `GET /api/events?appId=<optional>&environment=Production|Sandbox|Demo|all&before=<optional event ID>&limit=50` → `{ events: ActivityEvent[], nextCursor: string | null }`. Default environment Production; descending received order. Max 100 per page.
@@ -60,4 +66,4 @@ Origin checks, short expiry, and explicit comparison/approval reduce accidental 
 
 ## Deferred
 
-In-app account deletion/Apple token revocation (required before App Store release), key-assisted Apple setup/history, billing, analytics, quiet-hours scheduling, native app setup forms beyond browser handoff. These are a local/beta foundation, not a claim of a complete public SaaS launch.
+In-app account deletion/Apple token revocation (required before App Store release), automatic Apple URL setup/history, billing, analytics, quiet-hours scheduling, native app setup forms beyond browser handoff. These are a local/beta foundation, not a claim of a complete public SaaS launch.

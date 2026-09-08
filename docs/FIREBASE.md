@@ -8,11 +8,24 @@
 - All five functions deployed. Live Vercel `/healthz` returns HTTP 200 with a successful Firestore read. Private `deliverPush` queue is RUNNING with the declared limits; its Cloud Run IAM policy has no public invoker.
 - Firebase iOS registration: `com.kozr.quest`, app ID `1:539152982713:ios:a44b20d6ee50a09ede3168`.
 - App Store Connect record created via Xcode: **Quest — App Revenue Alerts**, bundle `com.kozr.quest`. Production archive `ios/build/Quest-production.xcarchive` successfully uploaded on September 8 at 13:26 Pacific; Xcode reported `Upload succeeded` and `Uploaded package is processing` for version `0.1.0 (1)`.
-- **Not complete:** APNs key configuration, live Apple sign-in/device notification verification, Apple processing completion and tester availability/invitation. Apple Developer website still requires owner sign-in; TestFlight upload itself is complete.
-- APNs is explicitly disabled in production (`apnsConfigured: false`). Functions bind `APNS_PRIVATE_KEY` only when `APNS_TOPIC` is configured. Set all APNs metadata and the real secret, then redeploy; do not use dummy credentials.
+- **Not complete:** live Apple sign-in/device notification verification, Apple processing completion and tester availability/invitation. Apple Developer website still requires owner sign-in; TestFlight upload itself is complete.
+- APNs is configured in production (`apnsConfigured: true`). Quest-only production key `HJMXAS9W95` is stored in Secret Manager as `APNS_PRIVATE_KEY`, version 1. Team `ZMNPR5G4ZL`, topic `com.kozr.quest`; both `api` and `deliverPush` redeployed successfully. This key supports TestFlight/App Store companion builds. Debug APNs sandbox builds need a separate sandbox key configuration.
 - Google provisioned the default runtime account with Editor; a dedicated least-privilege runtime identity remains a hardening task before public launch. Container build images have a one-day cleanup policy.
 
 Existing unrelated projects must not be reused by assumption.
+
+## Optional test controls deployed — September 8, 2026
+
+- Updated `iap-notifications:api` in `the-app-quest` (`us-central1`) and published Vercel production deployment `quest-nqphdnkjc-kozrs-projects.vercel.app`, aliased to `https://quest-liart-iota.vercel.app`.
+- Production `/healthz` and `/api/config` return 200. Live `app.js` and `styles.css` exactly match the tested workspace assets. Apple-test request/status and phone-test endpoints reject unauthenticated requests with 401.
+- Optional Apple connection testing is available in app setup. APNs was initially unconfigured; the subsequent setup below enabled Send test alert. No live Apple TEST or physical-phone delivery was attempted.
+
+## Quest APNs provisioned — September 8, 2026
+
+- Created **Quest Push Notifications**, a Production, Topic Specific key restricted to `com.kozr.quest`. Existing app keys were not modified.
+- Uploaded its private material directly from the downloaded .p8 file to `projects/539152982713/secrets/APNS_PRIVATE_KEY/versions/1`. The retained Downloads backup has user-only file permissions. No private material is in tracked source or dotenv.
+- Set non-secret APNs metadata in `.env.the-app-quest`, then deployed `api` and `deliverPush`. The runtime identity received secret access; no worker public-invoker access was added.
+- Live `/healthz` returns 200 and `/api/config` now returns `apnsConfigured: true`. Chrome was signed out of Quest, so actual phone delivery remains unverified. Sign in using the TestFlight companion, enable notifications, and use Send test alert.
 
 ## Architecture
 

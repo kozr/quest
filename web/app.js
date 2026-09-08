@@ -480,6 +480,125 @@ function connectionStatus(label, date) {
   ]);
 }
 
+function appleConnectionTest(app) {
+  const details = element('details', { class: 'connection-test' });
+  const status = element('p', { class: 'form-message', role: 'status', 'aria-live': 'polite' });
+  const field = (label, control) => element('div', { class: 'field' }, [element('label', { for: control.id }, label), control]);
+  const environment = element('select', { id: `test-environment-${app.id}` }, [element('option', { value: 'Sandbox' }, 'Sandbox'), element('option', { value: 'Production' }, 'Production')]);
+  const keyId = element('input', { id: `test-key-id-${app.id}`, required: true, maxlength: 10, pattern: '[A-Z0-9]{10}', autocomplete: 'off', spellcheck: 'false' });
+  const issuerId = element('input', { id: `test-issuer-id-${app.id}`, required: true, maxlength: 36, autocomplete: 'off', spellcheck: 'false' });
+  const keyFile = element('input', { id: `test-key-file-${app.id}`, type: 'file', accept: '.p8', required: true });
+  const submit = element('button', { type: 'submit' }, 'Test Apple connection');
+  const cancel = element('button', { type: 'button', hidden: true }, 'Cancel test');
+  const fields = element('fieldset', {}, [
+    element('div', { class: 'form-grid' }, [field('Test environment', environment), field('Key ID', keyId), field('Issuer ID', issuerId), field('In-App Purchase private key (.p8)', keyFile)]), submit,
+  ]);
+  const form = element('form', { autocomplete: 'off' }, [fields, cancel, status]);
+  details.append(element('summary', {}, 'Optional: test your Apple connection'),
+    element('p', { class: 'help' }, 'Request a signed test from Apple without making a purchase. Save your webhook URL first. This verifies only the selected environment; it does not send an iPhone alert.'),
+    element('p', { class: 'help' }, 'In App Store Connect, open Users and Access → Integrations → In-App Purchase. Generate a key, download its .p8 file, and copy the Key ID and Issuer ID.'),
+    element('p', {}, element('a', {
+      class: 'button-link',
+      href: 'https://appstoreconnect.apple.com/access/integrations/api/subs',
+      target: '_blank', rel: 'noopener noreferrer',
+      'aria-label': 'Open In-App Purchase integrations (opens in a new tab)',
+    }, 'Open In-App Purchase integrations')),
+    element('p', { class: 'help' }, 'Quest sends the key to its server for this test and delivery checks. It is not saved to your account or browser storage, and is cleared when the test ends or is cancelled.'), form);
+  let controller = null;
+  cancel.addEventListener('click', () => controller?.abort());
+  details.addEventListener('toggle', () => { if (!details.open) { controller?.abort(); keyFile.value = ''; } });
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (controller) return;
+    const file = keyFile.files[0];
+    if (!file || file.size > 8192) { message(status, 'Choose an In-App Purchase .p8 file smaller than 8 KB.', 'error'); return; }
+    controller = new AbortController();
+    const signal = controller.signal;
+    const epoch = state.epoch;
+    let credentials = null;
+    const stop = () => controller?.abort();
+    const observer = new MutationObserver(() => {
+      if (!form.isConnected || form.closest('.setup-section')?.hidden || state.epoch !== epoch) stop();
+    });
+    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['hidden'] });
+    window.addEventListener('hashchange', stop);
+    window.addEventListener('pagehide', stop);
+    fields.disabled = true;
+    cancel.hidden = false;
+    message(status, 'Requesting a test from Apple…');
+    try {
+      credentials = { environment: environment.value, keyId: keyId.value.trim(), issuerId: issuerId.value.trim(), privateKey: await file.text() };
+      keyFile.value = '';
+      if (signal.aborted) throw new Error('Cancelled');
+      const result = await api(`/api/apps/${encodeURIComponent(app.id)}/apple-test`, { method: 'POST', data: credentials, signal });
+      message(status, 'Apple accepted the request. Waiting for the signed notification to reach Quest…');
+      const deadline = Date.now() + 60000;
+      while (Date.now() < deadline) {
+        await new Promise((resolve) => {
+          const done = () => { clearTimeout(timer); signal.removeEventListener('abort', done); resolve(); };
+          const timer = setTimeout(done, 3000);
+          signal.addEventListener('abort', done, { once: true });
+          if (signal.aborted) done();
+        });
+        if (signal.aborted) throw new Error('Cancelled');
+        const check = await api(`/api/apps/${encodeURIComponent(app.id)}/apple-test/status`, { method: 'POST', data: { ...credentials, testNotificationToken: result.testNotificationToken }, signal });
+        if (check.state === 'received') {
+          notify(`${credentials.environment} Apple test received and verified for “${app.name}”. No purchase was created.`, 'success');
+          await loadApps();
+          return;
+        }
+        if (check.appleDelivery) message(status, `Waiting for Quest to receive the test. Apple delivery result: ${check.appleDelivery}. ${app.source === 'revenuecat' ? 'Check RevenueCat forwarding if the test does not arrive.' : 'Check that App Store Connect has this app’s Quest webhook URL.'}`);
+      }
+      message(status, 'No matching test received within one minute. Apple may still deliver it. Check the saved URL and Activity, then retry if needed.', 'error');
+    } catch (error) {
+      if (epoch === state.epoch && form.isConnected) message(status, signal.aborted ? 'Test check cancelled. Apple may still deliver the requested notification.' : error.message, signal.aborted ? '' : 'error');
+    } finally {
+      if (credentials) credentials.privateKey = '';
+      keyFile.value = '';
+      fields.disabled = false;
+      cancel.hidden = true;
+      observer.disconnect();
+      window.removeEventListener('hashchange', stop);
+      window.removeEventListener('pagehide', stop);
+      controller = null;
+    }
+  });
+  return details;
+}
+
+function phoneTestAlert(app) {
+  const section = element('div', { class: 'phone-test' });
+  const status = element('p', { class: 'form-message', role: 'status', 'aria-live': 'polite' });
+  const select = element('select', { id: `test-phone-${app.id}` });
+  const choice = element('div', { class: 'field', hidden: true }, [element('label', { for: select.id }, 'iPhone for test alert'), select]);
+  const button = actionButton('Send test alert', async () => {
+    const epoch = state.epoch;
+    try {
+      message(status, 'Checking registered iPhones…');
+      const { devices } = await api('/api/devices');
+      if (epoch !== state.epoch || !section.isConnected) return;
+      const active = devices.filter((device) => device.active);
+      if (!active.length) { message(status, 'No iPhones registered. Sign in to Quest on your iPhone and enable notifications, then try again.'); return; }
+      let device = active.find((item) => item.id === select.value);
+      if (active.length === 1) device = active[0];
+      if (!device) {
+        select.replaceChildren(...active.map((item) => element('option', { value: item.id }, item.name)));
+        choice.hidden = false;
+        message(status, 'Choose an iPhone, then select Send test alert.');
+        return;
+      }
+      const result = await api(`/api/devices/${encodeURIComponent(device.id)}/test`, { method: 'POST' });
+      if (!result.queued) throw new Error('The server did not confirm the test alert was queued.');
+      if (epoch === state.epoch) message(status, `Test alert queued for “${device.name}”. Check your iPhone. Delivery attempts are in Settings; queued does not mean displayed.`, 'success');
+    } catch (error) { if (epoch === state.epoch) message(status, error.message, 'error'); }
+  });
+  button.disabled = !state.config.apnsConfigured;
+  section.append(element('h3', {}, 'Test iPhone delivery'),
+    element('p', { class: 'help' }, 'Send a test alert from Quest to your iPhone. This works independently of Apple webhook setup and does not verify the Apple connection.'), choice, button, status);
+  if (!state.config.apnsConfigured) message(status, 'iPhone alerts are not configured on this server yet. APNs setup is required before a test can be sent.');
+  return section;
+}
+
 function setupDetails(app) {
   const section = element('section', { class: 'setup-section', 'aria-label': `Setup for ${app.name}` });
   section.append(element('h3', {}, 'Connect Apple notifications'));
@@ -506,7 +625,7 @@ function setupDetails(app) {
     section.append(element('ol', {}, [
       element('li', {}, 'Open App Store Server Notifications using the button above.'),
       element('li', {}, 'Use Version 2 and save the production URL below. Save the sandbox URL separately for testing.'),
-      element('li', {}, 'Wait for the first signed Apple event. You can test sandbox with a sandbox purchase; Apple’s test-notification API requires separate In-App Purchase API credentials.'),
+      element('li', {}, 'Wait for the first signed Apple event. You can test sandbox with a sandbox purchase, or use the optional Apple connection test below.'),
     ]));
     section.append(element('p', { class: 'notice' }, 'If another backend already occupies these URL fields, do not overwrite it without arranging forwarding. Apple provides one URL per environment.'));
     section.append(copyField('Production webhook URL', app.webhookUrls.production));
@@ -527,6 +646,7 @@ function setupDetails(app) {
       actionButton('Create demo refund', () => createDemo(app, 'refund')),
     ]));
   }
+  section.append(appleConnectionTest(app), phoneTestAlert(app));
   section.append(element('h3', {}, 'Connection management'));
   section.append(element('div', { class: 'actions' }, [
     actionButton('Rotate webhook URLs', async () => {
@@ -723,7 +843,7 @@ function renderDevices(devices) {
   for (const device of devices) {
     const actions = element('div', { class: 'actions' });
     if (device.active) {
-      const test = actionButton('Send test push', async () => {
+      const test = actionButton('Send test alert', async () => {
         const result = await api(`/api/devices/${encodeURIComponent(device.id)}/test`, { method: 'POST' });
         if (!result.queued) throw new Error('The server did not confirm that the test push was queued.');
         notify(`Test push queued for “${device.name}”. Check the phone and refresh delivery attempts; queued does not mean displayed.`, 'success');

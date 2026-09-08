@@ -56,11 +56,20 @@ APNs delivery is separate: a real test push requires credentials and a provision
 2. Allow outbound HTTPS to Apple certificate-status services and outbound HTTP/2 to APNs. Install Apple's public root certificates using `npm run certificates`.
 3. **StoreKit directly:** paste the generated production and sandbox URLs into App Store Connect's **App Information → App Store Server Notifications**, choose **Version 2**, and save. Do not overwrite another production backend's URL.
 4. **Already using RevenueCat:** leave RevenueCat's Apple URLs in App Store Connect. Copy this service's **forwarding URL** into RevenueCat's **Apple Server Notification Forwarding URL**. The shared forwarding endpoint verifies and separates both environments.
-5. Wait for a real, signed Apple event. A sandbox purchase verifies **sandbox only**. A demo or phone test push verifies neither Apple environment. Apple API-triggered test notifications and history recovery require separate In-App Purchase credentials and are not implemented in this keyless MVP.
+5. Wait for a real, signed Apple event. A sandbox purchase verifies **sandbox only**. A demo or phone test push verifies neither Apple environment. For an immediate connection check, open **Optional: test your Apple connection** in app setup. Supply an In-App Purchase .p8 key, Key ID, and Issuer ID, then choose Sandbox or Production. Credentials are used only during the test and are not persisted. History recovery remains unimplemented.
 
 The optional Docker image can serve the API against Firestore using Application Default Credentials, but production push processing still requires the deployed Firebase functions/queue. Generate public trust certificates first and mount them read-only at `/app/certificates`. The image contains no database or private keys. Firebase Functions is the supported MVP deployment path.
 
 Never equate a public app URL with ownership. Only incoming Apple-signed app/environment-matched events update connection status. Endpoint secrets can be rotated; rotation invalidates old URLs and resets setup status.
+
+## Optional connection tests
+
+App setup offers two independent checks:
+
+- **Test Apple connection:** requests Apple’s signed TEST notification for the selected environment and checks delivery for up to one minute. Quest reports success only after the matching signed notification has reached its webhook and been committed. Apple accepting delivery to RevenueCat or another backend alone is insufficient; forwarding must reach Quest. TEST activity is not a sale and does not enqueue a phone alert. The .p8 key is held in browser memory for the bounded test, sent to the authenticated backend for each Apple API call, and cleared on completion/cancellation/navigation. No key, JWT, test token, or raw signed payload is saved to Firestore or browser storage. Closing the checker does not cancel an Apple delivery already requested.
+- **Send test alert:** sends a real queued APNs test to an active registered iPhone, with a device chooser when several are registered. It requires server APNs configuration and phone permission, and does not verify the Apple webhook. Delivery attempts are available in Settings.
+
+Generate the optional In-App Purchase key in App Store Connect → Users and Access → Integrations → In-App Purchase. Supply it again for a new test. Never enable request-body capture for these credential-bearing API routes in proxies, monitoring, or application logging. The API uses only fixed Apple hosts, short-lived app-bound ES256 tokens, bounded network requests, account ownership checks, and per-user rate limits.
 
 ## Enable actual iPhone push
 

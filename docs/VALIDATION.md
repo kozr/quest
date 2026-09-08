@@ -51,3 +51,16 @@ The sections below record historical baselines and do not override the deploymen
 - Real Apple webhook delivery, signing/provisioning, physical-device APNs, HTTPS production hosting, and the optional Docker deployment recipe remain unverified. These require the operator's credentials/infrastructure; no external app configuration or deployment was performed.
 
 The web UI and native forms are intentionally provisional per the user's instruction to defer design direction.
+
+## Optional Apple connection tests and iPhone test alerts — September 8, 2026
+
+- Added request-scoped In-App Purchase credentials and Sandbox/Production TEST requests. No key, JWT, test token, or raw Apple payload is persisted. Matching verified webhook receipts, including endpoint-generation binding, are required for successful test status.
+- App setup now exposes a separate Send test alert action, with active-device selection and explicit missing-APNs/no-phone/queued states. Settings uses the same label.
+- `npm run check`, `npm run build`, JavaScript syntax and diff checks passed. All 118 unit/API/security tests passed using isolated Firebase emulators and temporary Java 21.
+- Browser suite: 12 of 14 passed initially; the two failures expected the old button label. After updating that expectation, both desktop/mobile checks passed in a targeted rerun. All four new desktop/mobile flow checks passed, including waiting/receipt status, file clearing, cancellation, and phone selection. Desktop/mobile setup screenshots inspected; no horizontal overflow. Impeccable detector reported no findings on changed UI files.
+- Apple API and browser notification responses used synthetic fixtures. No real Apple test or physical APNs delivery was performed. The subsequent authorized production deployment succeeded (see docs/FIREBASE.md); health/config checks passed, web assets matched exactly, and test endpoints required authentication.
+
+
+### Production APNs setup follow-up
+
+Quest-only production APNs key provisioned in Secret Manager and both API/push worker redeployed successfully. Live health/config checks passed with `apnsConfigured: true`. Key scope covers `com.kozr.quest` in TestFlight/App Store builds; no physical-phone delivery was claimed.

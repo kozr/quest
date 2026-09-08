@@ -132,7 +132,7 @@ export class Store {
       if (!app || (receipt && receipt.secret!==app.webhook_secret)) throw new ServiceError(404,'Notification endpoint no longer exists.');
       if (receipt) await s.set('apps',app.id,{[event.environment==='Production' ? 'last_production_at' : 'last_sandbox_at']:event.receivedAt},true);
       if (seen) return 'duplicate';
-      if (receiptId) await s.set('notifications',receiptId,{app_id:app.id,environment:event.environment,notification_uuid:receipt!.uuid,received_at:event.receivedAt});
+      if (receiptId) await s.set('notifications',receiptId,{app_id:app.id,environment:event.environment,notification_uuid:receipt!.uuid,endpoint_hash:documentKey(receipt!.secret),received_at:event.receivedAt});
       if (previous) {
         if (signedDate>previous.signed_date) {
           const currency=event.currency ?? previous.currency;

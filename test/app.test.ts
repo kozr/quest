@@ -353,3 +353,41 @@ test('activity pagination is stable and avoids duplicate pages',async()=>{
     assert.notEqual(first.events[0].id,second.events[0].id);
   }finally{await f.close();}
 });
+
+test('optional Apple tests require ownership, correlate verified receipts and never persist credentials or create a sale on request',async()=>{
+  let calls=0;
+  const notification=verified('apple-connection-test','Sandbox','TEST');
+  notification.transaction=null;
+  const f=await fixture({verify:async(_payload,context)=>{
+    if(context.environment!=='Sandbox') throw new AppleVerificationError('invalid_signature','Wrong environment');
+    return notification;
+  },appleTest:async(_credentials,bundleId,testToken)=>{
+    calls++;assert.equal(bundleId,input.bundleId);
+    return testToken ? {signedPayload:'signed-test',sendAttempts:[{sendAttemptResult:'SUCCESS'}]} : {testNotificationToken:'test-token'};
+  }});
+  try {
+    const token=await f.register();const other=await f.register('second@example.test');const app=await f.add(token);
+    const body={environment:'Sandbox',keyId:'ABCDEFGHIJ',issuerId:'12345678-1234-4123-8123-123456789abc',privateKey:'request-only-private-key'};
+    const path=`/api/apps/${app.id}/apple-test`;
+    assert.equal((await f.request(path,{method:'POST',body})).status,401);
+    assert.equal((await f.request(path,{method:'POST',body,token:other})).status,404);
+    assert.equal(calls,0);
+    const requested=await f.request(path,{method:'POST',body,token});assert.equal(requested.status,202);
+    const statusBody={...body,testNotificationToken:requested.body.testNotificationToken};
+    assert.equal((await f.request(path+'/status',{method:'POST',body:statusBody,token})).body.state,'waiting');
+    assert.equal((await rows(f.store,'events')).length,0);
+    assert.equal((await f.request('/api/apps',{token})).body.apps[0].lastSandboxEventAt,null);
+    assert.equal((await f.request(new URL(app.webhookUrls.sandbox).pathname,{method:'POST',body:{signedPayload:'signed-test'}})).status,200);
+    const status=await f.request(path+'/status',{method:'POST',body:statusBody,token});
+    assert.equal(status.body.state,'received');assert(status.body.receivedAt);
+    const events=await rows(f.store,'events');assert.equal(events.length,1);assert.equal(events[0].kind,'test');assert.equal(events[0].isMonetary,false);
+    assert.equal((await jobs(f.store)).length,0);
+    assert.equal((await f.request(path+'/status',{method:'POST',body:{...statusBody,environment:'Production'},token})).status,400);
+    await f.request(`/api/apps/${app.id}/rotate-webhook`,{method:'POST',token});
+    assert.equal((await f.request(path+'/status',{method:'POST',body:statusBody,token})).body.state,'waiting');
+    const stored=JSON.stringify(await Promise.all(['apps','events','notifications','users','sessions','rate_limits'].map(name=>rows(f.store,name))));
+    assert(!stored.includes(body.privateKey));assert(!stored.includes(body.issuerId));assert(!stored.includes('test-token'));
+    for(let i=0;i<4;i++) assert.equal((await f.request(path,{method:'POST',body,token})).status,202);
+    assert.equal((await f.request(path,{method:'POST',body,token})).status,429);
+  } finally {await f.close();}
+});

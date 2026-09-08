@@ -125,7 +125,7 @@ test('lookup failure preserves manual entry; delivery errors and pagination rema
     createdAt: '2026-09-03T12:00:00Z', updatedAt: '2026-09-03T12:01:00Z',
   }] } }));
   await page.getByRole('link', { name: 'Settings', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Send test push', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Send test alert', exact: true })).toBeDisabled();
   await expect(page.getByText('Synthetic APNs rejection for browser testing.', { exact: true })).toBeVisible();
   await expect(page.getByText('Failed', { exact: true })).toBeVisible();
 
@@ -150,4 +150,60 @@ test('lookup failure preserves manual entry; delivery errors and pagination rema
   await expect(page.getByRole('button', { name: 'Load older activity', exact: true })).toBeHidden();
   expect(requests.some((url) => url.includes('environment=Demo') && url.includes('before=newest'))).toBeTruthy();
   await page.getByRole('button', { name: 'Sign out', exact: true }).click();
+});
+
+test('optional Apple connection test shows waiting, verifies receipt, clears key and exposes phone setup state',async({page},info)=>{
+  await register(page,info);await addApp(page,info.project.name);
+  await expect(page.getByRole('button',{name:'Send test alert',exact:true})).toBeDisabled();
+  await page.getByText('Optional: test your Apple connection',{exact:true}).click();
+  await page.getByLabel('Key ID',{exact:true}).fill('ABCDEFGHIJ');
+  await page.getByLabel('Issuer ID',{exact:true}).fill('12345678-1234-4123-8123-123456789abc');
+  await page.getByLabel('In-App Purchase private key (.p8)',{exact:true}).setInputFiles({name:'test.p8',mimeType:'application/octet-stream',buffer:Buffer.from('synthetic-private-key')});
+  await expect(page.getByLabel('Test environment',{exact:true})).toHaveValue('Sandbox');
+  let checks=0;
+  await page.route('**/api/apps/*/apple-test',async route=>{
+    expect(route.request().postDataJSON().privateKey).toBe('synthetic-private-key');
+    await route.fulfill({status:202,json:{testNotificationToken:'test-token'}});
+  });
+  await page.route('**/api/apps/*/apple-test/status',async route=>{
+    checks++;
+    await route.fulfill({json:{state:checks===1 ? 'waiting' : 'received',appleDelivery:'SUCCESS',receivedAt:checks===1 ? null : new Date().toISOString()}});
+  });
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
+  await page.screenshot({path:info.outputPath(`${info.project.name}-optional-tests.png`),fullPage:true});
+  await page.getByRole('button',{name:'Test Apple connection',exact:true}).click();
+  await expect(page.getByText('Apple accepted the request. Waiting for the signed notification to reach Quest…',{exact:true})).toBeVisible();
+  await expect(page.getByLabel('In-App Purchase private key (.p8)',{exact:true})).toHaveValue('');
+  await expect(page.getByText(/Sandbox Apple test received and verified/)).toBeVisible({timeout:15000});
+  expect(checks).toBe(2);
+  expect(await page.evaluate(()=>[localStorage.length,sessionStorage.length])).toEqual([0,0]);
+});
+
+test('Apple test cancellation clears file and stops delivery checks; phone test queues for chosen device',async({page},info)=>{
+  await page.route('**/api/config',async route=>{
+    const response=await route.fetch();await route.fulfill({json:{...await response.json(),apnsConfigured:true}});
+  });
+  await register(page,info);await addApp(page,info.project.name);
+  await page.route('**/api/devices',route=>route.fulfill({json:{devices:[{id:'phone-one',name:'My iPhone',active:true},{id:'phone-two',name:'Second iPhone',active:true}]}}));
+  let pushed='';
+  await page.route('**/api/devices/*/test',async route=>{pushed=route.request().url();await route.fulfill({status:202,json:{queued:true}});});
+  await page.getByRole('button',{name:'Send test alert',exact:true}).click();
+  await page.getByLabel('iPhone for test alert',{exact:true}).selectOption('phone-two');
+  await page.getByRole('button',{name:'Send test alert',exact:true}).click();
+  await expect(page.getByText(/Test alert queued for “Second iPhone”/)).toBeVisible();
+  expect(pushed).toContain('/phone-two/test');
+  await page.getByText('Optional: test your Apple connection',{exact:true}).click();
+  await page.getByLabel('Key ID',{exact:true}).fill('ABCDEFGHIJ');
+  await page.getByLabel('Issuer ID',{exact:true}).fill('12345678-1234-4123-8123-123456789abc');
+  await page.getByLabel('In-App Purchase private key (.p8)',{exact:true}).setInputFiles({name:'test.p8',mimeType:'application/octet-stream',buffer:Buffer.from('synthetic-private-key')});
+  await page.route('**/api/apps/*/apple-test',route=>route.fulfill({status:202,json:{testNotificationToken:'test-token'}}));
+  let checks=0;
+  await page.route('**/api/apps/*/apple-test/status',async route=>{checks++;await route.fulfill({json:{state:'waiting'}});});
+  await page.getByRole('button',{name:'Test Apple connection',exact:true}).click();
+  await expect(page.getByText(/Apple accepted the request/)).toBeVisible();
+  await page.getByRole('button',{name:'Cancel test',exact:true}).click();
+  await expect(page.getByText(/Test check cancelled/)).toBeVisible();
+  await expect(page.getByLabel('In-App Purchase private key (.p8)',{exact:true})).toHaveValue('');
+  await expect(page.getByRole('button',{name:'Test Apple connection',exact:true})).toBeEnabled();
+  expect(checks).toBe(0);
 });

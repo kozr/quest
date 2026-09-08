@@ -137,3 +137,10 @@ fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
 @media (prefers-color-scheme: dark) {
   :root { --background: #16191d; --surface: #23272c; --text: #edf0f3; --muted: #b5bdc7; --line: #515961; --action: #91c5ff; --action-text: #10253b; --error: #ff9ca2; --success: #93d8ae; }
 }
+
+.connection-test { margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--line); }
+.connection-test summary { min-height: 44px; font-weight: 600; }
+.connection-test form { margin-top: 1rem; }
+.connection-test input[type="file"] { max-width: 100%; }
+.connection-test button { margin-right: .6rem; }
+.phone-test { margin-top: 1.5rem; }

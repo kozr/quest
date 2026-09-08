@@ -4,10 +4,11 @@ import {Timestamp} from 'firebase-admin/firestore';
 import {resolve} from 'node:path';
 import {z} from 'zod';
 import type {Configuration} from './config.js';
-import {Store,newWebhookSecret,type AppRow,type DeviceRow} from './database.js';
+import {Store,newWebhookSecret,documentKey,type AppRow,type DeviceRow} from './database.js';
 import {authenticate,clearSessionCookie,createSession,rateLimit,tokenHash,type AuthenticatedRequest} from './auth.js';
 import {firebaseServices,ServiceError} from './firebase.js';
 import {AppleVerificationError,loadAppleRootCertificates,verifyAppleNotification,type AppleNotificationContext,type VerifiedAppleNotification} from './apple.js';
+import {appleTestInput,appleTestStatusInput,callAppleTest} from './apple-test.js';
 import {normalizeAppleNotification} from './normalize.js';
 import {lookupApp,safeIconUrl} from './metadata.js';
 import {ApnsClient,type PushTransport} from './apns.js';
@@ -18,6 +19,7 @@ import type {ActivityEvent,AppleEnvironment} from './types.js';
 export interface ApplicationOptions extends Configuration {
   verify?:(payload:string,context:AppleNotificationContext)=>Promise<VerifiedAppleNotification>;
   lookup?:typeof lookupApp;
+  appleTest?:typeof callAppleTest;
   pushTransport?:PushTransport|null;
   webDirectory?:string;
   /** Test-only repository injection, never selected via an HTTP parameter. */
@@ -111,6 +113,33 @@ export function createApplication(options:ApplicationOptions) {
     await store.createApp(row);res.status(201).json({app:store.appResponse(row,options.publicUrl)});
   });
   async function requireApp(req:Request) {const app=await store.getApp(String(req.params.id),authenticated(req).user.id);if(!app) throw new ServiceError(404,'App not found.');return app;}
+  app.post('/api/apps/:id/apple-test',limit('apple-test',5,60000,true),async(req,res)=>{
+    const record=await requireApp(req);
+    const input=appleTestInput.parse(req.body);
+    delete req.body.privateKey;
+    try {
+      const result=await (options.appleTest ?? callAppleTest)(input,record.bundle_id);
+      res.status(202).json({testNotificationToken:result.testNotificationToken});
+    } finally {input.privateKey='';}
+  });
+  app.post('/api/apps/:id/apple-test/status',limit('apple-test-status',30,60000,true),async(req,res)=>{
+    const record=await requireApp(req);
+    const input=appleTestStatusInput.parse(req.body);
+    delete req.body.privateKey;
+    try {
+      const result=await (options.appleTest ?? callAppleTest)(input,record.bundle_id,input.testNotificationToken);
+      let receivedAt:string|null=null;
+      if(result.signedPayload) {
+        const checked=await verify(result.signedPayload,{bundleId:record.bundle_id,appleId:record.apple_id,environment:input.environment});
+        if(checked.notification.notificationType!=='TEST') throw new ServiceError(502,'Apple returned a notification that is not a connection test.');
+        // Apple accepting delivery to another backend is not proof of delivery to Quest.
+        const receipt=await store.get<{received_at:string;endpoint_hash?:string}>('notifications',documentKey(record.id,input.environment,checked.notification.notificationUUID!));
+        const current=await requireApp(req);
+        if(current.webhook_secret===record.webhook_secret && (input.environment==='Production' ? current.last_production_at : current.last_sandbox_at)) receivedAt=receipt?.endpoint_hash===documentKey(current.webhook_secret) ? receipt.received_at : null;
+      }
+      res.json({state:receivedAt ? 'received' : 'waiting',receivedAt,appleDelivery:result.sendAttempts?.at(-1)?.sendAttemptResult ?? null});
+    } finally {input.privateKey='';}
+  });
   app.delete('/api/apps/:id',async(req,res)=>{await store.removeApp(String(req.params.id),authenticated(req).user.id);res.json({ok:true});});
   app.post('/api/apps/:id/rotate-webhook',async(req,res)=>res.json({app:store.appResponse(await store.rotateApp(String(req.params.id),authenticated(req).user.id),options.publicUrl)}));
   app.post('/api/apps/:id/demo',limit('demo',20,60000,true),async(req,res)=>{
@@ -139,7 +168,7 @@ export function createApplication(options:ApplicationOptions) {
   app.delete('/api/devices/:id',async(req,res)=>{const auth=authenticated(req);await store.disableDevice(String(req.params.id),auth.user.id,auth.sessionHash);res.json({ok:true});});
   app.post('/api/devices/:id/test',limit('push-test',10,60000,true),async(req,res)=>{
     const device=await store.get<DeviceRow>('devices',String(req.params.id));
-    if(!device?.active || device.user_id!==authenticated(req).user.id) throw new ServiceError(404,'Active device not found.');
+    if(!device?.active || device.user_id!==authenticated(req).user.id || !await store.session(device.session_hash)) throw new ServiceError(404,'Active device not found.');
     if(!transport) throw new ServiceError(503,'Phone push is not configured on this server. Set the APNs key, team ID, key ID, and app topic.');
     await store.enqueue(device.id,device.user_id);res.status(202).json({queued:true});
   });
