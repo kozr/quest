@@ -13,6 +13,23 @@ export interface FirebaseServices { app:App; db:Firestore; identity:FirebaseIden
 export class FirebaseIdentity {
   constructor(readonly auth:Auth,private apiKey:string) {}
   async signInWithApple(idToken:string,rawNonce:string):Promise<Identity> {
+    const {identity}=await this.exchangeAppleCredential(idToken,rawNonce);
+    return identity;
+  }
+  /** Reauthenticate and bind revocation to the currently signed-in account. */
+  async revokeAppleAuthorization(userId:string,idToken:string,rawNonce:string,authorizationCode:string):Promise<void> {
+    const {identity,firebaseToken}=await this.exchangeAppleCredential(idToken,rawNonce,false);
+    if(identity.user.id!==userId) throw new ServiceError(403,'Use the same Apple Account that is signed in to Questline.');
+    // Match Firebase's native iOS revocation request. Native authorization has
+    // no redirect URI. Firebase uses its configured Apple OAuth signing key.
+    const response=await fetch(`https://identitytoolkit.googleapis.com/v2/accounts:revokeToken?key=${encodeURIComponent(this.apiKey)}`,{
+      method:'POST',headers:{'Content-Type':'application/json','X-Ios-Bundle-Identifier':'com.kozr.quest'},
+      body:JSON.stringify({providerId:'apple.com',tokenType:'CODE',token:authorizationCode,idToken:firebaseToken}),
+      signal:AbortSignal.timeout(15000),redirect:'error',
+    });
+    if(!response.ok) throw new ServiceError(503,'Apple authorization could not be revoked. Your account has not been deleted. Please try again.');
+  }
+  private async exchangeAppleCredential(idToken:string,rawNonce:string,allowCreate=true):Promise<{identity:Identity;firebaseToken:string}> {
     // These untrusted claims can only REJECT a request. Firebase below verifies
     // Apple's signature, issuer, audience and nonce before admitting any user.
     try {
@@ -27,6 +44,7 @@ export class FirebaseIdentity {
       method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
         requestUri:'http://localhost', // Firebase's documented native credential exchange; not a network redirect.
         postBody:new URLSearchParams({providerId:'apple.com',id_token:idToken,nonce:rawNonce}).toString(),returnSecureToken:true,
+        ...(!allowCreate ? {autoCreate:false} : {}),
       }),signal:AbortSignal.timeout(15000),
     });
     const result=await response.json() as {idToken?:string;error?:{message?:string}};
@@ -42,7 +60,7 @@ export class FirebaseIdentity {
     try {token=await this.auth.verifyIdToken(result.idToken,true);}
     catch {throw new ServiceError(401,'Apple sign-in could not be verified. Please try again.');}
     if (token.firebase.sign_in_provider!=='apple.com' || !token.email || !token.email_verified) throw new ServiceError(401,'A verified Sign in with Apple account is required.');
-    return {user:{id:token.uid,email:token.email},authTime:token.auth_time};
+    return {identity:{user:{id:token.uid,email:token.email},authTime:token.auth_time},firebaseToken:result.idToken};
   }
   async valid(userId:string,authTime:number):Promise<User|undefined> {
     try {

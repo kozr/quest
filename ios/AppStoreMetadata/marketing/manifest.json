@@ -1,0 +1,15 @@
+{
+  "theme": "orange",
+  "background": "#F05A16",
+  "width": 1320,
+  "height": 2868,
+  "format": "PNG",
+  "locale": "en-CA",
+  "posters": [
+    "exports/iphone-6.9/01-purchase-notifications.png",
+    "exports/iphone-6.9/02-every-purchase.png",
+    "exports/iphone-6.9/03-all-your-apps.png",
+    "exports/iphone-6.9/04-choose-your-alerts.png"
+  ],
+  "uploaded": false
+}

@@ -6,7 +6,16 @@ export interface User { id: string; email: string }
 export interface Preferences {
   sales: boolean;
   refunds: boolean;
-  lifecycle: boolean;
+  lifecycle: boolean; // Legacy fallback for clients using grouped preferences.
+  renewals?: boolean;
+  trials?: boolean;
+  refundReversals?: boolean;
+  autoRenewDisabled?: boolean;
+  autoRenewEnabled?: boolean;
+  billingIssues?: boolean;
+  expirations?: boolean;
+  otherUpdates?: boolean;
+
   sandbox: boolean;
   hideAmounts: boolean;
 }
@@ -20,6 +29,7 @@ export interface ConnectedApp {
   createdAt: string;
   webhookUrls: { production: string; sandbox: string };
   forwardingUrl?: string;
+  forwarding?: {productionUrl:string|null;sandboxUrl:string|null};
   lastProductionEventAt: string | null;
   lastSandboxEventAt: string | null;
 }

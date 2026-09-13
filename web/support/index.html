@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Help and support — Questline</title>
+  <meta name="description" content="Set up Questline, keep an existing notification server, troubleshoot alerts, and delete your account.">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="site-header"><a class="service-name" href="/">Questline</a><nav aria-label="Help"><a href="/privacy/">Privacy policy</a></nav></header>
+  <main class="reading-page">
+    <h1>Help and support</h1>
+    <p>Questline brings your apps’ purchase, subscription, and refund notifications to your iPhone.</p>
+    <h2>Connect your first app</h2>
+    <ol>
+      <li>Open Questline on your iPhone and sign in with Apple. You can also choose <strong>Explore demo</strong> to try sample activity first.</li>
+      <li>Open the <a href="/">Questline website</a> on your computer. On your iPhone, choose <strong>Settings → Sign in on computer</strong>, scan the QR code, and approve only when the six-digit codes match.</li>
+      <li>Add your app in the browser using its App Store link or identifiers.</li>
+      <li>In App Store Connect, use App Store Server Notifications <strong>Version 2</strong> and paste the Production and Sandbox URLs shown by Questline into their matching fields.</li>
+      <li>Enable notifications in Questline’s iPhone Settings and use <strong>Send test push</strong>. A real Apple event verifies the app connection.</li>
+    </ol>
+    <h2>Already have a notification server?</h2>
+    <p>Before replacing your Apple URLs, copy your existing Production and Sandbox URLs. In Questline’s browser setup, open <strong>Forward to your existing server</strong>, save those URLs in the matching fields, and then point Apple at Questline. Review forwarding delivery results after an Apple test notification.</p>
+    <p>Forwarding destinations must be public HTTPS URLs. Keep tokens in those URLs private. If you use RevenueCat, keep RevenueCat as the primary receiver and configure its forwarding URL to send Apple notifications to Questline.</p>
+    <h2>An alert has not arrived</h2>
+    <ul>
+      <li>Check that the event appears in Activity and that you selected the correct Production or Sandbox environment.</li>
+      <li>Check its individual alert preference. Sandbox alerts have a separate switch.</li>
+      <li>Check iPhone notification permissions and Focus settings, then try Send test push.</li>
+      <li>A queued delivery means the server accepted it; it does not guarantee that the phone displayed it. The browser delivery log shows attempts and failures.</li>
+    </ul>
+    <h2>What is supported?</h2>
+    <p>Questline handles notifications for consumables, non-consumables, non-renewing subscriptions, and auto-renewing subscriptions. It also recognizes refunds, trials, renewal changes, billing issues, and expirations. Other valid Apple event types appear as general updates. Paid app downloads are not included.</p>
+    <p>Questline does not make purchases, grant customer entitlements, or respond to consumption-information requests for your app. Your app or backend remains responsible for those functions. Transaction amounts are not net App Store proceeds.</p>
+    <h2 id="delete-account">Delete your account</h2>
+    <p>First restore any Apple notification URLs that point to Questline to your own server’s URLs. For RevenueCat, remove its forwarding link to Questline. Otherwise Apple may continue trying a deleted endpoint.</p>
+    <p>In the iPhone app, open <strong>Settings → Delete account</strong>. Read the consequences and confirm with the same Apple Account. This revokes Apple authorization, disconnects all Questline sessions and devices, and starts removal of your stored app data. Cleanup normally completes within 24 hours. Reopen Questline to check completion.</p>
+    <p>Deleting Questline data does not remove your apps from the App Store or cancel purchases in those apps. Sign out only disconnects the current phone; it does not delete your account.</p>
+    <h2>Contact support</h2>
+    <p>Email <a href="mailto:{{SUPPORT_EMAIL}}">{{SUPPORT_EMAIL}}</a> with your app version, iOS version, and a short description of what happened. For a missing event, include its approximate time and whether it was Production or Sandbox.</p>
+    <p>Please do not send Apple passwords, signing keys, APNs tokens, full webhook URLs, or customer transaction payloads.</p>
+  </main>
+  <footer><a href="/">Questline</a> · <a href="/privacy/">Privacy policy</a></footer>
+</body>
+</html>

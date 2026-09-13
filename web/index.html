@@ -5,15 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="color-scheme" content="light dark">
     <meta name="referrer" content="no-referrer">
-    <title>IAP Notifications</title>
+    <title>Questline</title>
     <link rel="stylesheet" href="/styles.css">
     <script type="module" src="/app.js"></script>
   </head>
   <body>
-    <!-- Functional beta administration only. Visual identity and artwork are intentionally deferred. -->
+    <!-- Browser workspace for app connection and notification management. -->
     <a class="skip-link" href="#main">Skip to content</a>
     <header class="site-header">
-      <a class="service-name" href="#apps" id="service-name">IAP Notifications</a>
+      <a class="service-name" href="#apps" id="service-name">Questline</a>
       <div class="session" id="session" hidden>
         <span id="session-email"></span>
         <button type="button" id="logout-button">Sign out</button>
@@ -35,13 +35,13 @@
         <div id="pairing-panel">
           <p>Use the account on your phone to open this computer’s workspace. No password is needed here.</p>
           <ol class="pairing-instructions">
-            <li>Open IAP Notifications on your iPhone and sign in with Apple.</li>
+            <li>Open Questline on your iPhone and sign in with Apple.</li>
             <li>Go to Settings → Sign in on computer, then scan this QR code.</li>
             <li>Match the code below and approve the sign-in on your phone.</li>
           </ol>
           <div class="pairing-layout">
             <div class="pairing-image-area">
-              <img id="pairing-qr" width="240" height="240" alt="One-time sign-in QR code. Scan with IAP Notifications on your iPhone." hidden>
+              <img id="pairing-qr" width="240" height="240" alt="One-time sign-in QR code. Scan with Questline on your iPhone." hidden>
               <p id="pairing-placeholder">Preparing your QR code…</p>
             </div>
             <div class="pairing-information">
@@ -80,51 +80,81 @@
               <button type="button" class="primary" id="show-add-app" aria-expanded="false" aria-controls="add-app-section">Add app</button>
             </div>
           </div>
-          <p>Connect App Store Server Notifications V2 for in-app purchases and subscriptions. Paid app downloads are not included.</p>
-          <section id="add-app-section" class="form-section" aria-labelledby="add-app-title" hidden>
-            <h2 id="add-app-title">Add an app</h2>
-            <form id="lookup-form">
-              <div class="field">
-                <label for="lookup-url">App Store URL or numeric Apple ID <span class="optional">(optional)</span></label>
-                <div class="input-action">
-                  <input id="lookup-url" name="url" type="text" autocomplete="off" placeholder="https://apps.apple.com/…/id123456789">
-                  <button id="lookup-button" type="submit">Look up app</button>
-                </div>
-                <p class="help">Imports public app details only. You can enter the details below manually, including for an unreleased app.</p>
-              </div>
-              <p id="lookup-message" class="form-message" role="status" hidden></p>
-            </form>
-            <form id="add-app-form">
-              <div class="form-grid">
+          <p class="page-description">Manage notifications for your in-app purchases and subscriptions. Paid app downloads are not included.</p>
+          <section id="add-app-section" class="form-section" aria-label="Add app setup" hidden>
+            <ol class="add-app-progress" aria-label="App connection progress">
+              <li id="app-step-find" aria-current="step">1. Find</li>
+              <li id="app-step-confirm">2. Confirm</li>
+              <li id="app-step-connect">3. Connect</li>
+            </ol>
+            <div id="app-find-step">
+              <h2 id="add-app-title" tabindex="-1">Find your app</h2>
+              <p>Search by name or paste a link. We’ll get the app details for you.</p>
+              <form id="lookup-form">
                 <div class="field">
-                  <label for="app-name">App name</label>
-                  <input id="app-name" name="name" type="text" autocomplete="off" maxlength="80" required>
+                  <label class="visually-hidden" for="lookup-url">Find your app</label>
+                  <div class="input-action">
+                    <input id="lookup-url" name="url" type="text" enterkeyhint="search" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="App name or App Store link" aria-describedby="lookup-help">
+                    <button id="lookup-button" class="primary" type="submit">Search</button>
+                  </div>
+                  <p id="lookup-help" class="help">Name searches use the US App Store. A link works for other countries.</p>
                 </div>
-                <div class="field">
-                  <label for="app-bundle-id">Bundle ID</label>
-                  <input id="app-bundle-id" name="bundleId" type="text" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="255" pattern="[A-Za-z0-9\-]+(\.[A-Za-z0-9\-]+)+" placeholder="com.example.myapp" required>
+                <p id="lookup-message" class="form-message" role="status" hidden></p>
+                <ul id="lookup-results" class="lookup-results" aria-label="Matching apps" hidden></ul>
+              </form>
+              <details id="app-find-help" class="app-find-help">
+                <summary>Can’t find your app?</summary>
+                <p class="help">In the App Store, choose Share → Copy Link on your app’s page, then paste it above. A published app’s App Store Connect link or numeric Apple ID works too.</p>
+                <div class="actions lookup-shortcuts">
+                  <a class="button-link secondary" href="https://apps.apple.com/" target="_blank" rel="noopener noreferrer">Open App Store<span class="visually-hidden"> (opens externally)</span></a>
+                  <a class="button-link secondary" href="https://appstoreconnect.apple.com/apps" target="_blank" rel="noopener noreferrer">Open App Store Connect<span class="visually-hidden"> (opens externally)</span></a>
+                  <button id="paste-app-link" type="button">Paste copied link</button>
                 </div>
-                <div class="field">
-                  <label for="app-apple-id">Numeric Apple ID</label>
-                  <input id="app-apple-id" name="appleId" type="text" inputmode="numeric" pattern="[1-9][0-9]{0,14}" autocomplete="off" maxlength="15" required aria-describedby="apple-id-help">
-                  <p class="help" id="apple-id-help">Find this in App Store Connect → App information. This is not your Apple Account email.</p>
+                <button id="enter-app-manually" type="button" aria-controls="app-details">Enter details manually</button>
+                <p id="manual-app-help" class="help">For unpublished apps, or if search isn’t working.</p>
+              </details>
+            </div>
+            <div id="app-details" hidden>
+              <button id="app-step-back" class="text-action" type="button">Back to search</button>
+              <h2 id="app-details-title" tabindex="-1">Confirm your app</h2>
+              <div id="app-identity" class="app-identity" hidden></div>
+              <form id="add-app-form">
+                <div id="app-confirm-step">
+                  <button id="edit-app-details" class="text-action" type="button" aria-expanded="false" aria-controls="app-identity-fields">Edit details</button>
+                  <div id="app-identity-fields" class="form-grid">
+                    <div class="field">
+                      <label for="app-name">App name</label>
+                      <input id="app-name" name="name" type="text" autocomplete="off" maxlength="80" required>
+                    </div>
+                    <div class="field">
+                      <label for="app-bundle-id">Bundle ID</label>
+                      <input id="app-bundle-id" name="bundleId" type="text" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="255" pattern="[A-Za-z0-9\-]+(\.[A-Za-z0-9\-]+)+" placeholder="com.example.myapp" required>
+                    </div>
+                    <div class="field">
+                      <label for="app-apple-id">Numeric Apple ID</label>
+                      <input id="app-apple-id" name="appleId" type="text" inputmode="numeric" pattern="[1-9][0-9]{0,14}" autocomplete="off" maxlength="15" required aria-describedby="apple-id-help">
+                      <p class="help" id="apple-id-help">App Store Connect → App information → Apple ID.</p>
+                    </div>
+                  </div>
+                  <p class="help">Next, we’ll help you connect sales alerts. Finding your app doesn’t connect it yet.</p>
                 </div>
-                <div class="field">
-                  <label for="app-source">Current notification setup</label>
-                  <select id="app-source" name="source">
-                    <option value="apple">Direct from Apple</option>
-                    <option value="revenuecat">Already using RevenueCat</option>
-                  </select>
-                  <p class="help" id="source-help">You will copy this server’s URLs into App Store Connect. If an existing server already uses those URLs, stop and plan forwarding before replacing them.</p>
+                <div id="app-connect-step" hidden>
+                  <div class="field">
+                    <label for="app-source">Current notification setup</label>
+                    <select id="app-source" name="source">
+                      <option value="apple">App Store Connect</option>
+                      <option value="revenuecat">RevenueCat</option>
+                    </select>
+                    <p class="help">Use App Store Connect unless you manage purchases with RevenueCat.</p>
+                    <p class="help" id="source-help"></p>
+                  </div>
+                  <p>We’ll add this app to Questline and show you where to connect its sales alerts.</p>
                 </div>
-              </div>
-              <p class="help">No developer private key is needed to receive notifications. Adding public app details does not verify that you control the app.</p>
-              <p id="add-app-message" class="form-message" role="alert" hidden></p>
-              <div class="actions">
-                <button class="primary" id="add-app-submit" type="submit">Add app and show setup</button>
-                <button id="cancel-add-app" type="button">Cancel</button>
-              </div>
-            </form>
+                <p id="add-app-message" class="form-message" role="alert" hidden></p>
+                <button class="primary" id="add-app-submit" type="submit">Continue</button>
+              </form>
+            </div>
+            <button id="cancel-add-app" class="text-action" type="button">Cancel</button>
           </section>
           <p id="apps-message" class="form-message" role="status" hidden></p>
           <div id="app-list" aria-live="polite"></div>
@@ -167,13 +197,20 @@
             <form id="preferences-form">
               <fieldset id="preferences-fields" disabled>
                 <legend class="visually-hidden">Choose notifications</legend>
-                <label class="check-field"><input type="checkbox" name="sales"> Purchases and renewals</label>
-                <label class="check-field"><input type="checkbox" name="refunds"> Refunds and refund reversals</label>
-                <label class="check-field"><input type="checkbox" name="lifecycle"> Trials, auto-renew changes, billing issues, and expiry</label>
+                <label class="check-field"><input type="checkbox" name="sales"> New purchases</label>
+                <label class="check-field"><input type="checkbox" name="renewals"> Subscription renewals</label>
+                <label class="check-field"><input type="checkbox" name="trials"> Free trials started</label>
+                <label class="check-field"><input type="checkbox" name="refunds"> Refunds issued</label>
+                <label class="check-field"><input type="checkbox" name="refundReversals"> Refunds reversed</label>
+                <label class="check-field"><input type="checkbox" name="autoRenewDisabled"> Auto-renew turned off</label>
+                <label class="check-field"><input type="checkbox" name="autoRenewEnabled"> Auto-renew turned on</label>
+                <label class="check-field"><input type="checkbox" name="billingIssues"> Billing issues</label>
+                <label class="check-field"><input type="checkbox" name="expirations"> Subscriptions expired</label>
+                <label class="check-field"><input type="checkbox" name="otherUpdates"> Other App Store updates</label>
                 <label class="check-field"><input type="checkbox" name="sandbox"> Include sandbox notifications</label>
                 <label class="check-field"><input type="checkbox" name="hideAmounts"> Hide sale amounts in push notifications</label>
               </fieldset>
-              <p class="help">Sandbox is for testing. Demo events are always labelled separately. Hiding amounts changes push content, not the signed event history.</p>
+              <p class="help">These options control future phone alerts; all received events remain in activity. Sandbox is for testing. Demo events are always labelled separately. Hiding amounts changes push content, not the signed event history.</p>
               <p id="preferences-message" class="form-message" role="status" hidden></p>
               <button type="submit" id="save-preferences" class="primary" disabled>Save preferences</button>
             </form>
@@ -195,7 +232,7 @@
         </section>
       </div>
     </main>
-    <footer>Private beta · Setup, event history, and iPhone push delivery</footer>
+    <footer>Questline · <a href="/privacy/">Privacy policy</a> · <a href="/support/">Help and support</a></footer>
     <noscript><p class="notice">Enable JavaScript to sign in and configure this notification server.</p></noscript>
   </body>
 </html>

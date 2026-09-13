@@ -40,7 +40,7 @@ export class DeliveryWorker {
     const preferences=await this.store.preferences(device.user_id);
     if(job.event_id && (!event || !shouldNotify(event,preferences))) {await this.finish(job,'cancelled','App removed or notification preferences changed.');return;}
     let result:PushResult;
-    try {result=await this.transport.send(device,pushPayload(event,preferences),job.id);}
+    try {result=await this.transport.send(device,pushPayload(event,preferences,app?.icon_url),job.id);}
     catch {result={ok:false,retryable:true,error:'Push transport unavailable.'};}
     if(result.ok) await this.finish(job,'sent',null);
     else if(result.invalidDevice) {

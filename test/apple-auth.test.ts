@@ -4,6 +4,23 @@ import type {Auth} from 'firebase-admin/auth';
 import {FirebaseIdentity} from '../src/firebase.js';
 import {appleCredential} from './apple-auth-fixture.js';
 
+test('Apple revocation uses the verified account token and never revokes a different account',async t=>{
+  const credential=appleCredential('fixture@example.test');
+  let revocations=0;
+  t.mock.method(globalThis,'fetch',async(url,options)=>{
+    if(String(url).includes('accounts:signInWithIdp')) return new Response(JSON.stringify({idToken:'verified-firebase-token'}));
+    assert(String(url).startsWith('https://identitytoolkit.googleapis.com/v2/accounts:revokeToken?'));
+    assert.deepEqual(JSON.parse(String(options?.body)),{providerId:'apple.com',tokenType:'CODE',token:'fresh-apple-code',idToken:'verified-firebase-token'});
+    assert.equal(options?.redirect,'error');revocations++;
+    return new Response('{}');
+  });
+  const auth={verifyIdToken:async()=>({uid:'fixture',email:'fixture@example.test',email_verified:true,auth_time:123,firebase:{sign_in_provider:'apple.com'}})} as unknown as Auth;
+  const identity=new FirebaseIdentity(auth,'test-key');
+  await assert.rejects(identity.revokeAppleAuthorization('another',credential.idToken,credential.rawNonce,'fresh-apple-code'),{status:403});
+  assert.equal(revocations,0);
+  await identity.revokeAppleAuthorization('fixture',credential.idToken,credential.rawNonce,'fresh-apple-code');assert.equal(revocations,1);
+});
+
 test('Firebase exchange pins Apple and sends the raw nonce; a verified Firebase ID token is still required',async t=>{
   const credential=appleCredential('fixture@example.test');
   let verified=false;

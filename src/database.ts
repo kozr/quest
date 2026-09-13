@@ -3,10 +3,12 @@ import { FieldPath, Timestamp, type Firestore, type Transaction, type Query, typ
 import type { FirebaseIdentity } from './firebase.js';
 import { ServiceError } from './firebase.js';
 import type { ActivityEvent, ConnectedApp, Preferences, RegisteredDevice } from './types.js';
+import type {ForwardingJob,ForwardingTarget} from './forwarding.js';
 
 export interface AppRow {
   id:string; user_id:string; name:string; bundle_id:string; apple_id:string; source:'apple'|'revenuecat';
   icon_url:string|null; webhook_secret:string; created_at:string; last_production_at:string|null; last_sandbox_at:string|null; active:boolean;
+  forwarding?:{production:ForwardingTarget|null;sandbox:ForwardingTarget|null};
 }
 export interface DeviceRow {
   id:string; user_id:string; session_hash:string; token:string; name:string; environment:'production'|'sandbox';
@@ -22,6 +24,29 @@ export interface Job {
 }
 type Filter=[string,WhereFilterOp,unknown];
 export const defaultPreferences:Preferences={sales:true,refunds:true,lifecycle:false,sandbox:false,hideAmounts:false};
+const preferenceGroups = {
+  sales: ['renewals'], refunds: ['refundReversals'],
+  lifecycle: ['trials','autoRenewDisabled','autoRenewEnabled','billingIssues','expirations','otherUpdates'],
+} as const;
+export function resolvePreferences(stored: Partial<Preferences> = {}): Preferences {
+  const result = {...defaultPreferences, ...stored};
+  for (const [group, keys] of Object.entries(preferenceGroups)) {
+    for (const key of keys) result[key] = result[key] ?? result[group as keyof Preferences]!;
+  }
+  return result;
+}
+export function patchPreferences(current: Preferences, patch: Partial<Preferences>): Preferences {
+  const result = {...current, ...patch};
+  // Older clients can still change whole groups; explicit individual choices win.
+  for (const [group, keys] of Object.entries(preferenceGroups)) {
+    const value = patch[group as keyof Preferences];
+    if (value !== undefined && value !== current[group as keyof Preferences]) {
+      for (const key of keys) if (patch[key] === undefined) result[key] = value;
+    }
+  }
+  return resolvePreferences(result);
+}
+
 export const documentKey=(...parts:string[])=>createHash('sha256').update(JSON.stringify(parts)).digest('hex');
 
 /** Server-only Firestore repository. Transaction callbacks must complete reads before writes. */
@@ -56,9 +81,13 @@ export class Store {
   atomic<T>(fn:(store:Store)=>Promise<T>):Promise<T> {return this.tx ? fn(this) : this.db.runTransaction(tx=>fn(new Store(this.db,this.identity,this.prefix,tx)));}
   // Admin SDK connections belong to the process, not an individual request/store.
   close() {}
+  async accountDeleting(userId:string) {return !!await this.get('account_deletions',userId);}
+  async assertAccountActive(userId:string) {
+    if(await this.accountDeleting(userId)) throw new ServiceError(409,'Account deletion is in progress. Please wait before signing in again.');
+  }
   async getApp(id:string,userId?:string) {
     const app=await this.get<AppRow>('apps',id);
-    return app?.active && (!userId || app.user_id===userId) ? app : undefined;
+    return app?.active && (!userId || app.user_id===userId) && !await this.accountDeleting(app.user_id) ? app : undefined;
   }
   async appForSecret(secret:string) {
     const mapping=await this.get<{app_id:string}>('webhook_keys',documentKey(secret));
@@ -70,18 +99,20 @@ export class Store {
     const base=`${publicUrl}/webhooks/apple/${row.webhook_secret}`;
     return {id:row.id,name:row.name,bundleId:row.bundle_id,appleId:row.apple_id,source:row.source,iconUrl:row.icon_url,createdAt:row.created_at,
       webhookUrls:{production:`${base}/production`,sandbox:`${base}/sandbox`},forwardingUrl:`${base}/forward`,
+      forwarding:{productionUrl:row.forwarding?.production?.url ?? null,sandboxUrl:row.forwarding?.sandbox?.url ?? null},
       lastProductionEventAt:row.last_production_at,lastSandboxEventAt:row.last_sandbox_at};
   }
-  async preferences(userId:string):Promise<Preferences> {return {...defaultPreferences,...await this.get<Preferences>('preferences',userId)};}
+  async preferences(userId:string):Promise<Preferences> {return resolvePreferences(await this.get<Preferences>('preferences',userId) ?? {});}
   eventResponse(row:EventRow):ActivityEvent {const {user_id:_owner,economic_key:_key,signed_date:_signed,...event}=row;return event;}
   async session(hash:string):Promise<(SessionRow & {user:{id:string;email:string}})|undefined> {
     const row=await this.get<SessionRow>('sessions',hash);
-    if (!row || row.provider!=='apple.com' || row.expires_at<=new Date().toISOString()) return;
+    if (!row || row.provider!=='apple.com' || row.expires_at<=new Date().toISOString() || await this.accountDeleting(row.user_id)) return;
     const user=await this.identity.valid(row.user_id,row.auth_time);
     return user ? {...row,user} : undefined;
   }
   async createApp(row:AppRow) {
     await this.atomic(async s=>{
+      await s.assertAccountActive(row.user_id);
       const key=documentKey(row.user_id,row.bundle_id);
       const [owner,existing,apps]=await Promise.all([s.get('users',row.user_id),s.get('app_keys',key),s.apps(row.user_id)]);
       if (!owner) throw new ServiceError(401,'Sign in again.');
@@ -97,7 +128,7 @@ export class Store {
     await this.atomic(async s=>{
       const app=await s.getApp(id,userId);
       if (!app) throw new ServiceError(404,'App not found.');
-      await s.set('apps',id,{active:false,deleted_at:new Date().toISOString()},true);
+      await s.set('apps',id,{active:false,forwarding:{production:null,sandbox:null},deleted_at:new Date().toISOString()},true);
       await s.delete('app_keys',documentKey(userId,app.bundle_id));
       await s.delete('webhook_keys',documentKey(app.webhook_secret));
     });
@@ -119,20 +150,33 @@ export class Store {
       device_name:device.name,session_hash:device.session_hash,device_generation:device.generation,kind:event ? 'event' : 'test',state:'pending',attempts:0,
       last_error:null,next_attempt_at:Date.now(),lease_until:null,lease_id:null,created_at:now,updated_at:now};
   }
-  async saveEvent(event:ActivityEvent,userId:string,economicKey:string|null,signedDate:number,receipt?:{uuid:string;secret:string}) {
+  async saveEvent(event:ActivityEvent,userId:string,economicKey:string|null,signedDate:number,receipt?:{uuid:string;secret:string;body?:string},historical=false) {
     return this.atomic(async s=>{
       const receiptId=receipt ? documentKey(event.appId,event.environment,receipt.uuid) : undefined;
       const economicId=economicKey ? documentKey(event.appId,event.environment,economicKey) : undefined;
       const [app,seen,economic,prefs,devices]=await Promise.all([
-        s.getApp(event.appId,userId),receiptId ? s.get('notifications',receiptId) : undefined,
+        s.getApp(event.appId,userId),receiptId ? s.get<{endpoint_hash?:string|null}>('notifications',receiptId) : undefined,
         economicId ? s.get<{event_id:string}>('economic_events',economicId) : undefined,
         s.preferences(userId),s.list<DeviceRow>('devices',[['user_id','==',userId],['active','==',1]],20),
       ]);
       const previous=economic ? await s.get<EventRow>('events',economic.event_id) : undefined;
       if (!app || (receipt && receipt.secret!==app.webhook_secret)) throw new ServiceError(404,'Notification endpoint no longer exists.');
-      if (receipt) await s.set('apps',app.id,{[event.environment==='Production' ? 'last_production_at' : 'last_sandbox_at']:event.receivedAt},true);
+      if (receipt && !historical) await s.set('apps',app.id,{[event.environment==='Production' ? 'last_production_at' : 'last_sandbox_at']:event.receivedAt},true);
+      // Forward every distinct live Apple notification, including TEST and economically
+      // deduplicated updates. Historical imports never forward; a later live receipt may.
+      if(receiptId && receipt?.body && !historical && !seen?.endpoint_hash && event.environment!=='Demo') {
+        const target=app.forwarding?.[event.environment==='Production' ? 'production' : 'sandbox'];
+        if(target) {
+          const job:ForwardingJob={id:receiptId,app_id:app.id,user_id:userId,environment:event.environment,notification_uuid:receipt.uuid,
+            destination:target.url,generation:target.generation,body:receipt.body,state:'pending',attempts:0,
+            next_attempt_at:Date.now(),lease_until:null,lease_id:null,last_error:null,status_code:null,
+            created_at:event.receivedAt,updated_at:event.receivedAt,expireAt:Timestamp.fromMillis(Date.now()+7*86400000)};
+          await s.set('forwarding_jobs',job.id,job);
+        }
+      }
+      if(seen && receiptId && receipt && !historical && !seen.endpoint_hash) await s.set('notifications',receiptId,{endpoint_hash:documentKey(receipt.secret),received_at:event.receivedAt},true);
       if (seen) return 'duplicate';
-      if (receiptId) await s.set('notifications',receiptId,{app_id:app.id,environment:event.environment,notification_uuid:receipt!.uuid,endpoint_hash:documentKey(receipt!.secret),received_at:event.receivedAt});
+      if (receiptId) await s.set('notifications',receiptId,{app_id:app.id,environment:event.environment,notification_uuid:receipt!.uuid,endpoint_hash:historical ? null : documentKey(receipt!.secret),received_at:event.receivedAt});
       if (previous) {
         if (signedDate>previous.signed_date) {
           const currency=event.currency ?? previous.currency;
@@ -145,7 +189,7 @@ export class Store {
       const row:EventRow={...event,user_id:userId,economic_key:economicKey,signed_date:signedDate};
       await s.set('events',event.id,row);
       if (economicId) await s.set('economic_events',economicId,{event_id:event.id,app_id:app.id});
-      if (shouldNotify(event,prefs)) for (const device of devices) {const job=s.makeJob(device,event);await s.set('delivery_jobs',job.id,job);}
+      if (!historical && shouldNotify(event,prefs)) for (const device of devices) {const job=s.makeJob(device,event);await s.set('delivery_jobs',job.id,job);}
       return 'received';
     });
   }
@@ -165,6 +209,7 @@ export class Store {
   deviceResponse(row:DeviceRow):RegisteredDevice {return {id:row.id,name:row.name,environment:row.environment,createdAt:row.created_at,lastSeenAt:row.last_seen_at,active:!!row.active};}
   async registerDevice(userId:string,sessionHash:string,input:{token:string;name:string;environment:DeviceRow['environment']}) {
     return this.atomic(async s=>{
+      await s.assertAccountActive(userId);
       const registryId=documentKey(input.token,input.environment);
       const [registry,session,devices,owner]=await Promise.all([
         s.get<{device_id:string}>('device_tokens',registryId),s.session(sessionHash),
@@ -187,6 +232,7 @@ export class Store {
   }
   async disableDevice(id:string,userId:string,callerSession:string) {
     await this.atomic(async s=>{
+      await s.assertAccountActive(userId);
       const device=await s.get<DeviceRow>('devices',id);
       if (!device || device.user_id!==userId) throw new ServiceError(404,'Device not found.');
       await s.set('devices',id,{active:0},true);
@@ -195,6 +241,7 @@ export class Store {
   }
   async enqueue(deviceId:string,userId:string) {
     return this.atomic(async s=>{
+      await s.assertAccountActive(userId);
       const device=await s.get<DeviceRow>('devices',deviceId);
       if (!device?.active || device.user_id!==userId) throw new ServiceError(404,'Active device not found.');
       const job=s.makeJob(device,null);await s.set('delivery_jobs',job.id,job);return job.id;
@@ -204,13 +251,37 @@ export class Store {
     const rows=await this.query<Job>(this.collection('delivery_jobs').where('user_id','==',userId).orderBy('created_at','desc').limit(limit));
     return rows.map(j=>({id:j.id,eventId:j.event_id,deviceId:j.device_id,deviceName:j.device_name,state:j.state,attempts:j.attempts,lastError:j.last_error,createdAt:j.created_at,updatedAt:j.updated_at}));
   }
+  async updateForwarding(id:string,userId:string,urls:{productionUrl:string|null;sandboxUrl:string|null}) {
+    return this.atomic(async s=>{
+      const app=await s.getApp(id,userId);
+      if(!app) throw new ServiceError(404,'App not found.');
+      if(app.source==='revenuecat' && (urls.productionUrl || urls.sandboxUrl)) throw new ServiceError(400,'Keep RevenueCat as the receiver and configure its forwarding URL to Quest.');
+      const target=(key:'production'|'sandbox',url:string|null)=>url ? app.forwarding?.[key]?.url===url ? app.forwarding[key] : {url,generation:randomUUID()} : null;
+      const updated={...app,forwarding:{production:target('production',urls.productionUrl),sandbox:target('sandbox',urls.sandboxUrl)}};
+      await s.set('apps',id,updated);return updated;
+    });
+  }
+  async forwardingDeliveries(appId:string,userId:string) {
+    const rows=await this.query<ForwardingJob>(this.collection('forwarding_jobs').where('user_id','==',userId).where('app_id','==',appId).orderBy('created_at','desc').limit(20));
+    return rows.map(j=>({id:j.id,environment:j.environment,state:j.state,attempts:j.attempts,statusCode:j.status_code,lastError:j.last_error,createdAt:j.created_at,updatedAt:j.updated_at}));
+  }
 }
 export function newWebhookSecret() {return randomBytes(32).toString('base64url');}
 export function shouldNotify(event:ActivityEvent,p:Preferences):boolean {
   if (event.environment==='Demo') return true;
   if (event.environment==='Sandbox' && !p.sandbox) return false;
   if (event.kind==='test') return false;
-  if (event.kind==='refund' || event.kind==='refund_reversed') return p.refunds;
-  if (event.kind==='sale' || event.kind==='renewal') return p.sales;
-  return p.lifecycle;
+  const resolved = resolvePreferences(p);
+  switch (event.kind) {
+    case 'sale': return resolved.sales;
+    case 'renewal': return resolved.renewals!;
+    case 'refund': return resolved.refunds;
+    case 'refund_reversed': return resolved.refundReversals!;
+    case 'trial': return resolved.trials!;
+    case 'auto_renew_disabled': return resolved.autoRenewDisabled!;
+    case 'auto_renew_enabled': return resolved.autoRenewEnabled!;
+    case 'billing_issue': return resolved.billingIssues!;
+    case 'expired': return resolved.expirations!;
+    default: return resolved.otherUpdates!;
+  }
 }

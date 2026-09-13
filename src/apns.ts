@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import type { ApnsConfiguration } from './config.js';
 import type { DeviceRow } from './database.js';
 import type { ActivityEvent, Preferences } from './types.js';
+import {safeIconUrl} from './metadata.js';
 
 export interface PushResult { ok: boolean; retryable?: boolean; invalidDevice?: boolean; invalidatedAt?: number; error?: string }
 export interface PushTransport {
@@ -11,7 +12,7 @@ export interface PushTransport {
   close?(): void;
 }
 
-export function pushPayload(event: ActivityEvent | null, preferences: Preferences): Record<string,unknown> {
+export function pushPayload(event: ActivityEvent | null, preferences: Preferences, appIconUrl?: string | null): Record<string,unknown> {
   if (!event) return {aps:{alert:{title:'Phone notifications working',body:'This is a test push. Your Apple connection is verified separately.'},sound:'default'}};
   const prefix = event.environment === 'Demo' ? '[Demo] ' : event.environment === 'Sandbox' ? '[Sandbox] ' : '';
   let amount = '';
@@ -19,8 +20,10 @@ export function pushPayload(event: ActivityEvent | null, preferences: Preference
     try { amount = ` · ${new Intl.NumberFormat('en',{style:'currency',currency:event.currency,currencyDisplay:'code'}).format(event.amountMilliunits/1000)}`; }
     catch { /* Missing/unrecognized currency must never prevent the notification. */ }
   }
+  const iconUrl = safeIconUrl(appIconUrl);
   return {
-    aps:{alert:{title:`${prefix}${event.title}`,body:`${event.appName}${amount}${event.productId ? ` · ${event.productId}` : ''}`},sound:'default', 'thread-id':event.appId},
+    aps:{alert:{title:`${prefix}${event.appName}`,body:`${event.title}${amount}`},sound:'default', 'thread-id':event.appId, ...(iconUrl ? {'mutable-content':1} : {})},
+    ...(iconUrl ? {appIconUrl:iconUrl} : {}),
     eventId:event.id, appId:event.appId, environment:event.environment,
   };
 }

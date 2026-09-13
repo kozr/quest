@@ -1,0 +1,48 @@
+{
+  "purpose": "App Store Connect upload derivatives of user-approved poster concepts",
+  "size": [
+    1320,
+    2868
+  ],
+  "source": "../01-*.png through ../04-*.png",
+  "uploaded": true,
+  "files": [
+    {
+      "name": "01-your-next-sale.png",
+      "sha256": "42d7d791862d9e3d22749a9c67eec9747eda4472313e3e49945b1eb816fda9f3",
+      "bytes": 3376251
+    },
+    {
+      "name": "02-purchases-renewals-progress.png",
+      "sha256": "8b37d6306293f8d6fac24691b6dca82db0c089d83663067bcc747cfadb424a96",
+      "bytes": 2558691
+    },
+    {
+      "name": "03-all-your-apps.png",
+      "sha256": "a927594e90a1b5e4a95f02391aeb9f5aa947c842338de9c115e0e9c06eda433e",
+      "bytes": 2666645
+    },
+    {
+      "name": "04-choose-your-sales-alerts.png",
+      "sha256": "293cbaf62528f26eebe1a91337b4677277a7972c32ee80afde11238a3540e2c0",
+      "bytes": 2507049
+    }
+  ],
+  "uploaded_date": "2026-09-11",
+  "app_id": "6809939942",
+  "version": "1.0",
+  "locale": "en-CA",
+  "display": "iPhone 6.9-inch",
+  "verified": "Reloaded App Store Connect Media Manager; all eight screenshots persisted in the recorded order.",
+  "remote_order": [
+    "01-your-next-sale.png",
+    "02-purchases-renewals-progress.png",
+    "03-all-your-apps.png",
+    "04-choose-your-sales-alerts.png",
+    "01-activity.png",
+    "02-event.png",
+    "03-apps.png",
+    "04-alerts.png"
+  ],
+  "submitted_for_review": false
+}

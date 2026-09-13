@@ -55,9 +55,8 @@ struct PairingView: View {
     @ViewBuilder
     private var scanSections: some View {
         Section {
-            Text("Open the web app on your computer and choose to sign in with your phone. Scan the QR code displayed there.")
-            LabeledContent("Your server", value: model.serverSettings.url)
-            Text("You will review the account and matching code before this phone approves the browser. Never scan a login code sent by someone else.")
+            Text("Scan the sign-in QR code on your computer.")
+            Text("Never scan a sign-in code sent by someone else.")
                 .font(.caption).foregroundStyle(.secondary)
         }
         if model.pairingIsBusy {
@@ -108,7 +107,7 @@ struct PairingView: View {
             } header: {
                 Text("Or paste the QR link")
             } footer: {
-                Text("Use the full QR link copied from the computer. The six-digit code is only for comparison and cannot sign in by itself.")
+                Text("Paste the full QR link, not the six-digit code.")
             }
         }
     }
@@ -117,9 +116,8 @@ struct PairingView: View {
     private func approvalSections(_ review: PairingReview) -> some View {
         Section("Review browser sign-in") {
             LabeledContent("Sign in as", value: model.user?.email ?? "")
-            LabeledContent("Server", value: model.serverSettings.url)
             LabeledContent("Browser hint", value: review.browserName)
-            Text("The browser label is a hint, not proof of its identity.")
+            Text("Browser name is unverified.")
                 .font(.caption).foregroundStyle(.secondary)
         }
         Section {
@@ -128,12 +126,12 @@ struct PairingView: View {
                 .tracking(5)
                 .frame(maxWidth: .infinity)
                 .accessibilityLabel("Matching code: \(review.code.map(String.init).joined(separator: " "))")
-            Text("Only approve a browser you opened yourself. Compare this code with the six-digit code on that computer.")
+            Text("Only approve if you opened this browser and its code matches.")
             Toggle("The code matches my computer", isOn: $codeMatches)
                 .disabled(model.pairingIsBusy)
                 .accessibilityIdentifier("pairingCodeMatches")
         } header: {
-            Text("Compare the matching code")
+            Text("Match the code")
         }
         Section {
             TimelineView(.periodic(from: .now, by: 1)) { context in
@@ -198,7 +196,7 @@ struct PairingView: View {
         cameraDenied = false
         defer { requestingCamera = false }
         guard DataScannerViewController.isSupported else {
-            cameraMessage = "Camera QR scanning is unavailable on this device or simulator. Paste the full QR link below."
+            cameraMessage = "Scanning unavailable. Paste the QR link below."
             return
         }
         var authorized = AVCaptureDevice.authorizationStatus(for: .video) == .authorized
@@ -207,11 +205,11 @@ struct PairingView: View {
         }
         guard authorized else {
             cameraDenied = AVCaptureDevice.authorizationStatus(for: .video) == .denied
-            cameraMessage = "Camera access is disabled or restricted. You can paste the full QR link below instead."
+            cameraMessage = "Camera access unavailable. Paste the QR link below."
             return
         }
         guard DataScannerViewController.isAvailable else {
-            cameraMessage = "The camera is unavailable right now. Try again, or paste the QR link below."
+            cameraMessage = "Camera unavailable. Try again or paste the QR link."
             return
         }
         guard model.isPairingPresented, model.pairingReview == nil, !model.pairingIsBusy else { return }
@@ -302,7 +300,7 @@ private final class DesktopQRScannerController: UIViewController, DataScannerVie
         do { try scanner.startScanning() }
         catch {
             captured = true
-            onFailure("The camera could not start scanning. Paste the full QR link instead.")
+            onFailure("Camera unavailable. Paste the QR link instead.")
         }
     }
 
@@ -323,7 +321,7 @@ private final class DesktopQRScannerController: UIViewController, DataScannerVie
         guard !captured else { return }
         captured = true
         scanner.stopScanning()
-        onFailure("Camera scanning became unavailable. Paste the full QR link instead.")
+        onFailure("Camera unavailable. Paste the QR link instead.")
     }
 
     private func capture(_ value: String) {

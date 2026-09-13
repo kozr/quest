@@ -1,13 +1,14 @@
-// Minimal beta packaging asset; visual branding is intentionally deferred.
+// Questline's orange campaign icon. Keep the established white Q mark.
 import Foundation
 import CoreGraphics
 import ImageIO
 import UniformTypeIdentifiers
 let destination = CommandLine.arguments[1]
+let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
 let context = CGContext(data: nil, width: 1024, height: 1024, bitsPerComponent: 8,
-    bytesPerRow: 4096, space: CGColorSpaceCreateDeviceRGB(),
+    bytesPerRow: 4096, space: colorSpace,
     bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)!
-context.setFillColor(CGColor(red: 0.09, green: 0.12, blue: 0.20, alpha: 1))
+context.setFillColor(CGColor(colorSpace: colorSpace, components: [240.0 / 255, 90.0 / 255, 22.0 / 255, 1])!)
 context.fill(CGRect(x: 0, y: 0, width: 1024, height: 1024))
 context.setStrokeColor(CGColor(gray: 1, alpha: 1))
 context.setLineWidth(94)
@@ -19,4 +20,4 @@ context.strokePath()
 let output = CGImageDestinationCreateWithURL(URL(fileURLWithPath: destination) as CFURL,
     UTType.png.identifier as CFString, 1, nil)!
 CGImageDestinationAddImage(output, context.makeImage()!, nil)
-guard CGImageDestinationFinalize(output) else { fatalError("Could not write beta icon") }
+guard CGImageDestinationFinalize(output) else { fatalError("Could not write Questline icon") }

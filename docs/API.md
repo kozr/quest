@@ -12,6 +12,15 @@ Same-origin JSON API, all timestamps ISO-8601 UTC. Errors are `{ "error": "Usefu
 - Native requests use `Authorization: Bearer <token>`. Web uses same-origin cookies; do not put tokens in localStorage. Mutating cookie requests must have the matching Origin.
 - Apple verification is delegated to Firebase Auth over HTTPS; the returned Firebase ID token is verified and must identify `apple.com` with a verified email (including private relay). Returned opaque service tokens are **not Firebase ID tokens**. Firebase UID is the user ID. Every authenticated request checks Apple session provenance plus Firebase disabled/deleted/revoked-account and linked Apple-provider state. Legacy password sessions stop working; existing accounts/data are not deleted. No Firebase client SDK or `GoogleService-Info.plist` is required for this server-brokered MVP, but its bundle ID must still be registered with Firebase and Apple.
 
+### Account deletion
+
+- `POST /api/account/delete`, `{ idToken, rawNonce, client: "ios", authorizationCode }` → HTTP 202 `{ ok: true, status: "deleting", receipt, message }`. Requires the current service session and a fresh native Apple confirmation from the **same account**. A previously consumed sign-in nonce cannot authorize deletion. Apple authorization must be revoked successfully before deletion is accepted; an upstream failure leaves the account intact and asks the user to try again.
+- Acceptance creates a durable account marker that immediately invalidates sessions, connected-app endpoints, device registration, and future delivery work. `cleanupAccount` and `recoverAccountDeletion` remove the account’s active/inactive apps, event and delivery records, owned endpoint/device mappings, preferences, browser pairings, sessions, service profile, and Firebase Auth user in resumable batches. Requests already in flight cannot be recalled.
+- `POST /api/account/deletion-status`, `{ receipt }` → `{ status: "deleting" | "complete" | "unavailable" }` (public, rate-limited). The 43-character random receipt reveals only completion status; it cannot authenticate or expose account information. Only its hash is retained server-side. Completed receipts expire after seven days; pending cleanup requests have no TTL.
+- The phone stores the receipt in Keychain, clears its session after acceptance, and checks completion when reopened. Deleting data does not delete customers’ Apple apps or purchases. Restore Apple notification URLs/remove RevenueCat forwarding before deleting the account.
+- Native Apple token revocation requires the Firebase Apple provider’s `appleSignInConfig.codeFlowConfig` to contain the operator’s Questline-scoped Sign in with Apple key. An APNs key or App Store Connect API key is not a substitute. Configure private material directly in Firebase, never tracked source or application logs.
+- Production cleanup requires the deployed Firestore trigger/recovery schedule. Running only `src/server.ts` with Auth/Firestore emulators does not run Cloud Functions; local deletion integration tests invoke the shared cleanup routine directly.
+
 ### Phone-approved desktop sign-in
 
 The only flow is **sign in with Apple on the phone → scan the desktop QR → explicitly approve on the phone → desktop opens the account**. No desktop credential form or password fallback exists.
@@ -32,6 +41,7 @@ Origin checks, short expiry, and explicit comparison/approval reduce accidental 
 
 - `GET /api/apps` → `{ apps: ConnectedApp[] }`
 - `POST /api/apps/lookup`, `{ url }` → `{ name, bundleId, appleId, iconUrl, appStoreUrl }`. Lookup is optional and failure must allow manual entry. Only recognized Apple URLs or numeric IDs are accepted. It imports public metadata, not ownership.
+- `POST /api/apps/search`, `{ term }` → `{ apps: [{ name, developer, bundleId, appleId, iconUrl, appStoreUrl }] }`. Searches public US App Store apps with a 2–100 character title and returns up to 10 matches for explicit selection. Requires sign-in and shares the lookup rate limit. Other storefronts remain available through URL lookup; manual entry is always available.
 - `POST /api/apps`, `{ name, bundleId, appleId, source: "apple" | "revenuecat", iconUrl?: string }` → `{ app: ConnectedApp }` (201).
 - `DELETE /api/apps/:id` → `{ ok: true }`; immediately retires endpoints and hides activity. A retrying cloud trigger purges events and jobs; a tombstone remains.
 - `POST /api/apps/:id/rotate-webhook` → `{ app }`; explicit confirmation, old endpoint immediately stops accepting events.
@@ -60,9 +70,16 @@ Origin checks, short expiry, and explicit comparison/approval reduce accidental 
 - `POST /api/devices/:id/test` → `{ queued: true }` (202), or actionable 503 when server APNs credentials are missing.
 - `GET /api/deliveries?limit=30` → `{ deliveries: [{ id, eventId, deviceId, deviceName, state, attempts, lastError, createdAt, updatedAt }] }`. States pending/processing/sent/failed/cancelled. `sent` means APNs accepted, not proved device display.
 
+## Existing server forwarding
+
+- `PUT /api/apps/:id/forwarding`, `{ productionUrl: string | null, sandboxUrl: string | null }` → `{ app }`. Owner-only; both keys required; unknown fields rejected. Empty strings clear a destination. Twenty saves per user per minute. Public HTTPS port 443 only; DNS validation also runs at dispatch. Direct Apple apps only; RevenueCat apps retain the RevenueCat → Quest configuration.
+- App data includes `forwarding: { productionUrl, sandboxUrl }`, defaulting to null for existing connections. This is separate from `forwardingUrl`, which is Quest’s incoming URL for forwarded notifications.
+- `GET /api/apps/:id/forwarding/deliveries` → `{ deliveries }`. Owner-only; latest 20 records with `id`, `environment`, `state`, `attempts`, `statusCode`, `lastError`, `createdAt`, `updatedAt`. States: pending, processing, sent, failed, cancelled. Payloads, destination secrets and receiver response bodies are never returned in delivery history. Records expire after seven days via asynchronous TTL.
+- Each verified live notification gets its own durable job before HTTP 200, independent of economic dedupe and phone preferences. Original JSON/signedPayload is preserved. History/demo do not forward. Network/non-success responses retry up to 24 hours/30 attempts; HTTP 200–206 succeeds, redirects fail without following. At-least-once delivery requires receiver UUID deduplication. Destination changes invalidate queued jobs for that environment; in-flight requests may finish.
+
 ## Public webhook
 
-`POST /webhooks/apple/:secret/production|sandbox|forward`, JSON `{ signedPayload }` only. Apple V2 signature, nested signatures, bundle/app/environment checks are mandatory. Return 200 only after durable recording. Duplicate deliveries return 200 without duplicating activity or pushes. Invalid signatures → 400; unknown endpoint → 404; unavailable verifier/storage → 503. Never log secrets/payload/customer identifiers. Production and sandbox stay separate.
+`POST /webhooks/apple/:secret/production|sandbox|forward`, JSON `{ signedPayload }` only. Apple V2 signature, nested signatures, bundle/app/environment checks are mandatory. Return 200 only after durable recording. Duplicate deliveries return 200 without duplicating activity, pushes, or forwarding jobs. Invalid signatures → 400; unknown endpoint → 404; unavailable verifier/storage → 503. Never log secrets/payload/customer identifiers. Production and sandbox stay separate.
 
 ## Deferred
 

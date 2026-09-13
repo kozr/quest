@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Questline — Lock-screen marketing concept</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;background:#0a1022}body{font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue",sans-serif;color:white}main{display:flex;gap:48px;padding:48px;width:max-content}.poster{position:relative;isolation:isolate;width:1320px;height:2868px;overflow:hidden;background:#0634c5}.art{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:-2}.shade{position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,17,100,.12),transparent 60%);z-index:-1}.brand{position:absolute;left:104px;top:126px;display:flex;align-items:center;gap:22px;font-size:44px;font-weight:650;letter-spacing:-1.2px}.brand img{width:66px;height:66px;border-radius:16px;box-shadow:0 0 0 1px #ffffff30}.copy{position:absolute;left:104px;right:80px;top:318px;z-index:5}h1{font-size:140px;line-height:1.035;letter-spacing:-7px;font-weight:780;margin:0}h1 span{display:block}.accent{color:#a9efff}.phone{position:absolute;padding:15px;background:linear-gradient(130deg,#9baec9,#28394d 22%,#667c97 52%,#132239 78%,#8795ae);border:2px solid #a5b2c5;border-radius:140px;box-shadow:0 60px 100px #00103b80,0 8px 20px #0004}.screen{border:10px solid #05070b;border-radius:124px;overflow:hidden;background:#f2f2f7}.screen img{width:100%;display:block;height:auto}.one .phone{width:990px;left:175px;top:984px;transform:rotate(-4deg)}.two .copy{top:340px}.two h1{font-size:145px}.two .phone{width:980px;left:170px;top:886px;transform:rotate(4deg)}.three .phone.back{width:770px;left:651px;top:1100px;transform:rotate(9deg);filter:brightness(.94)}.three .phone.front{width:940px;left:71px;top:1020px;transform:rotate(-5deg)}.four .phone{width:990px;left:169px;top:984px;transform:rotate(3deg)}.detail{position:absolute;z-index:4;overflow:hidden;background:white;border-radius:46px;box-shadow:0 30px 80px #00154d70;border:2px solid #ffffff80}.detail img{position:absolute;max-width:none}.purchase{left:56px;top:1710px;width:1194px;height:309px;transform:rotate(-4deg)}.purchase img{width:1320px;left:-61px;top:-997px}.renewal{left:58px;top:2170px;width:1202px;height:292px;transform:rotate(-3deg)}.renewal img{width:1320px;left:-60px;top:-1380px}.sample{position:absolute;z-index:6;left:104px;top:848px;color:#d5e6ff;font-size:31px;font-weight:500;letter-spacing:.2px}.two .sample{top:711px}.three .sample,.four .sample{top:836px}.single main{padding:0;gap:0}.single .poster{display:none}.single .poster.selected{display:block}
+/* Bright orange expresses the current brief: purchases should feel exciting. */
+body[data-theme] .art{display:none}
+body[data-theme] .shade{background:radial-gradient(ellipse at 12% 0%,#ffffff0d,transparent 65%)}
+body[data-theme] .phone{background:linear-gradient(130deg,#bfc3c8,#46494f 22%,#8d9198 52%,#303238 78%,#a1a5aa);border-color:#b8bdc4;box-shadow:0 60px 100px #0005,0 8px 20px #0003}
+body[data-theme] .detail{box-shadow:0 30px 80px #0004}
+body[data-theme] .sample{color:#ffffffe0}
+body[data-theme="green"] .poster{background:#087F5B}
+body[data-theme="green"] .accent{color:#CAFFE4}
+body[data-theme="orange"] .poster{background:#F05A16}
+body[data-theme="orange"] .accent{color:#FFF3C4}
+body[data-theme="charcoal"] .poster{background:#222428}
+body[data-theme="charcoal"] .accent{color:#CFD2D7}
+</style>
+<body data-theme="orange">
+<style>main{padding:0}.one .phone{top:964px}</style><main><article class="poster one" id="01-purchase-notifications" aria-label="Purchase notifications. In real time.">
+  <img class="art" src="assets/cobalt-pulse.png" alt=""><div class="shade"></div>
+  <div class="brand"><img src="../../IAPNotifications/Assets.xcassets/AppIcon.appiconset/AppIcon.png" alt="">Questline</div>
+  <div class="copy"><h1><span>Purchase</span><span>notifications.</span><span class="accent">In real time.</span></h1></div>
+  <div class="sample">Lock-screen mockup · Sample notifications</div>
+  <div class="phone"><div class="screen"><img src="assets/lockscreen-notifications-mockup.png" alt="Illustrative lock screen showing six sample Questline purchase and renewal alerts"></div></div>
+</article></main></body></html>

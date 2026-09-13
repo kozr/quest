@@ -15,7 +15,7 @@
     "emulators": "firebase emulators:start --only auth,firestore --project demo-iap-notifications",
     "test:firebase": "firebase emulators:exec --only auth,firestore --project demo-iap-notifications \"npm test\"",
     "test:all": "firebase emulators:exec --only auth,firestore --project demo-iap-notifications \"npm test && npm run test:browser\"",
-    "test:browser": "playwright test",
+    "test:browser": "playwright test test/browser.spec.ts --project=desktop --output=test-results/ui/desktop-app && playwright test test/qr.browser.spec.ts --project=desktop --output=test-results/ui/desktop-qr && playwright test test/browser.spec.ts --project=mobile --output=test-results/ui/mobile-app && playwright test test/qr.browser.spec.ts --project=mobile --output=test-results/ui/mobile-qr",
     "check": "tsc -p tsconfig.json --noEmit",
     "certificates": "node --env-file-if-exists=.env.local --import tsx scripts/fetch-apple-certificates.ts"
   },

@@ -25,7 +25,7 @@ enum ClientError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .message(let message), .server(_, let message): return message
-        case .invalidResponse: return "The server returned an unexpected response. Check the server address and try again."
+        case .invalidResponse: return "Something went wrong while loading your account. Please try again."
         }
     }
 
@@ -92,6 +92,7 @@ private final class NoRedirectDelegate: NSObject, URLSessionTaskDelegate, @unche
 struct APIClient {
     let baseURL: URL
     let token: String?
+    var transport: URLSession? = nil
 
     private static let session: URLSession = {
         let configuration = URLSessionConfiguration.ephemeral
@@ -119,13 +120,13 @@ struct APIClient {
             request.httpBody = body
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         }
-        let (data, response) = try await Self.session.data(for: request)
+        let (data, response) = try await (transport ?? Self.session).data(for: request)
         guard let response = response as? HTTPURLResponse else { throw ClientError.invalidResponse }
         guard (200...299).contains(response.statusCode) else {
             let error = try? JSONDecoder().decode(ErrorResponse.self, from: data)
             let fallback = (300...399).contains(response.statusCode)
-                ? "The server redirected this request. Enter the final HTTPS server address; redirects are disabled to protect your session."
-                : "Server request failed (HTTP \(response.statusCode)). Try again."
+                ? "The service is temporarily unavailable. Please try again later."
+                : "This request could not be completed. Please try again."
             throw ClientError.server(status: response.statusCode, message: error?.error ?? fallback)
         }
         do { return try JSONDecoder().decode(Response.self, from: data) }

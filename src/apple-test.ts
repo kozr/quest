@@ -15,16 +15,7 @@ const statusResponse=z.object({signedPayload:z.string().max(131072).optional(),s
 export type AppleTestResponse=z.infer<typeof statusResponse> & {testNotificationToken?:string};
 
 export async function callAppleTest(input:AppleTestInput,bundleId:string,testNotificationToken?:string,request:typeof fetch=fetch):Promise<AppleTestResponse> {
-  let jwt:string;
-  try {
-    if(!input.privateKey.startsWith('-----BEGIN PRIVATE KEY-----')) throw new Error();
-    const key=createPrivateKey(input.privateKey);
-    if(key.asymmetricKeyType!=='ec' || key.asymmetricKeyDetails?.namedCurve!=='prime256v1') throw new Error();
-    const now=Math.floor(Date.now()/1000);
-    const encode=(value:object)=>Buffer.from(JSON.stringify(value)).toString('base64url');
-    const unsigned=`${encode({alg:'ES256',kid:input.keyId,typ:'JWT'})}.${encode({iss:input.issuerId,iat:now,exp:now+300,aud:'appstoreconnect-v1',bid:bundleId})}`;
-    jwt=`${unsigned}.${sign('sha256',Buffer.from(unsigned),{key,dsaEncoding:'ieee-p1363'}).toString('base64url')}`;
-  } catch {throw new ServiceError(400,'Choose a valid In-App Purchase .p8 private key (ES256).');}
+  const jwt=appleAuthorization(input,bundleId);
   const origin=input.environment==='Sandbox' ? 'https://api.storekit-sandbox.apple.com' : 'https://api.storekit.apple.com';
   const path='/inApps/v1/notifications/test'+(testNotificationToken ? `/${encodeURIComponent(testNotificationToken)}` : '');
   try {
@@ -40,4 +31,18 @@ export async function callAppleTest(input:AppleTestInput,bundleId:string,testNot
     if(error instanceof ServiceError) throw error;
     throw new ServiceError(502,'Apple did not return a usable response in time. The test may still arrive; check activity before retrying.');
   }
+}
+
+export function appleAuthorization(input:AppleTestInput,bundleId:string):string {
+  let jwt:string;
+  try {
+    if(!input.privateKey.startsWith('-----BEGIN PRIVATE KEY-----')) throw new Error();
+    const key=createPrivateKey(input.privateKey);
+    if(key.asymmetricKeyType!=='ec' || key.asymmetricKeyDetails?.namedCurve!=='prime256v1') throw new Error();
+    const now=Math.floor(Date.now()/1000);
+    const encode=(value:object)=>Buffer.from(JSON.stringify(value)).toString('base64url');
+    const unsigned=`${encode({alg:'ES256',kid:input.keyId,typ:'JWT'})}.${encode({iss:input.issuerId,iat:now,exp:now+300,aud:'appstoreconnect-v1',bid:bundleId})}`;
+    jwt=`${unsigned}.${sign('sha256',Buffer.from(unsigned),{key,dsaEncoding:'ieee-p1363'}).toString('base64url')}`;
+  } catch {throw new ServiceError(400,'Choose a valid In-App Purchase .p8 private key (ES256).');}
+  return jwt;
 }

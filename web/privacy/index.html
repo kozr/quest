@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Privacy policy — Questline</title>
+  <meta name="description" content="How Questline handles account details, purchase notifications, forwarding, and account deletion.">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="site-header"><a class="service-name" href="/">Questline</a><nav aria-label="Help"><a href="/support/">Help and support</a></nav></header>
+  <main class="reading-page">
+    <h1>Privacy policy</h1>
+    <p class="help">Effective September 10, 2026</p>
+    <p>Questline is operated by Nicholas Wong. It helps app developers view App Store Server Notifications, receive iPhone alerts, and forward notifications to an existing server. This policy covers the Questline iPhone app and its web service.</p>
+    <h2>Information we process</h2>
+    <ul>
+      <li><strong>Account information:</strong> your Apple sign-in identifier, service account identifier, and email address, including an Apple private relay address if you choose Hide My Email. We do not receive your Apple Account password.</li>
+      <li><strong>Connected apps:</strong> app names, bundle and App Store identifiers, artwork URLs, notification endpoint secrets, connection dates, and any forwarding destinations you configure.</li>
+      <li><strong>Purchase activity:</strong> notification type, transaction and product identifiers, available price and currency, Production or Sandbox environment, and event timestamps. These records describe transactions in the apps you connect, not purchases of Questline.</li>
+      <li><strong>Phone delivery:</strong> your APNs device token, device label, notification preferences, and delivery attempts and outcomes.</li>
+      <li><strong>Service security:</strong> session records, short-lived sign-in challenges, hashed replay and rate-limit records, and operational logs. Hosting providers may process IP addresses, request URLs, browser/device information, and request times.</li>
+      <li><strong>Support:</strong> information you choose to send when requesting help. Do not send passwords, signing keys, device tokens, or complete notification endpoint URLs.</li>
+    </ul>
+    <h2>How information is used</h2>
+    <p>We use this information to authenticate you, connect your apps, verify and organize Apple notifications, prevent duplicate alerts, deliver the alerts you select, retry failed deliveries, provide support, and protect the service. We do not sell personal information, use advertising SDKs, or track you across other companies’ apps or websites.</p>
+    <h2>Apple credentials and camera access</h2>
+    <p>Apple and Firebase sign-in credentials are processed temporarily to verify your identity. Account deletion uses a fresh Apple authorization code to revoke access. These credentials are not retained in our application database. The iPhone stores its service session in the device’s Keychain. The web service uses essential sign-in cookies; it does not use advertising cookies.</p>
+    <p>If you supply an App Store Server API key for an Apple connection test or history import, the key is used for that request and is not stored in the application database. Camera access is optional and only scans a computer sign-in QR code on your device. Camera images are not uploaded. You can paste the QR link instead.</p>
+    <h2>Sharing and forwarding</h2>
+    <p>Apple provides sign-in, App Store services, app artwork, and push delivery. Firebase and Google Cloud provide authentication, database storage, server processing, and delivery queues. Vercel hosts the website and routes requests. These providers process information as needed to operate those services and may process it outside your country; the Questline backend runs in the United States.</p>
+    <p>When you enable forwarding, Questline sends the original Apple-signed notification to the destination you configured. Its payload may contain additional transaction information supplied by Apple. Choose destinations you control or trust; their operators handle received data under their own policies. Turning forwarding off stops queued deliveries for that destination, although a request already in flight cannot be recalled.</p>
+    <p>We may also disclose information when required by law or necessary to protect the service and its users. Access to stored service data is restricted to authorized operation and support.</p>
+    <h2>Retention and deletion</h2>
+    <p>Account information, preferences, device records, and normalized activity are kept while your account exists. Removing a connected app starts deletion of its activity and delivery records; an inactive connection record may remain until you delete your account.</p>
+    <p>Forwarding stores the signed payload and destination temporarily for delivery and retries. They are cleared when delivery succeeds, is cancelled, or permanently fails. Retries normally end within 24 hours; a seven-day expiry provides a fallback for forwarding records. Database expiry runs asynchronously and may remove records after their expiry time.</p>
+    <p>Service sessions expire after 30 days. Computer sign-in challenges expire after two minutes, and replay-protection hashes expire after 24 hours. Rate-limit records expire when their short enforcement window ends. Hosting providers retain operational and security logs according to their configured retention policies.</p>
+    <p>To delete your account, open <strong>Settings → Delete account</strong> in the iPhone app and confirm with Apple. Once accepted, the account is disconnected immediately and background cleanup removes its data, normally within 24 hours. Reopen the app to check completion. A minimal deletion receipt remains for up to seven days after cleanup, plus asynchronous expiry time. Short-lived security records and provider logs expire separately. Information that must be retained by law may be kept for that purpose.</p>
+    <p>Before deletion, restore any App Store Server Notification URLs that point to Questline so your existing server continues receiving notifications. Deletion does not remove your apps from Apple, cancel your customers’ purchases, or erase copies already delivered to an external destination.</p>
+    <h2>Your choices</h2>
+    <p>You can change alert preferences, hide amounts in notifications, disconnect devices, disable forwarding, remove connected apps, or delete your account. You can revoke camera or notification permission in iPhone Settings. Explore demo uses sample data on your device and does not create an account or send notifications.</p>
+    <p>For questions or requests about access, correction, or deletion of your information, email <a href="mailto:{{SUPPORT_EMAIL}}">{{SUPPORT_EMAIL}}</a>. We may ask for information needed to verify account ownership. You may also have rights to contact your local privacy authority.</p>
+    <h2>Changes to this policy</h2>
+    <p>We will update this page when our practices change and update the effective date. Material changes will be communicated through the app or website.</p>
+  </main>
+  <footer><a href="/">Questline</a> · <a href="/support/">Help and support</a></footer>
+</body>
+</html>

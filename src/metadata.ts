@@ -28,3 +28,29 @@ export async function lookupApp(input: string) {
   return {name:app.trackName,bundleId:String(app.bundleId),appleId,iconUrl:safeIconUrl(String(app.artworkUrl512 ?? app.artworkUrl100 ?? '')),
     appStoreUrl:`https://apps.apple.com/${country}/app/id${appleId}`};
 }
+
+export async function searchApps(term: string) {
+  const query=term.trim();
+  if (query.length<2 || query.length>100) throw new Error('Enter an app title between 2 and 100 characters.');
+  const url=new URL('https://itunes.apple.com/search');
+  url.search=new URLSearchParams({term:query,entity:'software',media:'software',country:'us',limit:'10'}).toString();
+  const response=await fetch(url,{signal:AbortSignal.timeout(8000),redirect:'error',headers:{Accept:'application/json'}});
+  if (!response.ok) throw new Error('App Store search is unavailable. Try again or enter your app details manually.');
+  const body=await response.text();
+  if (body.length>1024*1024) throw new Error('App Store search returned too much data. Try a more specific title.');
+  const data=JSON.parse(body) as {results?: unknown};
+  if (!Array.isArray(data.results)) throw new Error('App Store search returned an unexpected response. Try again.');
+  const seen=new Set<string>();
+  return data.results.flatMap((item: unknown)=>{
+    if (!item || typeof item!=='object') return [];
+    const app=item as Record<string,unknown>;
+    const appleId=String(app.trackId);
+    if (!/^[1-9]\d{0,14}$/.test(appleId) || typeof app.trackName!=='string' || !app.trackName.trim() ||
+      typeof app.bundleId!=='string' || !/^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/.test(app.bundleId) || seen.has(appleId)) return [];
+    seen.add(appleId);
+    return [{name:app.trackName,bundleId:app.bundleId,appleId,
+      developer:typeof app.artistName==='string' ? app.artistName : typeof app.sellerName==='string' ? app.sellerName : '',
+      iconUrl:safeIconUrl(String(app.artworkUrl100 ?? app.artworkUrl512 ?? '')),
+      appStoreUrl:`https://apps.apple.com/us/app/id${appleId}`}];
+  }).slice(0,10);
+}

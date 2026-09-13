@@ -1,0 +1,65 @@
+{
+  "assetSHA256" : "49c359253e391cb728163f6f6b7916f3a4322ea0f4a580b9211b6a196ba8627a",
+  "camera" : "Orthographic; scale 2.8; position 5,4.1,6.6; target 0,0.72,0",
+  "device" : "Apple M3 Max",
+  "lighting" : "Fixed directional key 1100 and ambient fill 450; no exposure adaptation",
+  "renderer" : "SceneKit \/ Metal",
+  "renders" : [
+    {
+      "assetSHA256" : "49c359253e391cb728163f6f6b7916f3a4322ea0f4a580b9211b6a196ba8627a",
+      "environment" : "forest",
+      "lidDegrees" : 0,
+      "pose" : "closed"
+    },
+    {
+      "assetSHA256" : "49c359253e391cb728163f6f6b7916f3a4322ea0f4a580b9211b6a196ba8627a",
+      "environment" : "forest",
+      "lidDegrees" : 45,
+      "pose" : "opening"
+    },
+    {
+      "assetSHA256" : "49c359253e391cb728163f6f6b7916f3a4322ea0f4a580b9211b6a196ba8627a",
+      "environment" : "forest",
+      "lidDegrees" : 100,
+      "pose" : "open"
+    },
+    {
+      "assetSHA256" : "49c359253e391cb728163f6f6b7916f3a4322ea0f4a580b9211b6a196ba8627a",
+      "environment" : "ruins",
+      "lidDegrees" : 0,
+      "pose" : "closed"
+    },
+    {
+      "assetSHA256" : "49c359253e391cb728163f6f6b7916f3a4322ea0f4a580b9211b6a196ba8627a",
+      "environment" : "ruins",
+      "lidDegrees" : 45,
+      "pose" : "opening"
+    },
+    {
+      "assetSHA256" : "49c359253e391cb728163f6f6b7916f3a4322ea0f4a580b9211b6a196ba8627a",
+      "environment" : "ruins",
+      "lidDegrees" : 100,
+      "pose" : "open"
+    },
+    {
+      "assetSHA256" : "49c359253e391cb728163f6f6b7916f3a4322ea0f4a580b9211b6a196ba8627a",
+      "environment" : "coast",
+      "lidDegrees" : 0,
+      "pose" : "closed"
+    },
+    {
+      "assetSHA256" : "49c359253e391cb728163f6f6b7916f3a4322ea0f4a580b9211b6a196ba8627a",
+      "environment" : "coast",
+      "lidDegrees" : 45,
+      "pose" : "opening"
+    },
+    {
+      "assetSHA256" : "49c359253e391cb728163f6f6b7916f3a4322ea0f4a580b9211b6a196ba8627a",
+      "environment" : "coast",
+      "lidDegrees" : 100,
+      "pose" : "open"
+    }
+  ],
+  "repeatPNGBytesEqual" : true,
+  "scope" : "Geometry, materials, camera and lights locked. Only lid angle and surroundings change."
+}

@@ -30,7 +30,7 @@ test('signed-in phone approves QR and desktop enters that account without creden
   const pairing=await openQR(page);
   await expect(page.getByRole('heading',{name:'Sign in with your iPhone',exact:true})).toBeVisible();
   await expect(page.locator('input[type="email"], input[type="password"], #email-fallback')).toHaveCount(0);
-  await expect(page.getByText('Open IAP Notifications on your iPhone and sign in with Apple.',{exact:true})).toBeVisible();
+  await expect(page.getByText('Open Questline on your iPhone and sign in with Apple.',{exact:true})).toBeVisible();
   await expect(page.locator('#pairing-qr')).toHaveAttribute('src',/^data:image\/png;base64,/);
   expect(await page.locator('#pairing-qr').evaluate((img:HTMLImageElement)=>img.complete && img.naturalWidth>0)).toBe(true);
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);

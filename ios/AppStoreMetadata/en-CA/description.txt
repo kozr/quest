@@ -1,0 +1,18 @@
+Keep up with in-app purchases across your iOS apps. Questline brings App Store purchase, subscription, and refund updates into one activity feed, with optional notifications on your iPhone.
+
+FOLLOW YOUR IAP ACTIVITY
+See purchases of consumables, permanent unlocks, and non-renewing subscriptions, along with auto-renewing subscription purchases, renewals, trials, refunds, billing issues, and expiration updates. Keep Production, Sandbox, and Demo activity separate.
+
+CHOOSE YOUR ALERTS
+Control individual alert types and hide amounts from notifications when you prefer more privacy. Open an alert to return to the relevant activity feed.
+
+KEEP YOUR EXISTING SERVER
+Already receiving App Store Server Notifications elsewhere? Configure an existing destination so Questline can forward Apple's signed notifications to it. If you use RevenueCat, keep RevenueCat as your primary receiver and forward its Apple notifications to Questline.
+
+SET UP WITHOUT AN SDK
+Sign in with Apple on your iPhone, approve your computer's sign-in by scanning its QR code, and connect your apps in the browser. Questline receives App Store Server Notifications V2; no Questline SDK is required in your own app.
+
+EXPLORE BEFORE CONNECTING
+Use Explore demo to browse clearly labeled sample activity and try alert preferences without creating an account.
+
+Questline is a notification companion for app developers. It does not process purchases, manage customer entitlements, or report paid app downloads. Amounts reflect available transaction information, not App Store payouts or net proceeds. Delivery depends on Apple's notifications, network availability, and your device settings.

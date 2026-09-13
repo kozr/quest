@@ -391,3 +391,76 @@ test('optional Apple tests require ownership, correlate verified receipts and ne
     assert.equal((await f.request(path,{method:'POST',body,token})).status,429);
   } finally {await f.close();}
 });
+
+test('history imports are authenticated, deduplicated, silent and do not verify webhook delivery',async()=>{
+  let calls=0;
+  const windows:any[]=[];
+  const f=await fixture({verify:async(payload)=>verified(payload),appleHistory:async(_input,_bundle,window)=>{
+    calls++;windows.push(window);
+    return {hasMore:!window.paginationToken,paginationToken:window.paginationToken?undefined:'second',notificationHistory:[{signedPayload:'historical-sale'}]};
+  }});
+  try {
+    const token=await f.register();const app=await f.add(token);
+    await f.request('/api/devices',{method:'POST',token,body:{token:'7'.repeat(64),name:'Phone',environment:'sandbox'}});
+    const body={environment:'Production',keyId:'ABCDEFGHIJ',issuerId:'12345678-1234-4123-8123-123456789abc',privateKey:'test-key'};
+    const url=`/api/apps/${app.id}/import-history`;
+    assert.equal((await f.request(url,{method:'POST',body})).status,401);
+    const other=await f.register('second@example.test');
+    assert.equal((await f.request(url,{method:'POST',token:other,body})).status,404);
+    assert.equal(calls,0);
+    const first=await f.request(url,{method:'POST',token,body});
+    assert.equal(first.status,200);assert.equal(first.body.imported,1);assert(first.body.cursor);
+    const second=await f.request(url,{method:'POST',token,body:{...body,cursor:first.body.cursor}});
+    assert.equal(second.body.duplicates,1);assert.equal(second.body.cursor,null);
+    assert.equal(windows[0].startDate,windows[1].startDate);
+    assert.equal((await f.request('/api/events',{token})).body.events.length,1);
+    assert.equal((await jobs(f.store)).length,0);
+    assert.equal((await f.request('/api/apps',{token})).body.apps[0].lastProductionEventAt,null);
+    assert.equal((await f.request(url,{method:'POST',token,body:{...body,cursor:first.body.cursor+'bad'}})).status,400);
+    await f.request(new URL(app.webhookUrls.production).pathname,{method:'POST',body:{signedPayload:'historical-sale'}});
+    assert.equal((await jobs(f.store)).length,0);
+    assert.notEqual((await f.request('/api/apps',{token})).body.apps[0].lastProductionEventAt,null);
+    const stored=JSON.stringify(await rows(f.store,'notifications'));
+    assert(!stored.includes('test-key'));assert(!stored.includes('signedPayload'));
+  } finally {await f.close();}
+});
+
+test('history verifies all payloads before writes and skips connection tests',async()=>{
+  let invalid=true;
+  const f=await fixture({verify:async(payload)=>{
+    if(payload==='bad' && invalid) throw new AppleVerificationError('invalid_signature','Invalid signature');
+    return verified(payload,'Production',payload==='bad'?'TEST':'ONE_TIME_CHARGE');
+  },appleHistory:async()=>({hasMore:false,notificationHistory:[{signedPayload:'good'},{signedPayload:'bad'}]})});
+  try {
+    const token=await f.register();const app=await f.add(token);
+    const body={environment:'Production',keyId:'ABCDEFGHIJ',issuerId:'12345678-1234-4123-8123-123456789abc',privateKey:'test-key'};
+    const url=`/api/apps/${app.id}/import-history`;
+    assert.equal((await f.request(url,{method:'POST',token,body})).status,400);
+    assert.equal((await rows(f.store,'events')).length,0);
+    invalid=false;
+    const result=await f.request(url,{method:'POST',token,body});
+    assert.equal(result.body.imported,1);assert.equal(result.body.skipped,1);
+    assert.equal((await rows(f.store,'notifications')).length,1);
+  } finally {await f.close();}
+});
+
+test('app title search requires authentication and validates the query before searching',async()=>{
+  const terms:string[]=[];
+  const f=await fixture({searchApps:async term=>{
+    terms.push(term);
+    return [{name:'Sample Title',developer:'Sample Developer',bundleId:'com.example.sample',appleId:'123',iconUrl:null,appStoreUrl:'https://apps.apple.com/us/app/id123'}];
+  }});
+  try {
+    assert.equal((await f.request('/api/apps/search',{method:'POST',body:{term:'Sample'}})).status,401);
+    const token=await f.register();
+    for(const term of ['', 'a', 'a'.repeat(101)]) {
+      assert.equal((await f.request('/api/apps/search',{method:'POST',token,body:{term}})).status,400);
+    }
+    assert.equal(terms.length,0);
+    const result=await f.request('/api/apps/search',{method:'POST',token,body:{term:'  Sample Title  '}});
+    assert.equal(result.status,200);
+    assert.deepEqual(terms,['Sample Title']);
+    assert.equal(result.body.apps[0].developer,'Sample Developer');
+    assert.equal((await f.request('/api/apps',{token})).body.apps.length,0);
+  } finally {await f.close();}
+});

@@ -1,5 +1,8 @@
 const $ = (id) => document.getElementById(id);
-const preferenceKeys = ['sales', 'refunds', 'lifecycle', 'sandbox', 'hideAmounts'];
+const nativeDashboard = new URLSearchParams(location.search).get('client') === 'ios' &&
+  typeof window.webkit?.messageHandlers?.questline?.postMessage === 'function';
+let appliedAppLink = null;
+const preferenceKeys = ['sales', 'renewals', 'trials', 'refunds', 'refundReversals', 'autoRenewDisabled', 'autoRenewEnabled', 'billingIssues', 'expirations', 'otherUpdates', 'sandbox', 'hideAmounts'];
 const state = {
   config: null,
   user: null,
@@ -10,6 +13,7 @@ const state = {
   appsBusy: false,
   openAppId: null,
   lookupIconUrl: null,
+  setupProgress: new Map(),
   events: [],
   nextCursor: null,
   eventFilters: { appId: '', environment: 'Production' },
@@ -21,6 +25,7 @@ const state = {
   preferencesDirty: false,
 };
 let fieldSequence = 0;
+const appLookup = { timer: null, controller: null, generation: 0, lastInput: null };
 const pairing = {
   current: null, status: 'idle', generation: 0, starting: false,
   task: null, cancellation: null, timer: null, countdown: null, controller: null, suspended: false,
@@ -54,12 +59,12 @@ function notify(text, type = '') {
   message('global-message', text, type);
 }
 
-async function api(path, { method = 'GET', data, allowUnauthorized = false, signal } = {}) {
+async function api(path, { method = 'GET', data, allowUnauthorized = false, signal, timeoutMs = 15000 } = {}) {
   const controller = new AbortController();
   const abort = () => controller.abort();
   if (signal?.aborted) controller.abort();
   signal?.addEventListener('abort', abort, { once: true });
-  const timeout = setTimeout(() => controller.abort(), 15000);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   const epoch = state.epoch;
   try {
     const response = await fetch(path, {
@@ -281,7 +286,7 @@ async function performStartPairing() {
         return;
       }
       if (error.status === 409 && await recoverExistingSession(generation)) return;
-      finishPairing('error', `${error.message} Get a new QR code to try again, or use email instead.`, 'error');
+      finishPairing('error', `${error.message} Get a new QR code to try again.`, 'error');
     } finally {
       pairingControls();
     }
@@ -388,6 +393,8 @@ function copyField(label, value) {
 }
 
 function showSignedOut() {
+  cancelAppLookup();
+  appliedAppLink = null;
   resetPairing();
   $('pairing-panel').hidden = false;
   state.epoch += 1;
@@ -403,6 +410,7 @@ function showSignedOut() {
   state.preferencesDirty = false;
   state.eventRequest += 1;
   state.openAppId = null;
+  state.setupProgress.clear();
   state.lookupIconUrl = null;
   state.nextCursor = null;
   state.eventFilters = { appId: '', environment: 'Production' };
@@ -411,6 +419,7 @@ function showSignedOut() {
   $('session-email').textContent = '';
   for (const id of ['app-list', 'event-list', 'device-list', 'delivery-list', 'server-address']) $(id).replaceChildren();
   $('add-app-form').reset();
+  resetAppDetails();
   $('lookup-form').reset();
   $('add-app-section').hidden = true;
   $('show-add-app').setAttribute('aria-expanded', 'false');
@@ -424,6 +433,13 @@ function showSignedOut() {
   $('workspace').hidden = true;
   $('session').hidden = true;
   $('auth-view').hidden = false;
+  if (nativeDashboard) {
+    $('pairing-panel').hidden = true;
+    $('auth-title').textContent = 'Return to Questline';
+    $('auth-view').querySelector(':scope > p.help').textContent = 'Your session ended. Close this view and sign in again in the app.';
+    window.webkit.messageHandlers.questline.postMessage('authenticationRequired');
+    return;
+  }
   void startPairing();
 }
 
@@ -437,13 +453,14 @@ async function showSignedIn(user) {
   $('unavailable-view').hidden = true;
   $('workspace').hidden = false;
   $('session').hidden = false;
+  $('logout-button').hidden = nativeDashboard;
   notify('');
   await loadApps();
   if (state.user) await selectSection(sectionFromHash(), false);
 }
 
 function sectionFromHash() {
-  const section = location.hash.slice(1);
+  const section = location.hash.slice(1).split('?')[0];
   return ['apps', 'activity', 'settings'].includes(section) ? section : 'apps';
 }
 
@@ -459,6 +476,28 @@ async function selectSection(section, focus = true) {
   if (focus) $(`${section}-title`).focus();
   if (section === 'activity' && !state.eventsLoaded) await loadEvents();
   if (section === 'settings' && !state.settingsLoaded) await loadSettings();
+  if (section === 'apps') applyAppLink();
+}
+
+// Quick links carry only a destination, never account credentials. Resolve app IDs
+// against this signed-in account after loading, including after a network retry.
+function applyAppLink() {
+  if (!state.user || !state.appsLoaded || sectionFromHash() !== 'apps' || appliedAppLink === location.hash) return;
+  appliedAppLink = location.hash;
+  const query = new URLSearchParams(location.hash.split('?').slice(1).join('?'));
+  if (query.get('add') === '1') {
+    toggleAddApp(true);
+    $('add-app-section').scrollIntoView({ block: 'start' });
+  } else if (query.has('app')) {
+    const id = query.get('app');
+    if (!state.apps.some(app => app.id === id)) {
+      notify('This app is no longer available in your account. Choose an app below.', 'error');
+      return;
+    }
+    state.openAppId = id;
+    renderApps();
+    $(`setup-${id}`)?.scrollIntoView({ block: 'start' });
+  }
 }
 
 function updateAppFilter() {
@@ -480,30 +519,59 @@ function connectionStatus(label, date) {
   ]);
 }
 
-function appleConnectionTest(app) {
-  const details = element('details', { class: 'connection-test' });
+// UI progress is scoped to the signed-in session, separate from verified connection status.
+function setupStep(app, key, title, { completed = '', open = true, verified = false, number, hint = '' } = {}) {
+  const id = `${app.id}:${key}`;
+  const saved = state.setupProgress.get(id);
+  const done = completed || saved?.completed || '';
+  const label = element('span', { class: 'step-status' }, done || hint);
+  const newlyVerified = verified && !saved?.verified;
+  const summary = element('summary', {}, [
+    number ? element('span', { class: 'step-number', 'aria-hidden': 'true' }, number) : null,
+    element('span', { class: 'step-heading' }, [element('h3', {}, title), label]),
+  ]);
+  const details = element('details', { class: 'setup-step', 'data-step': key, 'data-completed': String(Boolean(done)), open: newlyVerified ? false : saved?.open ?? (!(saved?.completed || completed) && open) }, summary);
+  details.addEventListener('toggle', () => {
+    state.setupProgress.set(id, { completed: details.dataset.completed === 'true' ? label.textContent : '', open: details.open, verified });
+  });
+  const complete = (text) => {
+    label.textContent = text;
+    details.dataset.completed = 'true';
+    state.setupProgress.set(id, { completed: text, open: false, verified });
+    const hadFocus = details.contains(document.activeElement);
+    details.open = false;
+    if (hadFocus) summary.focus();
+    details.dispatchEvent(new CustomEvent('setupcomplete', { bubbles: true, detail: { key, advance: hadFocus } }));
+  };
+  return { details, complete };
+}
+
+function appleConnectionTest(app, history = false) {
+  const { details, complete } = setupStep(app, history ? 'apple-history' : 'apple-test', history ? 'Import past notifications' : 'Optional: test your Apple connection', { open: false });
+  details.classList.add('connection-test');
   const status = element('p', { class: 'form-message', role: 'status', 'aria-live': 'polite' });
   const field = (label, control) => element('div', { class: 'field' }, [element('label', { for: control.id }, label), control]);
-  const environment = element('select', { id: `test-environment-${app.id}` }, [element('option', { value: 'Sandbox' }, 'Sandbox'), element('option', { value: 'Production' }, 'Production')]);
-  const keyId = element('input', { id: `test-key-id-${app.id}`, required: true, maxlength: 10, pattern: '[A-Z0-9]{10}', autocomplete: 'off', spellcheck: 'false' });
-  const issuerId = element('input', { id: `test-issuer-id-${app.id}`, required: true, maxlength: 36, autocomplete: 'off', spellcheck: 'false' });
-  const keyFile = element('input', { id: `test-key-file-${app.id}`, type: 'file', accept: '.p8', required: true });
-  const submit = element('button', { type: 'submit' }, 'Test Apple connection');
-  const cancel = element('button', { type: 'button', hidden: true }, 'Cancel test');
+  const environment = element('select', { id: `${history ? 'history' : 'test'}-environment-${app.id}` }, [element('option', { value: 'Sandbox' }, 'Sandbox'), element('option', { value: 'Production' }, 'Production')]);
+  const keyId = element('input', { id: `${history ? 'history' : 'test'}-key-id-${app.id}`, required: true, maxlength: 10, pattern: '[A-Z0-9]{10}', autocomplete: 'off', spellcheck: 'false' });
+  const issuerId = element('input', { id: `${history ? 'history' : 'test'}-issuer-id-${app.id}`, required: true, maxlength: 36, autocomplete: 'off', spellcheck: 'false' });
+  const keyFile = element('input', { id: `${history ? 'history' : 'test'}-key-file-${app.id}`, type: 'file', accept: '.p8', required: true });
+  if (history) environment.value = 'Production';
+  const submit = element('button', { type: 'submit' }, history ? 'Import past notifications' : 'Test Apple connection');
+  const cancel = element('button', { type: 'button', hidden: true }, history ? 'Stop import' : 'Cancel test');
   const fields = element('fieldset', {}, [
-    element('div', { class: 'form-grid' }, [field('Test environment', environment), field('Key ID', keyId), field('Issuer ID', issuerId), field('In-App Purchase private key (.p8)', keyFile)]), submit,
+    element('div', { class: 'form-grid' }, [field(history ? 'Import environment' : 'Test environment', environment), field(history ? 'Import Key ID' : 'Key ID', keyId), field(history ? 'Import Issuer ID' : 'Issuer ID', issuerId), field(history ? 'Import private key (.p8)' : 'In-App Purchase private key (.p8)', keyFile)]), submit,
   ]);
   const form = element('form', { autocomplete: 'off' }, [fields, cancel, status]);
-  details.append(element('summary', {}, 'Optional: test your Apple connection'),
-    element('p', { class: 'help' }, 'Request a signed test from Apple without making a purchase. Save your webhook URL first. This verifies only the selected environment; it does not send an iPhone alert.'),
+  details.append(
+    element('p', { class: 'help' }, history ? 'Imports all available notifications from the past 180 days in production or 30 days in sandbox. Duplicates are skipped and no phone alerts are sent. Only notifications Apple previously attempted to send are available.' : 'Request a signed test from Apple without making a purchase. Save your webhook URL first. This verifies only the selected environment; it does not send an iPhone alert.'),
     element('p', { class: 'help' }, 'In App Store Connect, open Users and Access → Integrations → In-App Purchase. Generate a key, download its .p8 file, and copy the Key ID and Issuer ID.'),
     element('p', {}, element('a', {
       class: 'button-link',
       href: 'https://appstoreconnect.apple.com/access/integrations/api/subs',
       target: '_blank', rel: 'noopener noreferrer',
-      'aria-label': 'Open In-App Purchase integrations (opens in a new tab)',
+      'aria-label': history ? 'Open integrations for history import (opens in a new tab)' : 'Open In-App Purchase integrations (opens in a new tab)',
     }, 'Open In-App Purchase integrations')),
-    element('p', { class: 'help' }, 'Quest sends the key to its server for this test and delivery checks. It is not saved to your account or browser storage, and is cleared when the test ends or is cancelled.'), form);
+    element('p', { class: 'help' }, 'Quest uses the key only for this operation. It is not saved to your account or browser storage, and is cleared when the operation ends or is cancelled.'), form);
   let controller = null;
   cancel.addEventListener('click', () => controller?.abort());
   details.addEventListener('toggle', () => { if (!details.open) { controller?.abort(); keyFile.value = ''; } });
@@ -516,6 +584,8 @@ function appleConnectionTest(app) {
     const signal = controller.signal;
     const epoch = state.epoch;
     let credentials = null;
+    let imported = 0, duplicates = 0, skipped = 0;
+    let failed = false;
     const stop = () => controller?.abort();
     const observer = new MutationObserver(() => {
       if (!form.isConnected || form.closest('.setup-section')?.hidden || state.epoch !== epoch) stop();
@@ -525,11 +595,32 @@ function appleConnectionTest(app) {
     window.addEventListener('pagehide', stop);
     fields.disabled = true;
     cancel.hidden = false;
-    message(status, 'Requesting a test from Apple…');
+    submit.textContent = history ? 'Importing…' : 'Testing…';
+    message(status, history ? 'Requesting notification history from Apple. This may take up to 30 seconds per page…' : 'Requesting a test from Apple…');
     try {
       credentials = { environment: environment.value, keyId: keyId.value.trim(), issuerId: issuerId.value.trim(), privateKey: await file.text() };
       keyFile.value = '';
       if (signal.aborted) throw new Error('Cancelled');
+      if (history) {
+        let cursor;
+        do {
+          if (signal.aborted) throw new Error('Cancelled');
+          const page = await api(`/api/apps/${encodeURIComponent(app.id)}/import-history`, { method: 'POST', data: { ...credentials, ...(cursor ? { cursor } : {}) }, signal, timeoutMs: 55000 });
+          imported += page.imported; duplicates += page.duplicates; skipped += page.skipped;
+          cursor = page.cursor;
+          message(status, `Imported ${imported} notifications. Skipped ${duplicates} duplicates and ${skipped} connection tests.${cursor ? ' Loading more…' : ''}`);
+          if (cursor) await new Promise(resolve => {
+            const done = () => { clearTimeout(timer); signal.removeEventListener('abort', done); resolve(); };
+            const timer = setTimeout(done, 600);
+            signal.addEventListener('abort', done, { once: true });
+            if (signal.aborted) done();
+          });
+        } while (cursor);
+        message(status, imported + duplicates + skipped === 0
+          ? 'No past notifications are available from Apple for this environment.'
+          : `Import complete. Added ${imported} notifications; skipped ${duplicates} duplicates and ${skipped} connection tests. View them in Activity. No phone alerts were sent.`);
+        return;
+      }
       const result = await api(`/api/apps/${encodeURIComponent(app.id)}/apple-test`, { method: 'POST', data: credentials, signal });
       message(status, 'Apple accepted the request. Waiting for the signed notification to reach Quest…');
       const deadline = Date.now() + 60000;
@@ -543,6 +634,7 @@ function appleConnectionTest(app) {
         if (signal.aborted) throw new Error('Cancelled');
         const check = await api(`/api/apps/${encodeURIComponent(app.id)}/apple-test/status`, { method: 'POST', data: { ...credentials, testNotificationToken: result.testNotificationToken }, signal });
         if (check.state === 'received') {
+          complete(`${credentials.environment} verified`);
           notify(`${credentials.environment} Apple test received and verified for “${app.name}”. No purchase was created.`, 'success');
           await loadApps();
           return;
@@ -551,11 +643,18 @@ function appleConnectionTest(app) {
       }
       message(status, 'No matching test received within one minute. Apple may still deliver it. Check the saved URL and Activity, then retry if needed.', 'error');
     } catch (error) {
-      if (epoch === state.epoch && form.isConnected) message(status, signal.aborted ? 'Test check cancelled. Apple may still deliver the requested notification.' : error.message, signal.aborted ? '' : 'error');
+      failed = true;
+      if (epoch === state.epoch && form.isConnected) {
+        const description = history
+          ? `${signal.aborted ? 'Import stopped.' : error.message} ${imported ? `${imported} notifications confirmed imported.` : 'No notifications confirmed imported.'} Choose your .p8 file again, then select “Retry import”. Any unfinished request may still complete; duplicates are skipped.`
+          : signal.aborted ? 'Test check cancelled. Apple may still deliver the requested notification.' : error.message;
+        message(status, description, signal.aborted ? '' : 'error');
+      }
     } finally {
       if (credentials) credentials.privateKey = '';
       keyFile.value = '';
       fields.disabled = false;
+      submit.textContent = history ? (failed ? 'Retry import' : 'Import past notifications') : 'Test Apple connection';
       cancel.hidden = true;
       observer.disconnect();
       window.removeEventListener('hashchange', stop);
@@ -567,7 +666,8 @@ function appleConnectionTest(app) {
 }
 
 function phoneTestAlert(app) {
-  const section = element('div', { class: 'phone-test' });
+  const { details: section, complete } = setupStep(app, 'phone-test', 'Test iPhone delivery', { number: 2, open: Boolean(app.lastProductionEventAt || state.setupProgress.get(`${app.id}:urls`)?.completed), hint: state.config.apnsConfigured ? 'Send a test alert to your phone' : 'Unavailable · Server setup needed' });
+  section.classList.add('phone-test');
   const status = element('p', { class: 'form-message', role: 'status', 'aria-live': 'polite' });
   const select = element('select', { id: `test-phone-${app.id}` });
   const choice = element('div', { class: 'field', hidden: true }, [element('label', { for: select.id }, 'iPhone for test alert'), select]);
@@ -589,69 +689,169 @@ function phoneTestAlert(app) {
       }
       const result = await api(`/api/devices/${encodeURIComponent(device.id)}/test`, { method: 'POST' });
       if (!result.queued) throw new Error('The server did not confirm the test alert was queued.');
-      if (epoch === state.epoch) message(status, `Test alert queued for “${device.name}”. Check your iPhone. Delivery attempts are in Settings; queued does not mean displayed.`, 'success');
+      if (epoch === state.epoch && section.isConnected) {
+        message(status, `Test alert queued for “${device.name}”. Check your iPhone. Delivery attempts are in Settings; queued does not mean displayed.`, 'success');
+        complete('Test queued · Check iPhone');
+      }
     } catch (error) { if (epoch === state.epoch) message(status, error.message, 'error'); }
   });
   button.disabled = !state.config.apnsConfigured;
-  section.append(element('h3', {}, 'Test iPhone delivery'),
+  section.append(
     element('p', { class: 'help' }, 'Send a test alert from Quest to your iPhone. This works independently of Apple webhook setup and does not verify the Apple connection.'), choice, button, status);
   if (!state.config.apnsConfigured) message(status, 'iPhone alerts are not configured on this server yet. APNs setup is required before a test can be sent.');
   return section;
 }
 
+function forwardingSettings(app) {
+  const configured = app.forwarding?.productionUrl || app.forwarding?.sandboxUrl;
+  const section = element('details', { class: 'setup-step forwarding-settings', open: !!configured });
+  const disclosure = element('span', { class: 'forwarding-disclosure' }, configured ? 'Close settings' : 'Open settings');
+  section.append(element('summary', {}, [
+    element('span', { class: 'forwarding-heading' }, [
+      element('strong', {}, 'Forward to your existing server'),
+      element('span', { class: 'forwarding-caution' }, 'Before replacing existing URLs: save them here so your current server keeps receiving notifications.'),
+    ]),
+    disclosure,
+  ]));
+  section.addEventListener('toggle', () => { disclosure.textContent = section.open ? 'Close settings' : 'Open settings'; });
+  const helpId = `forward-help-${app.id}`;
+  section.append(element('p', { class: 'help', id: helpId }, 'Already have server URLs in App Store Connect? Save them here first, then replace them in App Store Connect with Quest’s URLs below. Your server will receive the original signed Apple V2 notifications, including connection tests.'));
+  const form = element('form');
+  const inputs = {};
+  for (const environment of ['production', 'sandbox']) {
+    const id = `forward-${environment}-${app.id}`;
+    inputs[environment] = element('input', { id, type: 'url', inputmode: 'url', autocomplete: 'off', spellcheck: 'false', maxlength: 2048,
+      value: app.forwarding?.[`${environment}Url`] || '', placeholder: `https://your-server.com/apple/${environment}`, 'aria-describedby': helpId });
+    form.append(element('div', { class: 'field' }, [element('label', { for: id }, `Existing ${environment} server URL`), inputs[environment]]));
+  }
+  form.append(element('p', { class: 'help' }, 'Each URL is optional. Use a public HTTPS endpoint that accepts Apple V2 notifications. Leave an environment blank to turn its forwarding off; sandbox never falls back to production.'));
+  const save = element('button', { type: 'submit' }, 'Save forwarding');
+  const status = element('p', { class: 'form-message', role: 'status', 'aria-live': 'polite', hidden: true });
+  form.append(save, status);
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (save.disabled) return;
+    const epoch = state.epoch;
+    save.disabled = true;
+    message(status, 'Saving forwarding URLs…');
+    try {
+      const { app: updated } = await api(`/api/apps/${encodeURIComponent(app.id)}/forwarding`, { method: 'PUT', data: {
+        productionUrl: inputs.production.value.trim() || null, sandboxUrl: inputs.sandbox.value.trim() || null,
+      } });
+      if (epoch !== state.epoch || !section.isConnected) return;
+      state.apps = state.apps.map((current) => current.id === updated.id ? updated : current);
+      for (const environment of ['production', 'sandbox']) inputs[environment].value = updated.forwarding?.[`${environment}Url`] || '';
+      message(status, updated.forwarding?.productionUrl || updated.forwarding?.sandboxUrl
+        ? 'Forwarding saved. You can now copy Quest’s URLs into App Store Connect. Check forwarding deliveries after your next Apple event or connection test.'
+        : 'Forwarding is off. Quest will continue receiving notifications at its own URLs.', 'success');
+    } catch (error) { if (epoch === state.epoch && section.isConnected) message(status, error.message, 'error'); }
+    finally { save.disabled = false; }
+  });
+  section.append(form,
+    element('p', { class: 'help' }, 'Delivery retries for up to 24 hours. Your server must handle duplicates and verify Apple’s signature. Changing or clearing a URL cancels its queued deliveries; a request already in progress may finish. Demo events and history imports are not forwarded.'),
+    element('h4', {}, 'Forwarding deliveries'));
+  const deliveryStatus = element('p', { class: 'form-message', role: 'status', 'aria-live': 'polite' }, 'Check delivery after a signed Apple event reaches Quest.');
+  const list = element('ul', { class: 'forwarding-deliveries' });
+  section.append(actionButton('Refresh forwarding deliveries', async () => {
+    const epoch = state.epoch;
+    message(deliveryStatus, 'Checking forwarding deliveries…');
+    try {
+      const { deliveries } = await api(`/api/apps/${encodeURIComponent(app.id)}/forwarding/deliveries`);
+      if (epoch !== state.epoch || !section.isConnected) return;
+      const labels = { pending: 'Queued for retry or delivery', processing: 'Sending', sent: 'Accepted by your server', failed: 'Failed', cancelled: 'Cancelled' };
+      list.replaceChildren(...deliveries.map((delivery) => element('li', {}, [
+        element('p', {}, `${delivery.environment} · ${labels[delivery.state] || delivery.state} · ${delivery.attempts} attempt${delivery.attempts === 1 ? '' : 's'}`),
+        element('p', { class: 'metadata' }, `${new Date(delivery.createdAt).toLocaleString()}${delivery.statusCode ? ` · HTTP ${delivery.statusCode}` : ''}${delivery.lastError ? ` · ${delivery.lastError}` : ''}`),
+      ])));
+      message(deliveryStatus, deliveries.length ? 'Showing the latest forwarding deliveries from the past 7 days.' : 'No forwarding deliveries yet. Save a destination and run an Apple connection test, or wait for a new signed Apple event.');
+    } catch (error) { if (epoch === state.epoch && section.isConnected) message(deliveryStatus, error.message, 'error'); }
+  }), deliveryStatus, list);
+  return section;
+}
+
 function setupDetails(app) {
   const section = element('section', { class: 'setup-section', 'aria-label': `Setup for ${app.name}` });
-  section.append(element('h3', {}, 'Connect Apple notifications'));
+  const progress = element('p', { class: 'setup-progress', role: 'status', 'aria-live': 'polite' });
+  section.append(element('div', { class: 'setup-heading' }, [
+    element('h2', {}, 'Set up notifications'), progress,
+  ]));
+  const { details: connection, complete: completeConnection } = setupStep(app, 'urls', 'Connect Apple notifications', {
+    completed: app.lastProductionEventAt ? 'Production verified' : '',
+    verified: !!app.lastProductionEventAt, number: 1, hint: 'Save your notification URLs',
+  });
+  if (app.lastProductionEventAt) {
+    const title = connection.querySelector('summary h3');
+    const updateTitle = () => { title.textContent = connection.open ? 'Hide connection details' : 'Show connection details'; };
+    updateTitle();
+    connection.addEventListener('toggle', updateTitle);
+  }
+  section.append(connection);
   if (app.source === 'revenuecat') {
-    section.append(element('p', { class: 'notice' }, 'Keep RevenueCat’s existing Apple production and sandbox URLs in App Store Connect. Do not replace them with this service’s URLs.'));
-    section.append(element('ol', {}, [
+    connection.append(element('p', { class: 'notice' }, 'Keep RevenueCat’s existing Apple production and sandbox URLs in App Store Connect. Do not replace them with this service’s URLs.'));
+    connection.append(element('ol', {}, [
       element('li', {}, 'Open this app’s settings in RevenueCat and find Apple Server Notifications forwarding.'),
       element('li', {}, 'Set the forwarding URL below in RevenueCat. It accepts both production and sandbox notifications and verifies their environment.'),
       element('li', {}, 'Wait for a signed notification from Apple through RevenueCat. A demo push does not verify this connection.'),
     ]));
-    if (app.forwardingUrl) section.append(copyField('RevenueCat Apple forwarding URL', app.forwardingUrl));
-    else section.append(element('p', { class: 'notice error' }, 'This server did not return a RevenueCat forwarding URL. Refresh the page or update the server before continuing; do not substitute a production-only URL.'));
-    section.append(element('p', {}, element('a', {
+    if (app.forwardingUrl) connection.append(copyField('RevenueCat Apple forwarding URL', app.forwardingUrl));
+    else connection.append(element('p', { class: 'notice error' }, 'This server did not return a RevenueCat forwarding URL. Refresh the page or update the server before continuing; do not substitute a production-only URL.'));
+    connection.append(element('p', {}, element('a', {
       href: 'https://www.revenuecat.com/docs/platform-resources/server-notifications/apple-server-notifications', target: '_blank', rel: 'noopener noreferrer',
     }, 'RevenueCat Apple notification setup guide')));
   } else {
-    section.append(element('p', {}, element('a', {
+    connection.append(element('p', {}, element('a', {
       class: 'button-link',
       href: `https://appstoreconnect.apple.com/apps/${encodeURIComponent(app.appleId)}/distribution/info#:~:text=App%20Store%20Server%20Notifications`,
       target: '_blank', rel: 'noopener noreferrer',
       'aria-label': 'Open App Store Connect (opens in a new tab)',
     }, 'Open App Store Connect')));
-    section.append(element('p', { class: 'help' }, 'Opens in a new tab. Apple may ask you to sign in. If the page doesn’t scroll to the section, find App Store Server Notifications on the App Information page.'));
-    section.append(element('ol', {}, [
-      element('li', {}, 'Open App Store Server Notifications using the button above.'),
-      element('li', {}, 'Use Version 2 and save the production URL below. Save the sandbox URL separately for testing.'),
-      element('li', {}, 'Wait for the first signed Apple event. You can test sandbox with a sandbox purchase, or use the optional Apple connection test below.'),
-    ]));
-    section.append(element('p', { class: 'notice' }, 'If another backend already occupies these URL fields, do not overwrite it without arranging forwarding. Apple provides one URL per environment.'));
-    section.append(copyField('Production webhook URL', app.webhookUrls.production));
-    section.append(copyField('Sandbox webhook URL', app.webhookUrls.sandbox));
-    section.append(element('p', {}, element('a', {
-      href: 'https://developer.apple.com/help/app-store-connect/configure-in-app-purchase-settings/enter-server-urls-for-app-store-server-notifications/', target: '_blank', rel: 'noopener noreferrer',
-    }, 'Apple’s notification setup guide')));
+    connection.append(element('p', { class: 'help' }, 'In App Information → App Store Server Notifications, choose Version 2. Save the production URL, then the sandbox URL for testing. App Store Connect opens in a new tab.'));
+    connection.append(forwardingSettings(app));
+    connection.append(copyField('Production webhook URL', app.webhookUrls.production));
+    connection.append(copyField('Sandbox webhook URL', app.webhookUrls.sandbox));
+
   }
   if (!state.config.publicUrl.startsWith('https://')) {
-    section.append(element('p', { class: 'notice error' }, 'This server is using HTTP/local development. Apple requires a publicly reachable HTTPS endpoint. Configure PUBLIC_URL and HTTPS hosting before expecting Apple notifications.'));
+    connection.append(element('p', { class: 'notice error' }, 'This server is using HTTP/local development. Apple requires a publicly reachable HTTPS endpoint. Configure PUBLIC_URL and HTTPS hosting before expecting Apple notifications.'));
   }
-  section.append(element('p', { class: 'help' }, 'Keep webhook addresses private. They identify this connection; Apple signatures are still required. This service does not respond to refund-consumption requests or manage customer entitlements.'));
+  const connectionHelp = element('details', { class: 'connection-help' }, [
+    element('summary', {}, 'How is the connection verified?'),
+    element('p', { class: 'help' }, 'Your connection is verified when a signed Apple event arrives. To check it now, use a sandbox purchase or the optional Apple connection test below. Production and sandbox are verified separately.'),
+    element('p', { class: 'help' }, 'Keep webhook addresses private. They identify this connection; Apple signatures are still required. This service does not respond to refund-consumption requests or manage customer entitlements.'),
+    element('p', {}, element('a', {
+      href: 'https://developer.apple.com/help/app-store-connect/configure-in-app-purchase-settings/enter-server-urls-for-app-store-server-notifications/', target: '_blank', rel: 'noopener noreferrer',
+    }, 'Apple’s notification setup guide')),
+  ]);
+  connection.append(connectionHelp);
+  if (!app.lastProductionEventAt) connection.append(element('div', { class: 'step-actions' }, [
+    actionButton('URLs saved', () => completeConnection('URLs saved'), 'primary'),
+    element('span', { class: 'help' }, 'Continue to iPhone delivery. Apple verification happens when a signed event arrives.'),
+  ]));
+  section.append(phoneTestAlert(app));
+  const optional = element('div', { class: 'optional-tools' }, [
+    element('h3', {}, 'Optional tools'),
+    element('p', { class: 'help' }, state.config.demoEnabled ? 'Check your Apple connection, import history, or explore with demo activity.' : 'Check your Apple connection or import notification history.'),
+  ]);
+  optional.append(appleConnectionTest(app), appleConnectionTest(app, true));
   if (state.config.demoEnabled) {
-    section.append(element('h3', {}, 'Try a labelled demo'));
-    section.append(element('p', { class: 'help' }, 'Creates synthetic activity and may queue a demo push. It does not contact Apple, record real revenue, or mark this app connected.'));
-    section.append(element('div', { class: 'actions' }, [
-      actionButton('Create demo sale', () => createDemo(app, 'sale')),
-      actionButton('Create demo refund', () => createDemo(app, 'refund')),
+    const { details: demo, complete } = setupStep(app, 'demo', 'Try a labelled demo', { open: false });
+    demo.append(element('p', { class: 'help' }, 'Creates synthetic activity and may queue a demo push. It does not contact Apple, record real revenue, or mark this app connected.'));
+    const runDemo = async (kind) => { await createDemo(app, kind); complete('Demo created'); };
+    demo.append(element('div', { class: 'actions' }, [
+      actionButton('Create demo sale', () => runDemo('sale')),
+      actionButton('Create demo refund', () => runDemo('refund')),
     ]));
+    optional.append(demo);
   }
-  section.append(appleConnectionTest(app), phoneTestAlert(app));
-  section.append(element('h3', {}, 'Connection management'));
-  section.append(element('div', { class: 'actions' }, [
+  section.append(optional);
+  const management = element('details', { class: 'connection-management' }, element('summary', {}, 'Connection management'));
+  management.append(element('p', { class: 'help' }, 'Replace this app’s webhook URLs or remove the app and its history.'));
+  management.append(element('div', { class: 'actions' }, [
     actionButton('Rotate webhook URLs', async () => {
       if (!window.confirm(`Rotate webhook URLs for “${app.name}”? The old URLs stop working immediately. Update ${app.source === 'revenuecat' ? 'RevenueCat forwarding' : 'App Store Connect'} after rotating to continue receiving events.`)) return;
       const { app: updated } = await api(`/api/apps/${encodeURIComponent(app.id)}/rotate-webhook`, { method: 'POST' });
+      state.setupProgress.delete(`${app.id}:urls`);
+      state.setupProgress.delete(`${app.id}:apple-test`);
       state.apps = state.apps.map((current) => current.id === updated.id ? updated : current);
       state.openAppId = updated.id;
       renderApps();
@@ -668,6 +868,24 @@ function setupDetails(app) {
       notify(`Removed “${app.name}” and its stored events and queued pushes. This cannot be recovered from this service.`, 'success');
     }, 'danger'),
   ]));
+  section.append(management);
+  const updateProgress = () => {
+    const connected = connection.dataset.completed === 'true';
+    const tested = section.querySelector('[data-step="phone-test"]').dataset.completed === 'true';
+    progress.textContent = !connected ? 'Start with your Apple connection.'
+      : !tested ? 'URLs saved. Next, test delivery to your iPhone.'
+      : 'Test alert queued. Check your iPhone to confirm delivery.';
+    if (app.lastProductionEventAt && !tested) progress.textContent = 'Production connected. Next, test delivery to your iPhone.';
+  };
+  section.addEventListener('setupcomplete', (event) => {
+    updateProgress();
+    if (event.detail.key === 'urls') {
+      const next = section.querySelector('[data-step="phone-test"]');
+      next.open = true;
+      if (event.detail.advance) next.querySelector('summary').focus();
+    }
+  });
+  updateProgress();
   return section;
 }
 
@@ -677,7 +895,7 @@ function renderApps() {
   if (!state.apps.length) {
     list.append(element('div', { class: 'empty-state' }, [
       element('h2', {}, 'No apps connected yet'),
-      element('p', {}, 'Add an app to generate its notification URLs. No changes to your app’s code are needed to receive Apple server notifications.'),
+      element('p', {}, 'Add your app, connect Apple notifications, then send a test to your iPhone. No changes to your app’s code are needed.'),
       actionButton('Add your first app', () => toggleAddApp(true)),
     ]));
     return;
@@ -726,6 +944,7 @@ async function loadApps() {
     updateAppFilter();
     renderApps();
     message('apps-message');
+    applyAppLink();
   } catch (error) {
     if (epoch === state.epoch) message('apps-message', error.message, 'error');
   } finally {
@@ -737,9 +956,11 @@ async function loadApps() {
 }
 
 function toggleAddApp(show) {
+  if (!show) cancelAppLookup();
+  if (show && appSetupStep !== 'find') setAppSetupStep(appSetupStep, false);
   $('add-app-section').hidden = !show;
   $('show-add-app').setAttribute('aria-expanded', String(show));
-  if (show) $('lookup-url').focus();
+  if (show) $(appSetupStep === 'find' ? 'add-app-title' : 'app-details-title').focus();
   else $('show-add-app').focus();
 }
 
@@ -1027,51 +1248,253 @@ $('logout-button').addEventListener('click', async () => {
   }
 });
 
-window.addEventListener('hashchange', () => selectSection(sectionFromHash()));
+window.addEventListener('hashchange', () => { appliedAppLink = null; void selectSection(sectionFromHash()); });
 $('show-add-app').addEventListener('click', () => toggleAddApp($('add-app-section').hidden));
 $('cancel-add-app').addEventListener('click', () => toggleAddApp(false));
 $('refresh-apps').addEventListener('click', loadApps);
 function updateSourceHelp() {
   $('source-help').textContent = $('app-source').value === 'revenuecat'
     ? 'Keep RevenueCat’s Apple URLs in App Store Connect. We will provide a separate Apple notification forwarding URL for RevenueCat.'
-    : 'You will copy this server’s URLs into App Store Connect. If an existing server already uses those URLs, stop and plan forwarding before replacing them.';
+    : 'Already have server URLs in App Store Connect? After adding your app, save those URLs in forwarding so your existing server keeps receiving notifications through Quest.';
 }
 $('app-source').addEventListener('change', updateSourceHelp);
 
-$('lookup-form').addEventListener('submit', async (event) => {
+let appSetupStep = 'find';
+let importedApp = null;
+function setAppSetupStep(step, focus = true) {
+  appSetupStep = step;
+  $('app-find-step').hidden = step !== 'find';
+  $('app-details').hidden = step === 'find';
+  $('app-confirm-step').hidden = step !== 'confirm';
+  $('app-connect-step').hidden = step !== 'connect';
+  for (const name of ['find', 'confirm', 'connect']) {
+    if (step === name) $(`app-step-${name}`).setAttribute('aria-current', 'step');
+    else $(`app-step-${name}`).removeAttribute('aria-current');
+  }
+  $('app-details-title').textContent = step === 'connect' ? 'Connect sales alerts' : importedApp ? 'Confirm your app' : 'Enter app details';
+  $('app-step-back').textContent = step === 'connect' ? 'Back to app details' : 'Back to search';
+  $('add-app-submit').textContent = step === 'connect' ? 'Add app & show connection steps' : 'Continue';
+  if (focus) {
+    const heading = $(step === 'find' ? 'add-app-title' : 'app-details-title');
+    heading.focus();
+    heading.scrollIntoView({ block: 'start' });
+  }
+}
+function appIdentityArtwork(app) {
+  const image = element('img', { src: app.iconUrl, alt: '', class: 'lookup-icon', loading: 'lazy' });
+  image.addEventListener('error', () => image.remove(), { once: true });
+  return image;
+}
+function renderAppIdentity() {
+  const name = $('app-name').value.trim();
+  const identity = $('app-identity');
+  identity.replaceChildren();
+  identity.hidden = !name;
+  const sameApp = importedApp?.bundleId === $('app-bundle-id').value.trim() && String(importedApp?.appleId) === $('app-apple-id').value.trim();
+  if (sameApp && state.lookupIconUrl) identity.append(appIdentityArtwork({ iconUrl: state.lookupIconUrl }));
+  identity.append(element('div', {}, [
+    element('strong', {}, name),
+    element('p', { class: 'help' }, (sameApp && importedApp?.developer) || $('app-bundle-id').value.trim()),
+  ]));
+}
+function showAppDetails(imported = false) {
+  $('app-identity-fields').hidden = imported;
+  $('edit-app-details').hidden = !imported;
+  $('edit-app-details').setAttribute('aria-expanded', 'false');
+  renderAppIdentity();
+  setAppSetupStep('confirm');
+}
+function resetAppDetails() {
+  importedApp = null;
+  $('app-find-help').open = false;
+  $('app-identity').replaceChildren();
+  $('app-identity').hidden = true;
+  setAppSetupStep('find', false);
+}
+$('edit-app-details').addEventListener('click', () => {
+  const show = $('app-identity-fields').hidden;
+  $('app-identity-fields').hidden = !show;
+  $('edit-app-details').setAttribute('aria-expanded', String(show));
+  if (show) $('app-name').focus();
+});
+$('app-step-back').addEventListener('click', () => {
+  cancelAppLookup();
+  message('add-app-message');
+  setAppSetupStep(appSetupStep === 'connect' ? 'confirm' : 'find');
+});
+$('enter-app-manually').addEventListener('click', () => {
+  cancelAppLookup();
+  importedApp = null;
+  state.lookupIconUrl = null;
+  showAppDetails();
+  $('app-name').focus();
+});
+$('paste-app-link').addEventListener('click', async () => {
+  const epoch = state.epoch;
+  const control = $('paste-app-link');
+  const generation = appLookup.generation;
+  control.disabled = true;
+  try {
+    const text = await navigator.clipboard.readText();
+    if (epoch !== state.epoch || generation !== appLookup.generation || $('add-app-section').hidden || appSetupStep !== 'find') return;
+    if (!text.trim()) {
+      message('lookup-message', 'Copy your app’s link first, then tap Paste copied link.', 'error');
+      return;
+    }
+    $('lookup-url').value = text.trim();
+    $('lookup-form').requestSubmit();
+  } catch {
+    if (epoch !== state.epoch || generation !== appLookup.generation || $('add-app-section').hidden || appSetupStep !== 'find') return;
+    message('lookup-message', 'Paste your link into the search field, or touch and hold it and choose Paste.', 'error');
+    $('lookup-url').focus();
+  } finally { control.disabled = $('lookup-button').disabled; }
+});
+function cancelAppLookup() {
+  clearTimeout(appLookup.timer);
+  appLookup.controller?.abort();
+  appLookup.controller = null;
+  appLookup.generation += 1;
+  appLookup.lastInput = null;
+  $('lookup-button').disabled = false;
+  $('paste-app-link').disabled = false;
+  message('lookup-message');
+  $('lookup-results').replaceChildren();
+  $('lookup-results').hidden = true;
+}
+
+function isAppReference(input) {
+  if (/^\d{1,15}$/.test(input)) return true;
+  try {
+    const url = new URL(input);
+    if (url.protocol !== 'https:' || url.username || url.password || url.port) return false;
+    return (url.hostname === 'apps.apple.com' && /\/id\d{1,15}(?:\/|$)/.test(url.pathname)) ||
+      (url.hostname === 'appstoreconnect.apple.com' && /\/apps\/\d{1,15}(?:\/|$)/.test(url.pathname));
+  } catch { return false; }
+}
+
+function isAppTitle(input) {
+  return input.length >= 2 && input.length <= 100 && !/^\d+$/.test(input) &&
+    !/^(?:[a-z][a-z\d+.-]*:|www\.|apps\.apple\.com|appstoreconnect\.apple\.com)/i.test(input);
+}
+
+$('lookup-url').addEventListener('input', (event) => {
+  cancelAppLookup();
+  const input = $('lookup-url').value.trim();
+  if (!event.isComposing && (isAppReference(input) || isAppTitle(input))) {
+    appLookup.timer = setTimeout(() => void lookUpApp(true), 650);
+  }
+});
+$('lookup-form').addEventListener('reset', cancelAppLookup);
+$('lookup-form').addEventListener('submit', (event) => {
   event.preventDefault();
+  void lookUpApp();
+});
+
+function fillAppDetails(result, initialValues) {
+  const fields = ['app-name', 'app-bundle-id', 'app-apple-id'];
+  const values = [result.name, result.bundleId, result.appleId];
+  fields.forEach((id, index) => {
+    if (!initialValues || $(id).value === initialValues[index]) $(id).value = values[index] || '';
+  });
+  state.lookupIconUrl = $('app-bundle-id').value === result.bundleId && $('app-apple-id').value === String(result.appleId)
+    ? result.iconUrl || null : null;
+  importedApp = result;
+  message('lookup-message');
+  showAppDetails(true);
+}
+
+function showAppMatches(apps, generation) {
+  const list = $('lookup-results');
+  list.replaceChildren();
+  list.hidden = !apps.length;
+  for (const app of apps) {
+    const control = element('button', { type: 'button', class: 'lookup-result' }, [
+      ...(app.iconUrl ? [appIdentityArtwork(app)] : []),
+      element('span', {}, [
+        element('strong', {}, app.name),
+        element('span', { class: 'help' }, app.developer || 'Developer not listed'),
+        element('span', { class: 'help' }, app.bundleId),
+      ]),
+      element('span', { class: 'lookup-select' }, 'Choose'),
+    ]);
+    control.addEventListener('click', () => {
+      if (generation !== appLookup.generation) return;
+      cancelAppLookup();
+      $('lookup-url').value = app.appStoreUrl;
+      fillAppDetails(app);
+    });
+    list.append(element('li', {}, control));
+  }
+  if (!apps.length) $('app-find-help').open = true;
+  message('lookup-message', apps.length
+    ? `Choose your app (${apps.length} ${apps.length === 1 ? 'match' : 'matches'}).`
+    : 'No matching apps found in the US App Store. Try another title, paste an App Store link, or enter details manually.');
+}
+
+async function lookUpApp(automatic = false) {
+  clearTimeout(appLookup.timer);
   const url = $('lookup-url').value.trim();
   if (!url) {
-    message('lookup-message', 'Enter an App Store URL or numeric Apple ID, or fill in the app details manually.', 'error');
+    message('lookup-message', 'Enter an app title, App Store URL, or numeric Apple ID, or fill in the app details manually.', 'error');
     return;
   }
   const control = $('lookup-button');
-  if (control.disabled) return;
+  if (control.disabled || (automatic && appLookup.lastInput === url)) return;
+  appLookup.lastInput = url;
+  const controller = new AbortController();
+  appLookup.controller = controller;
+  const generation = ++appLookup.generation;
+  const fields = ['app-name', 'app-bundle-id', 'app-apple-id'];
+  const initialValues = fields.map(id => $(id).value);
+  const titleSearch = !isAppReference(url) && isAppTitle(url);
   control.disabled = true;
-  message('lookup-message', 'Looking up public app details…');
+  $('paste-app-link').disabled = true;
+  $('lookup-results').replaceChildren();
+  $('lookup-results').hidden = true;
+  message('lookup-message', titleSearch ? 'Searching the US App Store…' : 'Looking up public app details…');
   const epoch = state.epoch;
   try {
-    const result = await api('/api/apps/lookup', { method: 'POST', data: { url } });
-    if (epoch !== state.epoch) return;
-    $('app-name').value = result.name || '';
-    $('app-bundle-id').value = result.bundleId || '';
-    $('app-apple-id').value = result.appleId || '';
-    state.lookupIconUrl = result.iconUrl || null;
-    message('lookup-message', 'Public details imported. Check them below before adding this app; this does not verify ownership.', 'success');
-    $('app-name').focus();
+    const result = await api(titleSearch ? '/api/apps/search' : '/api/apps/lookup', {
+      method: 'POST', data: titleSearch ? { term: url } : { url }, signal: controller.signal,
+    });
+    if (epoch !== state.epoch || generation !== appLookup.generation) return;
+    if (titleSearch) showAppMatches(result.apps, generation);
+    else fillAppDetails(result, initialValues);
   } catch (error) {
-    if (epoch === state.epoch) message('lookup-message', `${error.message} You can still enter the details manually below.`, 'error');
+    if (epoch === state.epoch && generation === appLookup.generation) {
+      $('app-find-help').open = true;
+      message('lookup-message', `${error.message} Try again, paste a link, or enter details manually.`, 'error');
+    }
   } finally {
-    control.disabled = false;
+    if (generation === appLookup.generation) {
+      appLookup.controller = null;
+      control.disabled = false;
+      $('paste-app-link').disabled = false;
+    }
   }
-});
+}
 
+$('add-app-form').noValidate = true;
 $('add-app-form').addEventListener('submit', async (event) => {
   event.preventDefault();
-  if (!$('add-app-form').reportValidity()) return;
+  const invalidField = ['app-name', 'app-bundle-id', 'app-apple-id'].map($).find(field => !field.checkValidity());
+  if (invalidField) {
+    setAppSetupStep('confirm', false);
+    $('app-identity-fields').hidden = false;
+    $('edit-app-details').setAttribute('aria-expanded', 'true');
+    invalidField.reportValidity();
+    return;
+  }
+  if (appSetupStep === 'confirm') {
+    renderAppIdentity();
+    updateSourceHelp();
+    setAppSetupStep('connect');
+    return;
+  }
   const control = $('add-app-submit');
   if (control.disabled) return;
   control.disabled = true;
+  cancelAppLookup();
   const epoch = state.epoch;
   message('add-app-message', 'Adding app…');
   try {
@@ -1079,7 +1502,7 @@ $('add-app-form').addEventListener('submit', async (event) => {
       method: 'POST', data: {
         name: $('app-name').value.trim(), bundleId: $('app-bundle-id').value.trim(),
         appleId: $('app-apple-id').value.trim(), source: $('app-source').value,
-        ...(state.lookupIconUrl ? { iconUrl: state.lookupIconUrl } : {}),
+        ...(state.lookupIconUrl && importedApp?.bundleId === $('app-bundle-id').value.trim() && String(importedApp?.appleId) === $('app-apple-id').value.trim() ? { iconUrl: state.lookupIconUrl } : {}),
       },
     });
     if (epoch !== state.epoch) return;
@@ -1089,6 +1512,7 @@ $('add-app-form').addEventListener('submit', async (event) => {
     updateAppFilter();
     renderApps();
     $('add-app-form').reset();
+    resetAppDetails();
     updateSourceHelp();
     $('lookup-form').reset();
     state.lookupIconUrl = null;

@@ -1,5 +1,29 @@
 # Firebase backend + Vercel web deployment
 
+## Add App UX deployment — September 13, 2026
+
+Published the tested **Find → Confirm → Connect** flow to `https://quest-liart-iota.vercel.app` after explicit production deployment authorization. Vercel deployment `quest-a10aj0wqo-kozrs-projects.vercel.app` is aliased to production. This release updates static web assets and uses the existing Firebase API; no backend or database migration was needed. Previous deployment: `quest-i9r8gekkz-kozrs-projects.vercel.app`.
+
+Live `index.html`, `app.js`, and `styles.css` match the tested build byte-for-byte. `/healthz` and `/api/config` return **200**, and unauthenticated `/api/apps/search` returns **401**. The preceding local validation passed all **44 desktop/mobile browser checks** and **30 native tests**. Evidence: `test-results/add-app-prod/vercel.log` and `verification.json`.
+
+## Add app search deployment — September 12, 2026
+
+Published automatic URL/Apple ID lookup, US App Store title search, and the signed-in Add app form to `https://quest-liart-iota.vercel.app`. Firebase API revision `api-00007-pak` is **ACTIVE**. Vercel deployment `quest-i9r8gekkz-kozrs-projects.vercel.app` is aliased to production. Only `dist/app.js`, `dist/metadata.js`, and their source maps differed from the prior production backend.
+
+Live HTML, JavaScript, and CSS match the tested workspace files byte-for-byte. `/healthz` and `/api/config` return 200; unauthenticated `/api/apps/search` returns 401. The search helper successfully queried Apple's public API for Numbers and returned valid app/developer/Bundle ID results. The authenticated flow was previously covered by local API and desktop/mobile tests; no production user session or customer data was used for deployment testing. Build 7 opens this hosted form without another iOS upload.
+
+Release evidence: `test-results/search-deploy/`. Previous API revision: `api-00006-tel`; previous Vercel deployment: `dpl_J9kmEXKtwD45WZ5DcV7kwN6j7S32` (`quest-24u2pr3q1-kozrs-projects.vercel.app`).
+
+## Questline account-deletion release — September 10, 2026
+
+The account-deletion API, cleanup/recovery functions, and existing delivery/cleanup workers with deletion guards are deployed to `the-app-quest`, following the owner's explicit approval. All ten functions report **ACTIVE**, and the account-deletion recovery schedule is **ENABLED** every 30 minutes. The receipt TTL configuration is active. A read-only predeployment aggregation found zero `account_deletions` documents; no production account was deleted for testing. See [App Store readiness](APP_STORE.md) for the remaining release gates.
+
+Deployment completed in this order: `cleanupAccount` and `recoverAccountDeletion`, existing delivery/cleanup workers, then `api`. The functions operate only on a durable pending deletion marker created after same-account Apple confirmation and successful authorization revocation. Cleanup is idempotent, uses bounded batches, retains failed requests for retry, and keeps only a seven-day status receipt after success. Never seed a production deletion marker as a health probe. Live health/config requests return 200, unauthenticated deletion returns 401, invalid receipts return 400, and an unknown well-formed receipt returns `unavailable`.
+
+On September 11, registered and downloaded **Questline Sign in with Apple**, key **5KT3HJ52M5**, after the owner's final confirmation. Apple's saved key details confirm Sign in with Apple restricted to `ZMNPR5G4ZL.com.kozr.quest`. Configured `appleSignInConfig.codeFlowConfig` directly in Firebase with team `ZMNPR5G4ZL`, the new key ID, and private material; the provider remains enabled. Set native `clientId` and `appleSignInConfig.bundleIds` to `com.kozr.quest`. Firebase requires a client ID for code flow, and Apple's token endpoint accepts the App ID for native authorization codes. Read-back verified all non-secret fields. The local backup is `/Users/nicholaswong/Downloads/AuthKey_5KT3HJ52M5.p8`, mode `0600`; no private material was printed or added to source. Other apps' keys and the Questline APNs key were untouched. Real fresh Apple authorization and revocation/deletion on a disposable account still require a physical-device acceptance test.
+
+The website is published at `https://quest-liart-iota.vercel.app`, with the approved `eggheadlabs.dev@gmail.com` contact on `/privacy/` and `/support/`. Deployment `quest-bacekr429-kozrs-projects.vercel.app` is aliased to production. Both pages and the main HTML/JS/CSS match the local build byte-for-byte and return 200 without contact placeholders. The canonical privacy/support URLs are saved in App Store Connect. The Vercel build continues to reject missing contact details.
+
 ## Live deployment — September 8, 2026
 
 - Production web: https://quest-liart-iota.vercel.app, Vercel project `kozrs-projects/quest`, connected to `kozr/quest`.
@@ -69,9 +93,9 @@ npx firebase deploy --project YOUR_PROJECT_ID --only firestore,functions
 
 The `api` and `deliverPush` functions bind this secret. Public Apple root certificates are generated during predeploy and included in the function package; no customer/private Apple keys are needed to verify incoming notifications. Secret rotation requires redeploying consumers. Don't commit downloaded private keys, Admin credentials or environment files.
 
-Verify service identities have only the needed Firestore/Firebase Auth permissions, queue-enqueue permission for `queuePush`/`recoverPush`, and task-invoker/service-account-use permissions required by Firebase task queues. **Do not make `deliverPush` publicly invokable**. Confirm the Cloud Task queue exists with the declared retry/rate limits and inspect actual enqueue/delivery logs after deployment. The emulator tests validate the delivery logic, not cloud IAM.
+Verify service identities have only the needed Firestore/Firebase Auth permissions, queue-enqueue permission for `queuePush`/`recoverPush` and `queueForward`/`recoverForward`, and task-invoker/service-account-use permissions required by Firebase task queues. **Do not make `deliverPush` or `deliverForward` publicly invokable**. Confirm the Cloud Task queue exists with the declared retry/rate limits and inspect actual enqueue/delivery logs after deployment. The emulator tests validate the delivery logic, not cloud IAM.
 
-If TTL/index deployment prompts, verify the four `expireAt` policies and composite indexes in `firestore.indexes.json`; wait until all indexes are ready. Emulator tests do not enforce production composite-index requirements.
+If TTL/index deployment prompts, verify the five `expireAt` policies (including `forwarding_jobs`) and all six composite indexes in `firestore.indexes.json`; wait until all indexes are ready. Emulator tests do not enforce production composite-index requirements.
 
 ## Vercel setup
 
@@ -100,3 +124,22 @@ Preview deployments must not silently pair into production. Their origin will be
 The old SQLite file is untouched, not imported or deleted. This MVP migration starts a new Firebase account/data store. For populated installations, stop and perform a separate reviewed account/event import, session invalidation and webhook cutover; do not silently discard history. Emulator accounts are disposable test data and are never uploaded into production.
 
 References: [Firebase Auth REST](https://firebase.google.com/docs/reference/rest/auth), [task queue functions](https://firebase.google.com/docs/functions/task-functions), [function environment/secrets](https://firebase.google.com/docs/functions/config-env), [Vercel Build Output routes](https://vercel.com/docs/build-output-api/configuration).
+
+## Existing server forwarding rollout — deployed September 9, 2026
+
+Deploy the updated `api`, `queueForward`, `deliverForward`, `recoverForward`, and `cleanupApp`, plus the web assets and `firestore.indexes.json`. The three new forwarding functions are independent of APNs secrets. Their task queue must remain private and the enqueue identities need task-creation permissions. Enable outbound DNS and HTTPS to public customer-configured receivers. Forwarding is off by default for all existing apps.
+
+Wait for the two forwarding composite indexes to be READY and `forwarding_jobs.expireAt` TTL to be ACTIVE. Payload/destination field indexing is disabled. Queued raw signed payloads are cleared on completion/cancellation/failure; the seven-day TTL is a fallback and removes delivery metadata as well. Extend request-log exclusions and backup retention controls to these sensitive payloads and destination URL tokens.
+
+Before onboarding an existing receiver, save its production/sandbox URLs in Quest, update the Apple V2 URLs, request an Apple TEST, and confirm both Quest’s receipt and the matching forwarding outcome. Also verify a deliberate receiver outage retries successfully through Cloud Tasks and the recovery sweep. Local emulator tests cannot verify cloud IAM, deployed indexes, or external receiver readiness. The deployment and infrastructure checks below are complete; forwarding a real Apple notification to a customer receiver remains an onboarding check.
+
+### Verified production release
+
+- Published the tested API and all delivery/cleanup functions to `the-app-quest` in `us-central1`. All eight functions are ACTIVE; API revision `api-00004-foy` became active at 09:38 UTC on September 9, 2026.
+- All six composite indexes are READY and all five TTL policies are ACTIVE, including `forwarding_jobs.expireAt`.
+- `deliverForward` queue is RUNNING with 10 concurrent dispatches, 20 dispatches/second, and a 24-hour queue retry window. Its worker has no public IAM binding and rejects unauthenticated invocation with HTTP 403. The application applies its own 30-attempt/24-hour delivery limit.
+- A temporary production probe, containing no Apple payload or destination and referring to a nonexistent app, successfully traversed Firestore → `queueForward` → Cloud Tasks → `deliverForward`. The worker cancelled it as expected, and the probe record was deleted. No customer notification was forwarded by this test.
+- `firebase-schedule-recoverForward-us-central1` is ENABLED on its five-minute schedule. An explicit scheduler run returned HTTP 200 from `recoverforward-00001-tet`.
+- Promoted Vercel deployment `dpl_EpP7hLLYi4LiTc67tiCHMQ7xu4xW` (`quest-3eqav4ibp-kozrs-projects.vercel.app`) to `https://quest-liart-iota.vercel.app`. The previous web deployment is `dpl_CUfNQWnZy5tq6vnJPK6yRx8z5Z4M` for rollback reference.
+- Live `/`, `/app.js`, and `/styles.css` return HTTP 200 and exactly match the tested workspace files. `/healthz` and `/api/config` return 200; APNs remains configured, demo remains disabled, and the public origin is unchanged. Forwarding settings/history reject unauthenticated requests with 401.
+- No app’s existing forwarding destinations or App Store Connect URLs were changed. Existing apps remain forwarding-off until their owners save destinations.

@@ -1,0 +1,40 @@
+{
+  "status": "concept proofs; not App Store upload exports",
+  "theme": "orange and warm white",
+  "appName": "Questline: IAP Notifications",
+  "subtitle": "App Store Sales Alerts",
+  "targetExportSize": [
+    1320,
+    2868
+  ],
+  "posters": [
+    {
+      "file": "01-your-next-sale.png",
+      "headline": "Your next sale. On your lock screen.",
+      "width": 851,
+      "height": 1848,
+      "source": "exec-283dcfc5-efd7-4265-8389-3fd39709e914.png"
+    },
+    {
+      "file": "02-purchases-renewals-progress.png",
+      "headline": "Purchases. Renewals. Progress.",
+      "width": 850,
+      "height": 1850,
+      "source": "exec-64c18e12-f1f9-4ccf-9d75-b56f475c3e34.png"
+    },
+    {
+      "file": "03-all-your-apps.png",
+      "headline": "All your apps. One place.",
+      "width": 851,
+      "height": 1848,
+      "source": "exec-bef4fcfd-dd73-4d64-b185-0fc6c5051bea.png"
+    },
+    {
+      "file": "04-choose-your-sales-alerts.png",
+      "headline": "Choose your sales alerts.",
+      "width": 850,
+      "height": 1850,
+      "source": "exec-cddd9019-f1e3-43ce-8ed4-5c55e76a1989.png"
+    }
+  ]
+}
