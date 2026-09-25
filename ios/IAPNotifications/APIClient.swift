@@ -20,23 +20,33 @@ enum AppleSignInNonce {
 enum ClientError: LocalizedError {
     case message(String)
     case server(status: Int, message: String)
+    case codedServer(status: Int, message: String, code: String)
     case invalidResponse
 
     var errorDescription: String? {
         switch self {
-        case .message(let message), .server(_, let message): return message
+        case .message(let message), .server(_, let message), .codedServer(_, let message, _): return message
         case .invalidResponse: return "Something went wrong while loading your account. Please try again."
         }
     }
 
     var isUnauthorized: Bool {
-        if case .server(status: 401, _) = self { return true }
-        return false
+        switch self {
+        case .server(status: 401, _), .codedServer(status: 401, _, _): return true
+        default: return false
+        }
     }
 
     var isNotFound: Bool {
-        if case .server(status: 404, _) = self { return true }
-        return false
+        switch self {
+        case .server(status: 404, _), .codedServer(status: 404, _, _): return true
+        default: return false
+        }
+    }
+
+    var serverCode: String? {
+        if case .codedServer(_, _, let code) = self { return code }
+        return nil
     }
 }
 
@@ -127,6 +137,9 @@ struct APIClient {
             let fallback = (300...399).contains(response.statusCode)
                 ? "The service is temporarily unavailable. Please try again later."
                 : "This request could not be completed. Please try again."
+            if let code = error?.code {
+                throw ClientError.codedServer(status: response.statusCode, message: error?.error ?? fallback, code: code)
+            }
             throw ClientError.server(status: response.statusCode, message: error?.error ?? fallback)
         }
         do { return try JSONDecoder().decode(Response.self, from: data) }

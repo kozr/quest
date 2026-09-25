@@ -11,62 +11,78 @@ struct AppsView: View {
 
     var body: some View {
         NavigationStack {
-            List {
-                if model.isPreviewMode { Section { DemoNotice() } }
-                if let error = error ?? model.appsError {
-                    Section {
-                        SetupError(message: error)
-                        Button("Retry") { Task { await model.loadApps() } }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 24) {
+                    if let error = error ?? model.appsError {
+                        VStack(alignment: .leading, spacing: 8) {
+                            SetupError(message: error)
+                            Button("Retry") { Task { await model.loadApps() } }.frame(minHeight: 44)
+                        }
                     }
-                }
-                if model.isLoadingApps && model.apps.isEmpty {
-                    ProgressView("Loading apps…")
-                } else if model.apps.isEmpty && model.appsError == nil {
-                    ContentUnavailableView {
-                        Label("Connect your first app", systemImage: "square.stack")
-                    } description: {
-                        Text("Connect an app to start receiving sales alerts.")
-                    } actions: {
-                        Button("Add app") { choosingSetup = true }.buttonStyle(.borderedProminent)
-                    }
-                    .listRowBackground(Color.clear)
-                }
-                ForEach(model.apps) { app in
-                    NavigationLink {
-                        AppDetailView(appID: app.id)
-                    } label: {
-                        let layout = typeSize.isAccessibilitySize
-                            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12))
-                            : AnyLayout(HStackLayout(alignment: .top, spacing: 14))
-                        layout {
-                            AppArtwork(url: app.iconUrl, name: app.name)
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text(app.name).font(.headline)
-                                Text(app.bundleId).font(.caption).foregroundStyle(.secondary)
-                                Label(model.isPreviewMode ? "Sample app" : app.lastProductionEventAt == nil ? "Waiting for Apple" : "Connected",
-                                      systemImage: model.isPreviewMode ? "square.grid.2x2" : app.lastProductionEventAt == nil ? "clock" : "checkmark.circle")
-                                    .font(.caption.weight(.medium))
-                                    .foregroundStyle(app.lastProductionEventAt == nil ? Color.secondary : Color(.systemGreen))
+                    if model.isLoadingApps && model.apps.isEmpty {
+                        ProgressView("Loading apps…").frame(maxWidth: .infinity).padding(.vertical, 32)
+                    } else if model.apps.isEmpty && model.appsError == nil {
+                        ContentUnavailableView {
+                            Label("Connect your first app", systemImage: "square.stack")
+                        } description: {
+                            Text("Connect an app to start receiving sales alerts.")
+                        } actions: {
+                            if !model.isPreviewMode {
+                                Button("Add app") { choosingSetup = true }.buttonStyle(.borderedProminent)
                             }
                         }
-                        .padding(.vertical, 10)
+                    } else {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(model.isPreviewMode ? "Sample apps" : "Your apps")
+                                .font(.subheadline).foregroundStyle(QuestStyle.muted)
+                                .accessibilityAddTraits(.isHeader)
+                            ForEach(model.apps) { app in
+                                NavigationLink { AppDetailView(appID: app.id) } label: { appRow(app) }
+                                    .buttonStyle(.plain).accessibilityIdentifier("app-" + app.id)
+                                Divider().overlay(QuestStyle.muted.opacity(0.15))
+                            }
+                            if !model.isPreviewMode {
+                                Button { open(.apps) } label: {
+                                    HStack(spacing: 14) {
+                                        Image(systemName: "safari").font(.title2)
+                                        VStack(alignment: .leading, spacing: 5) {
+                                            Text("Open dashboard").font(.body)
+                                            Text("Manage your apps and connections.")
+                                                .font(.caption).foregroundStyle(QuestStyle.muted)
+                                        }
+                                        Spacer(minLength: 0)
+                                        Image(systemName: "arrow.up.right.square").font(.subheadline)
+                                    }.frame(minHeight: 44).padding(.vertical, 16)
+                                }.foregroundStyle(QuestStyle.muted).accessibilityIdentifier("appsDashboard")
+                            }
+                        }
                     }
-                }
-                if !model.isPreviewMode && !model.apps.isEmpty {
-                    Section {
-                        Button { open(.apps) } label: { Label("Open dashboard", systemImage: "safari") }
-                    }
-                }
+                }.padding(.horizontal, QuestPageLayout.margin).padding(.bottom, 24)
             }
-            .listStyle(.insetGrouped)
+            .safeAreaInset(edge: .top, spacing: 0) {
+                    QuestMainPageHeader(title: "Apps", systemImage: "square.grid.2x2",
+                                        subtitle: model.isPreviewMode ? "Demo · Sample apps" : nil) {
+                        if !model.isPreviewMode {
+                            Button { choosingSetup = true } label: {
+                                Label("Add app", systemImage: "plus")
+                                    .labelStyle(.iconOnly)
+                                    .foregroundStyle(QuestStyle.gold)
+                                    .font(.subheadline.weight(.semibold))
+                                    .padding(.horizontal, 12).frame(minHeight: 44)
+                                    .background(QuestStyle.navy.opacity(0.9), in: RoundedRectangle(cornerRadius: 10))
+                                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(QuestStyle.gold.opacity(0.8)))
+                            }.accessibilityIdentifier("addApp")
+                        }
+                    }
+            }
+            .background(QuestStyle.navy.ignoresSafeArea())
+            .foregroundStyle(.white).tint(QuestStyle.gold)
             .navigationTitle("Apps")
+            .toolbar(.hidden, for: .navigationBar)
+            .toolbarBackground(QuestStyle.navy, for: .tabBar)
+            .toolbarBackground(.visible, for: .tabBar)
+            .preferredColorScheme(.dark)
             .refreshable { await model.loadApps() }
-            .toolbar {
-                if !model.isPreviewMode {
-                    Button { choosingSetup = true } label: { Label("Add app", systemImage: "plus") }
-                        .accessibilityIdentifier("addApp")
-                }
-            }
             .sheet(isPresented: $choosingSetup, onDismiss: {
                 if pairAfterDismiss {
                     pairAfterDismiss = false
@@ -83,6 +99,42 @@ struct AppsView: View {
                 DashboardSheet(access: access)
             }
         }
+    }
+
+    private func appRow(_ app: ConnectedApp) -> some View {
+        let layout = typeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12))
+            : AnyLayout(HStackLayout(alignment: .center, spacing: 14))
+        return layout {
+            ActivityInventorySlot {
+                AppArtwork(url: app.iconUrl, name: app.name, bundledIconName: app.bundledIconName).accentColor(QuestStyle.gold)
+            }
+            VStack(alignment: .leading, spacing: 7) {
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .firstTextBaseline, spacing: 12) {
+                        Text(app.name).font(.headline).fixedSize()
+                        connectionStatus(app).fixedSize()
+                    }
+                    VStack(alignment: .leading, spacing: 7) {
+                        Text(app.name).font(.headline)
+                        connectionStatus(app)
+                    }
+                }
+                Text(app.bundleId).font(.caption).foregroundStyle(QuestStyle.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if !typeSize.isAccessibilitySize { Spacer(minLength: 0) }
+            Image(systemName: "chevron.right").font(.caption).foregroundStyle(QuestStyle.muted)
+        }
+        .padding(.vertical, 16)
+        .accessibilityElement(children: .combine)
+    }
+
+    private func connectionStatus(_ app: ConnectedApp) -> some View {
+        Label(model.isPreviewMode ? "Sample app" : app.lastProductionEventAt == nil ? "Waiting for Apple" : "Connected",
+              systemImage: model.isPreviewMode ? "square.grid.2x2" : app.lastProductionEventAt == nil ? "clock" : "checkmark.circle.fill")
+            .font(.caption)
+            .foregroundStyle(model.isPreviewMode ? QuestStyle.muted : app.lastProductionEventAt == nil ? QuestStyle.gold : Color(.systemGreen))
     }
 
     private func open(_ destination: DashboardDestination) {
@@ -194,17 +246,21 @@ struct BrowserAppSetupView: View {
 }
 
 struct AppDetailView: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.timeZone) private var timeZone
     @EnvironmentObject private var model: AppModel
     let appID: String
     @State private var dashboard: DashboardAccess?
     @State private var error: String?
+    @State private var confirmRemoval = false
+    @State private var isRemoving = false
 
     var body: some View {
         Group {
             if let app = model.apps.first(where: { $0.id == appID }) {
                 List {
                     Section {
-                        AppArtwork(url: app.iconUrl, name: app.name)
+                        AppArtwork(url: app.iconUrl, name: app.name, bundledIconName: app.bundledIconName)
                         LabeledContent("Bundle ID", value: app.bundleId).textSelection(.enabled)
                     }
                     if model.isPreviewMode {
@@ -229,11 +285,42 @@ struct AppDetailView: View {
                             Text("Manage URLs, forwarding, and connection tests in your dashboard. No sign-in or scanning needed.")
                         }
                         Section("Latest Apple events") {
-                            LabeledContent("Production", value: app.lastProductionEventAt.map(Timestamp.display) ?? "Waiting for Apple")
-                            LabeledContent("Sandbox", value: app.lastSandboxEventAt.map(Timestamp.display) ?? "Waiting for Apple")
+                            LabeledContent("Production", value: app.lastProductionEventAt.map { Timestamp.display($0, timeZone: timeZone) } ?? "Waiting for Apple")
+                            LabeledContent("Sandbox", value: app.lastSandboxEventAt.map { Timestamp.display($0, timeZone: timeZone) } ?? "Waiting for Apple")
+                        }
+                        Section {
+                            Button(role: .destructive) { confirmRemoval = true } label: {
+                                HStack {
+                                    Label(isRemoving ? "Removing app…" : "Remove app", systemImage: "trash")
+                                    if isRemoving { Spacer(); ProgressView() }
+                                }
+                            }
+                            .disabled(isRemoving)
+                            .accessibilityIdentifier("removeApp")
+                        } footer: {
+                            Text("Permanently removes this app’s history and stops its webhook URLs.")
                         }
                         if let error = error ?? model.appsError { Section { SetupError(message: error) } }
                     }
+                }
+                .confirmationDialog("Remove “\(app.name)”?", isPresented: $confirmRemoval, titleVisibility: .visible) {
+                    Button("Remove app", role: .destructive) {
+                        isRemoving = true
+                        error = nil
+                        Task {
+                            do {
+                                try await model.removeApp(id: appID)
+                                dismiss()
+                                await model.refreshAll()
+                            } catch {
+                                self.error = error.localizedDescription
+                            }
+                            isRemoving = false
+                        }
+                    }
+                    Button("Cancel", role: .cancel) {}
+                } message: {
+                    Text("This permanently deletes this app’s event history and queued notifications, and stops its webhook URLs. This cannot be undone.")
                 }
                 .navigationTitle(app.name)
                 .refreshable { await model.loadApps() }
@@ -243,6 +330,7 @@ struct AppDetailView: View {
             }
         }
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.visible, for: .navigationBar)
         .sheet(item: $dashboard, onDismiss: { Task { await model.refreshAll() } }) { access in
             DashboardSheet(access: access)
         }
@@ -350,6 +438,7 @@ struct DashboardSheet: View {
 
 
 struct DashboardWebView: UIViewRepresentable {
+    @AppStorage(DisplayTimeZone.storageKey) private var displayTimeZone: DisplayTimeZone = .local
     let access: DashboardAccess
     let reload: Int
     @Binding var loading: Bool
@@ -362,6 +451,9 @@ struct DashboardWebView: UIViewRepresentable {
         let config = WKWebViewConfiguration()
         config.websiteDataStore = .nonPersistent()
         config.userContentController.add(context.coordinator, name: "questline")
+        // Each sheet has a fresh store; start with the iPhone's display preference.
+        let timeZoneScript = "if (localStorage.getItem('questline.displayTimeZone') === null) { localStorage.setItem('questline.displayTimeZone', '\(displayTimeZone.rawValue)'); }"
+        config.userContentController.addUserScript(WKUserScript(source: timeZoneScript, injectionTime: .atDocumentStart, forMainFrameOnly: true))
         let view = WKWebView(frame: .zero, configuration: config)
         view.navigationDelegate = context.coordinator
         view.uiDelegate = context.coordinator
@@ -420,9 +512,12 @@ struct DashboardWebView: UIViewRepresentable {
 
         func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
             guard message.frameInfo.isMainFrame,
-                  let url = message.frameInfo.request.url, parent.access.permits(url),
-                  message.body as? String == "authenticationRequired" else { return }
-            parent.authenticationRequired()
+                  let url = message.frameInfo.request.url, parent.access.permits(url) else { return }
+            if message.body as? String == "authenticationRequired" { parent.authenticationRequired() }
+            if let body = message.body as? [String: String], body["type"] == "displayTimeZone",
+               let value = body["value"], let mode = DisplayTimeZone(rawValue: value) {
+                parent.displayTimeZone = mode
+            }
         }
 
         func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,

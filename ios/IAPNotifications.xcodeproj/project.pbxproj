@@ -7,6 +7,19 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		EAD100000000000000000006 /* LeadJournalExamples.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAD200000000000000000006; };
+		EAD100000000000000000005 /* LeadJournal.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAD200000000000000000005; };
+		F0F100000000000000000001 /* Market.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0F200000000000000000001 /* Market.swift */; };
+		F0F100000000000000000002 /* MarketExamples.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0F200000000000000000002 /* MarketExamples.swift */; };
+		F0F100000000000000000003 /* MarketStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0F200000000000000000003 /* MarketStore.swift */; };
+		F0F100000000000000000004 /* MarketView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0F200000000000000000004 /* MarketView.swift */; };
+		F0F100000000000000000005 /* MarketPeopleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0F200000000000000000005 /* MarketPeopleView.swift */; };
+		F0F100000000000000000006 /* MarketTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0F200000000000000000006 /* MarketTests.swift */; };
+		EAD100000000000000000001 /* Leads.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAD200000000000000000001 /* Leads.swift */; };
+		EAD100000000000000000002 /* LeadsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAD200000000000000000002 /* LeadsView.swift */; };
+		EAD100000000000000000003 /* LeadsSetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAD200000000000000000003 /* LeadsSetupView.swift */; };
+		EAD100000000000000000004 /* LeadsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAD200000000000000000004 /* LeadsTests.swift */; };
+		ACDD00000000000000000001 /* SalesLedger.swift in Sources */ = {isa = PBXBuildFile; fileRef = BCDD00000000000000000001; };
 		A00000000000000000000008 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000014; };
 		A00000000000000000000001 /* IAPNotificationsApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000001 /* IAPNotificationsApp.swift */; };
 		A00000000000000000000002 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000002 /* Models.swift */; };
@@ -19,6 +32,14 @@
 900000000000000000000011 = {isa = PBXBuildFile; fileRef = 900000000000000000000001; };
 900000000000000000000005 = {isa = PBXBuildFile; fileRef = 900000000000000000000003; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		A00000000000000000000009 /* AppSetupViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000015 /* AppSetupViews.swift */; };
+		A00000000000000000000010 /* QueuedSales.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000016; };
+A00000000000000000000011 = {isa = PBXBuildFile; fileRef = B00000000000000000000017; };
+A00000000000000000000012 = {isa = PBXBuildFile; fileRef = B00000000000000000000018; };
+		A0A0A0000000000000000001 /* Trials.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0B0B0000000000000000001; };
+		A0A0A0000000000000000002 /* TrialsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0B0B0000000000000000002; };
+0BD100000000000000000001 /* Onboarding.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0BD200000000000000000001; };
+0BD100000000000000000002 /* OnboardingViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0BD200000000000000000002; };
+0BD100000000000000000003 /* OnboardingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0BD200000000000000000003; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -33,6 +54,19 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		EAD200000000000000000006 /* LeadJournalExamples.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LeadJournalExamples.swift; sourceTree = "<group>"; };
+		EAD200000000000000000005 /* LeadJournal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LeadJournal.swift; sourceTree = "<group>"; };
+		F0F200000000000000000001 /* Market.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Market.swift; sourceTree = "<group>"; };
+		F0F200000000000000000002 /* MarketExamples.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketExamples.swift; sourceTree = "<group>"; };
+		F0F200000000000000000003 /* MarketStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketStore.swift; sourceTree = "<group>"; };
+		F0F200000000000000000004 /* MarketView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketView.swift; sourceTree = "<group>"; };
+		F0F200000000000000000005 /* MarketPeopleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketPeopleView.swift; sourceTree = "<group>"; };
+		F0F200000000000000000006 /* MarketTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketTests.swift; sourceTree = "<group>"; };
+		EAD200000000000000000001 /* Leads.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Leads.swift; sourceTree = "<group>"; };
+		EAD200000000000000000002 /* LeadsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LeadsView.swift; sourceTree = "<group>"; };
+		EAD200000000000000000003 /* LeadsSetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LeadsSetupView.swift; sourceTree = "<group>"; };
+		EAD200000000000000000004 /* LeadsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LeadsTests.swift; sourceTree = "<group>"; };
+		BCDD00000000000000000001 /* SalesLedger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SalesLedger.swift; sourceTree = "<group>"; };
 		B00000000000000000000014 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = IAPNotifications/Assets.xcassets; sourceTree = SOURCE_ROOT; };
 		B00000000000000000000001 /* IAPNotificationsApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IAPNotificationsApp.swift; sourceTree = "<group>"; };
 		B00000000000000000000002 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
@@ -50,6 +84,14 @@
 900000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 900000000000000000000003 = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; path = NotificationService.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		B00000000000000000000015 /* AppSetupViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSetupViews.swift; sourceTree = "<group>"; };
+		B00000000000000000000016 /* QueuedSales.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QueuedSales.swift; sourceTree = "<group>"; };
+B00000000000000000000017 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TreasureView.swift; sourceTree = "<group>"; };
+B00000000000000000000018 = {isa = PBXFileReference; lastKnownFileType = file; path = "quest-chest.scn"; sourceTree = "<group>"; };
+		B0B0B0000000000000000001 /* Trials.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Trials.swift; sourceTree = "<group>"; };
+		B0B0B0000000000000000002 /* TrialsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrialsTests.swift; sourceTree = "<group>"; };
+0BD200000000000000000001 /* Onboarding.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Onboarding.swift; sourceTree = "<group>"; };
+0BD200000000000000000002 /* OnboardingViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingViews.swift; sourceTree = "<group>"; };
+0BD200000000000000000003 /* OnboardingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -89,9 +131,26 @@
 			isa = PBXGroup;
 			children = (
 				B00000000000000000000001 /* IAPNotificationsApp.swift */,
+0BD200000000000000000002 /* OnboardingViews.swift */,
+0BD200000000000000000001 /* Onboarding.swift */,
+				EAD200000000000000000001 /* Leads.swift */,
+				F0F200000000000000000001 /* Market.swift */,
+				F0F200000000000000000002 /* MarketExamples.swift */,
+				F0F200000000000000000003 /* MarketStore.swift */,
+				F0F200000000000000000004 /* MarketView.swift */,
+				F0F200000000000000000005 /* MarketPeopleView.swift */,
+				EAD200000000000000000006 /* LeadJournalExamples.swift */,
+				EAD200000000000000000005 /* LeadJournal.swift */,
+				EAD200000000000000000002 /* LeadsView.swift */,
+				EAD200000000000000000003 /* LeadsSetupView.swift */,
 				B00000000000000000000002 /* Models.swift */,
 				B00000000000000000000003 /* APIClient.swift */,
 				B00000000000000000000004 /* AppModel.swift */,
+				B0B0B0000000000000000001 /* Trials.swift */,
+				BCDD00000000000000000001 /* SalesLedger.swift */,
+				B00000000000000000000016 /* QueuedSales.swift */,
+                B00000000000000000000017,
+                B00000000000000000000018,
 				B00000000000000000000012 /* Pairing.swift */,
 				B00000000000000000000013 /* PairingView.swift */,
 				B00000000000000000000015 /* AppSetupViews.swift */,
@@ -106,6 +165,10 @@
 			isa = PBXGroup;
 			children = (
 				B00000000000000000000005 /* ClientTests.swift */,
+0BD200000000000000000003 /* OnboardingTests.swift */,
+				EAD200000000000000000004 /* LeadsTests.swift */,
+					B0B0B0000000000000000002 /* TrialsTests.swift */,
+					F0F200000000000000000006 /* MarketTests.swift */,
 			);
 			path = IAPNotificationsTests;
 			sourceTree = "<group>";
@@ -213,6 +276,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A00000000000000000000008 /* Assets.xcassets in Resources */,
+                A00000000000000000000012,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -232,9 +296,25 @@
 			buildActionMask = 2147483647;
 			files = (
 				A00000000000000000000001 /* IAPNotificationsApp.swift in Sources */,
+0BD100000000000000000002 /* OnboardingViews.swift in Sources */,
+0BD100000000000000000001 /* Onboarding.swift in Sources */,
+				EAD100000000000000000001 /* Leads.swift in Sources */,
+				F0F100000000000000000001 /* Market.swift in Sources */,
+				F0F100000000000000000002 /* MarketExamples.swift in Sources */,
+				F0F100000000000000000003 /* MarketStore.swift in Sources */,
+				F0F100000000000000000004 /* MarketView.swift in Sources */,
+				F0F100000000000000000005 /* MarketPeopleView.swift in Sources */,
+				EAD100000000000000000006 /* LeadJournalExamples.swift in Sources */,
+				EAD100000000000000000005 /* LeadJournal.swift in Sources */,
+				EAD100000000000000000002 /* LeadsView.swift in Sources */,
+				EAD100000000000000000003 /* LeadsSetupView.swift in Sources */,
 				A00000000000000000000002 /* Models.swift in Sources */,
 				A00000000000000000000003 /* APIClient.swift in Sources */,
 				A00000000000000000000004 /* AppModel.swift in Sources */,
+				A0A0A0000000000000000001 /* Trials.swift in Sources */,
+				ACDD00000000000000000001 /* SalesLedger.swift in Sources */,
+				A00000000000000000000010 /* QueuedSales.swift in Sources */,
+                A00000000000000000000011,
 				A00000000000000000000006 /* Pairing.swift in Sources */,
 				A00000000000000000000007 /* PairingView.swift in Sources */,
 				A00000000000000000000009 /* AppSetupViews.swift in Sources */,
@@ -246,6 +326,10 @@
 			buildActionMask = 2147483647;
 			files = (
 				A00000000000000000000005 /* ClientTests.swift in Sources */,
+0BD100000000000000000003 /* OnboardingTests.swift in Sources */,
+				EAD100000000000000000004 /* LeadsTests.swift in Sources */,
+					A0A0A0000000000000000002 /* TrialsTests.swift in Sources */,
+					F0F100000000000000000006 /* MarketTests.swift in Sources */,
 900000000000000000000011,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -311,7 +395,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = IAPNotifications/IAPNotifications.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 8;
+				CURRENT_PROJECT_VERSION = 26;
 				DEVELOPMENT_TEAM = ZMNPR5G4ZL;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = "IAPNotifications/Info-Debug.plist";
@@ -319,7 +403,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.0.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.kozr.quest;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -337,7 +421,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = IAPNotifications/IAPNotifications.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 8;
+				CURRENT_PROJECT_VERSION = 26;
 				DEVELOPMENT_TEAM = ZMNPR5G4ZL;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = "IAPNotifications/Info-Release.plist";
@@ -345,7 +429,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.0.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.kozr.quest;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -403,13 +487,13 @@
 90000000000000000000000E = {isa = XCBuildConfiguration; buildSettings = {
 APPLICATION_EXTENSION_API_ONLY = YES;
 CODE_SIGN_STYLE = Automatic;
-CURRENT_PROJECT_VERSION = 8;
+CURRENT_PROJECT_VERSION = 26;
 DEVELOPMENT_TEAM = ZMNPR5G4ZL;
 GENERATE_INFOPLIST_FILE = NO;
 INFOPLIST_FILE = NotificationService/Info.plist;
 IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks", "@executable_path/../../Frameworks", );
-MARKETING_VERSION = 1.0;
+MARKETING_VERSION = 1.0.2;
 PRODUCT_BUNDLE_IDENTIFIER = com.kozr.quest.NotificationService;
 PRODUCT_NAME = "$(TARGET_NAME)";
 SKIP_INSTALL = YES;
@@ -420,13 +504,13 @@ TARGETED_DEVICE_FAMILY = 1;
 90000000000000000000000F = {isa = XCBuildConfiguration; buildSettings = {
 APPLICATION_EXTENSION_API_ONLY = YES;
 CODE_SIGN_STYLE = Automatic;
-CURRENT_PROJECT_VERSION = 8;
+CURRENT_PROJECT_VERSION = 26;
 DEVELOPMENT_TEAM = ZMNPR5G4ZL;
 GENERATE_INFOPLIST_FILE = NO;
 INFOPLIST_FILE = NotificationService/Info.plist;
 IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks", "@executable_path/../../Frameworks", );
-MARKETING_VERSION = 1.0;
+MARKETING_VERSION = 1.0.2;
 PRODUCT_BUNDLE_IDENTIFIER = com.kozr.quest.NotificationService;
 PRODUCT_NAME = "$(TARGET_NAME)";
 SKIP_INSTALL = YES;

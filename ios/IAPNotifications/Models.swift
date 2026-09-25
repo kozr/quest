@@ -10,10 +10,10 @@ enum PreviewContent {
     static let apps: [ConnectedApp] = [
         ConnectedApp(id: "demo-orbit", name: "Orbit Journal", bundleId: "com.example.orbit", appleId: "0", source: "apple", iconUrl: nil,
                      createdAt: "2026-09-01T12:00:00Z", webhookUrls: .init(production: "", sandbox: ""),
-                     lastProductionEventAt: nil, lastSandboxEventAt: nil, forwardingUrl: nil),
+                     lastProductionEventAt: nil, lastSandboxEventAt: nil, forwardingUrl: nil, bundledIconName: "DemoOrbitIcon"),
         ConnectedApp(id: "demo-focus", name: "Pocket Focus", bundleId: "com.example.focus", appleId: "0", source: "apple", iconUrl: nil,
                      createdAt: "2026-09-01T12:00:00Z", webhookUrls: .init(production: "", sandbox: ""),
-                     lastProductionEventAt: nil, lastSandboxEventAt: nil, forwardingUrl: nil)
+                     lastProductionEventAt: nil, lastSandboxEventAt: nil, forwardingUrl: nil, bundledIconName: "DemoFocusIcon")
     ]
     static func events(now: Date = Date()) -> [ActivityEvent] {
         let examples: [(String, String, String, Int64?, Int)] = [
@@ -70,7 +70,7 @@ struct OKResponse: Decodable { let ok: Bool }
 struct AccountDeletionResponse: Decodable { let ok: Bool; let receipt: String }
 struct AccountDeletionStatus: Decodable { let status: String }
 struct AccountDeletionReceipt: Codable { let serverURL: String; let token: String }
-struct ErrorResponse: Decodable { let error: String }
+struct ErrorResponse: Decodable { let error: String; let code: String? }
 
 struct ConnectedApp: Decodable, Identifiable {
     struct WebhookURLs: Decodable {
@@ -89,6 +89,13 @@ struct ConnectedApp: Decodable, Identifiable {
     let lastProductionEventAt: String?
     let lastSandboxEventAt: String?
     let forwardingUrl: String?
+    // App-owned preview art only; never supplied by API responses.
+    var bundledIconName: String? = nil
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, bundleId, appleId, source, iconUrl, createdAt, webhookUrls
+        case lastProductionEventAt, lastSandboxEventAt, forwardingUrl
+    }
 }
 
 enum ActivityEnvironment: String, CaseIterable, Identifiable {
@@ -103,7 +110,7 @@ enum ActivityEnvironment: String, CaseIterable, Identifiable {
     }
 }
 
-struct ActivityEvent: Decodable, Identifiable {
+struct ActivityEvent: Codable, Identifiable {
     let id: String
     let appId: String
     let appName: String
@@ -120,6 +127,28 @@ struct ActivityEvent: Decodable, Identifiable {
     let notificationType: String
     let subtype: String?
     let isMonetary: Bool
+    var activityAt: String? = nil
+
+    var activityDate: Date? {
+        if let activityAt, let date = Timestamp.date(activityAt) { return date }
+        // Older servers/cache entries do not distinguish imports. Preserve history,
+        // but never present a transaction later than receipt as the activity time.
+        let occurred = Timestamp.date(occurredAt)
+        let received = Timestamp.date(receivedAt)
+        if let occurred, let received { return min(occurred, received) }
+        return occurred ?? received
+    }
+
+    var appleDateLabel: String {
+        if environment == "Demo" { return "Demo event date" }
+        return ["sale", "renewal", "trial"].contains(kind) ? "Apple transaction date" : "Apple event date"
+    }
+
+    var renewalReportedEarly: Bool {
+        guard kind == "renewal", let occurred = Timestamp.date(occurredAt),
+              let received = Timestamp.date(receivedAt) else { return false }
+        return occurred > received
+    }
 
     var amountDescription: String? {
         guard let amountMilliunits, let currency, !currency.isEmpty else { return nil }
@@ -217,15 +246,40 @@ struct SavedSession: Codable {
     var automaticNotificationRegistrationAllowed: Bool { notificationsPaused != true }
 }
 
+enum DisplayTimeZone: String, CaseIterable, Identifiable {
+    case local, utc
+    static let storageKey = "questline.displayTimeZone"
+    var id: String { rawValue }
+    var title: String { self == .utc ? "UTC" : "Local" }
+    var timeZone: TimeZone { self == .utc ? TimeZone(identifier: "UTC")! : .autoupdatingCurrent }
+    var calendar: Calendar { Timestamp.calendar(timeZone: timeZone) }
+}
+
 enum Timestamp {
+    static func zoneLabel(_ timeZone: TimeZone, at date: Date) -> String {
+        timeZone == DisplayTimeZone.utc.timeZone ? "UTC" : (timeZone.abbreviation(for: date) ?? timeZone.identifier)
+    }
+
+    static func calendar(timeZone: TimeZone) -> Calendar {
+        var calendar = Calendar.current
+        calendar.timeZone = timeZone
+        return calendar
+    }
+
     static func date(_ value: String) -> Date? {
         let fractional = ISO8601DateFormatter()
         fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return fractional.date(from: value) ?? ISO8601DateFormatter().date(from: value)
     }
 
-    static func display(_ value: String) -> String {
+    static func display(_ value: String, timeZone: TimeZone = .autoupdatingCurrent) -> String {
         guard let date = date(value) else { return "Unknown date" }
-        return date.formatted(date: .abbreviated, time: .shortened)
+        return date.formatted(Date.FormatStyle(date: .abbreviated, time: .shortened, timeZone: timeZone))
+    }
+
+    static func displayWithTimeZone(_ value: String, timeZone: TimeZone = .autoupdatingCurrent) -> String {
+        guard let date = date(value) else { return "Unknown date" }
+        if timeZone == DisplayTimeZone.utc.timeZone { return display(value, timeZone: timeZone) + " UTC" }
+        return date.formatted(Date.FormatStyle(timeZone: timeZone).year().month(.abbreviated).day().hour().minute().timeZone(.specificName(.short)))
     }
 }
