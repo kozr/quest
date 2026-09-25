@@ -72,6 +72,20 @@ struct QuestMainPageHeader<Actions: View>: View {
     }
 }
 
+/// One stretchable wooden frame, parchment, and brass bookmark for both boards.
+struct QuestBoardBackground: View {
+    var body: some View {
+        GeometryReader { geometry in
+            Image("LeadsSharedBoard")
+                .resizable(capInsets: EdgeInsets(top: 70, leading: 20, bottom: 24, trailing: 48),
+                           resizingMode: .stretch)
+                .frame(width: geometry.size.width, height: geometry.size.height)
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}
+
 struct QuestAppPickerLabel: View {
     let app: ConnectedApp
     @ScaledMetric(relativeTo: .subheadline) private var rowHeight: CGFloat = 48

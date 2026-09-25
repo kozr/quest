@@ -424,15 +424,7 @@ struct LeadsView: View {
         .padding(.vertical, 16)
         .frame(maxWidth: .infinity)
         .frame(minHeight: visibleProgress?.shouldPoll == true ? 440 : nil, alignment: .top)
-        .background {
-            GeometryReader { proxy in
-                Image("LeadsSharedBoard")
-                    .resizable(capInsets: EdgeInsets(top: 70, leading: 20, bottom: 24, trailing: 48),
-                               resizingMode: .stretch)
-                    .frame(width: proxy.size.width, height: proxy.size.height)
-                    .accessibilityHidden(true)
-            }
-        }
+        .background { QuestBoardBackground() }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("leadsWoodBoard")
     }

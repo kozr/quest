@@ -333,7 +333,7 @@ struct MarketView: View {
             }
             scanControls(overview: overview)
         }
-        .padding(.horizontal, 38)
+        .padding(.horizontal, 29)
         .padding(.top, 26)
         .padding(.bottom, 26)
     }
@@ -448,7 +448,7 @@ struct MarketView: View {
                     .padding(.top, 10)
             }
         }
-        .padding(.horizontal, 38)
+        .padding(.horizontal, 29)
         .padding(.top, 26)
         .padding(.bottom, 26)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -577,35 +577,8 @@ struct MarketPaperBoard<Content: View>: View {
     var body: some View {
         content
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background { MarketBoardDecoration() }
+            .background { QuestBoardBackground() }
             .padding(.horizontal, 3)
-    }
-}
-
-private struct MarketBoardDecoration: View {
-    var body: some View {
-        GeometryReader { geometry in
-            ZStack {
-                Image("LeadsWoodBoard")
-                    .resizable(capInsets: EdgeInsets(top: 20, leading: 20, bottom: 20, trailing: 20), resizingMode: .stretch)
-                    .frame(width: geometry.size.width, height: geometry.size.height)
-                let paperWidth = max(0, geometry.size.width - 25)
-                let paperHeight = max(0, geometry.size.height - 20)
-                let paperShape = RoundedRectangle(cornerRadius: 11, style: .continuous)
-                paperShape.fill(Color(red: 0.96, green: 0.90, blue: 0.81))
-                    .frame(width: paperWidth, height: paperHeight)
-                Image("LeadsParchment")
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: paperWidth, height: paperHeight)
-                    .clipped()
-                    .colorMultiply(Color(red: 0.996, green: 0.987, blue: 0.98))
-                    .clipShape(paperShape)
-                paperShape.stroke(Color(red: 0.68, green: 0.52, blue: 0.30).opacity(0.42), lineWidth: 0.8)
-                    .frame(width: paperWidth, height: paperHeight)
-            }
-            .accessibilityHidden(true)
-        }
     }
 }
 
@@ -687,7 +660,7 @@ struct MarketBoardMessage<Actions: View>: View {
             actions
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 38)
+        .padding(.horizontal, 29)
         .padding(.top, 26)
         .padding(.bottom, 26)
     }

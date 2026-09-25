@@ -176,9 +176,9 @@ struct MarketPeopleList: View {
                         .padding(.top, 13)
                 }
             }
-            .padding(.horizontal, 38)
-            .padding(.top, 28)
-            .padding(.bottom, 22)
+            .padding(.horizontal, 29)
+            .padding(.top, 26)
+            .padding(.bottom, 26)
         }
     }
 }
