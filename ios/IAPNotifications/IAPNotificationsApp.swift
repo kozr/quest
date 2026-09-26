@@ -914,6 +914,8 @@ struct SettingsView: View {
             .contentMargins(.top, 0, for: .scrollContent)
             .background(QuestStyle.navy.ignoresSafeArea())
             .tint(QuestStyle.gold)
+            // Keep native form labels legible even when a sibling paywall requests light appearance.
+            .environment(\.colorScheme, .dark)
             .preferredColorScheme(.dark)
             .navigationTitle("Settings")
             .toolbar(.hidden, for: .navigationBar)

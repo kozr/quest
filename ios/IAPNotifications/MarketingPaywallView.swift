@@ -23,25 +23,19 @@ struct MarketingPaywallView: View {
 
     var body: some View {
         GeometryReader { geometry in
-            Group {
-                if typeSize.isAccessibilitySize {
-                    scrollingPage
-                } else {
-                    ViewThatFits(in: .vertical) {
-                        splitPage
+            VStack(spacing: 0) {
+                header(topInset: geometry.safeAreaInsets.top)
+                Group {
+                    if typeSize.isAccessibilitySize {
                         scrollingPage
+                    } else {
+                        ViewThatFits(in: .vertical) {
+                            splitPage
+                            scrollingPage
+                        }
                     }
                 }
-            }
-            .clipped()
-            .overlay(alignment: .top) {
-                // Continue the header artwork through the status bar while keeping scrolling text below it.
-                Image("QuestLandscape").resizable()
-                    .frame(width: geometry.size.width, height: geometry.size.width * 1844 / 853)
-                    .offset(y: -geometry.size.width * 0.36 + geometry.safeAreaInsets.top)
-                    .frame(height: geometry.safeAreaInsets.top, alignment: .top).clipped()
-                    .offset(y: -geometry.safeAreaInsets.top)
-                    .allowsHitTesting(false).accessibilityHidden(true)
+                .clipped()
             }
         }
         .background {
@@ -87,7 +81,7 @@ struct MarketingPaywallView: View {
             .scrollBounceBehavior(.basedOnSize)
             .scrollIndicatorsFlash(onAppear: true)
             .accessibilityIdentifier("paywall.benefits")
-            .frame(minHeight: 220, idealHeight: 220, maxHeight: .infinity)
+            .frame(minHeight: 120, idealHeight: 120, maxHeight: .infinity)
             .clipped()
 
             VStack(spacing: 12) {
@@ -147,7 +141,6 @@ struct MarketingPaywallView: View {
 
     private var benefits: some View {
         VStack(spacing: 0) {
-            header
             VStack(spacing: 16) {
                 introduction
                 comparison
@@ -170,13 +163,15 @@ struct MarketingPaywallView: View {
         appSelection
     }
 
-    private var header: some View {
+    private func header(topInset: CGFloat) -> some View {
         VStack(spacing: 0) {
             GeometryReader { geometry in
+                // One fixed image spans the status bar and header, so scrolling cannot split the artwork.
                 Image("QuestLandscape").resizable()
                     .frame(width: geometry.size.width, height: geometry.size.width * 1844 / 853)
-                    .offset(y: -geometry.size.width * 0.36)
-                    .frame(height: 56, alignment: .top).clipped()
+                    .offset(y: -geometry.size.width * 0.36 + topInset)
+                    .frame(height: 56 + topInset, alignment: .top).clipped()
+                    .offset(y: -topInset)
             }.frame(height: 56).accessibilityHidden(true)
             HStack(spacing: 10) {
                 Image(systemName: "sparkle").font(.title3).accessibilityHidden(true)
@@ -223,7 +218,7 @@ struct MarketingPaywallView: View {
             feature("Suggested replies", free: false)
             feature("Customer problems", free: false)
             feature("Competitors & alternatives", free: false)
-            feature("Latest Market News", free: false)
+            feature("Latest market news", free: false)
             feature("Source-backed research", free: false)
         }
     }
