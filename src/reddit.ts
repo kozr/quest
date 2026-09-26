@@ -24,7 +24,6 @@ export function redditAccess(env=process.env) {
 }
 /** The legacy account feed must not bypass paid per-app coverage. */
 async function redditScope(store:Store,userId:string) {
-  if(!marketingBillingEnabled()) return {settings:await store.get<RedditSettings>('reddit_settings',userId)??emptyRedditSettings,profiles:null};
   const access=await marketingSubscription(store,userId);
   const profiles=(await Promise.all(access.appIDs.map(id=>store.get<LeadProfile>('lead_profiles',documentKey(userId,id)))))
     .filter((profile):profile is LeadProfile=>!!profile?.enabled&&profile.user_id===userId&&access.appIDs.includes(profile.app_id));
@@ -36,7 +35,7 @@ export function redditRouter(store:Store) {
   const uid=(req:unknown)=>(req as AuthenticatedRequest).user.id;
   router.get('/access',(req,res)=>{const access=redditAccess();res.json({enabled:access.enabled && access.allows(uid(req))});});
   router.use(async(req,_res,next)=>{
-    if(marketingBillingEnabled()) {
+    {
       const subscription=await marketingSubscription(store,uid(req));
       if(!subscription.active||!subscription.appIDs.length) throw new ServiceError(403,'An active Marketing subscription is required.','MARKETING_SUBSCRIPTION_REQUIRED');
     }

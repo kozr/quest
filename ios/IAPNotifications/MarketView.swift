@@ -26,7 +26,7 @@ struct MarketView: View {
     @ScaledMetric(relativeTo: .body) private var quoteSize: CGFloat = 17
     @ScaledMetric(relativeTo: .body) private var attributionSize: CGFloat = 13
     @ScaledMetric(relativeTo: .body) private var actionFontSize: CGFloat = 16
-    private var marketingAllowed: Bool { model.isPreviewMode || !billing.isEnabled || billing.canAccess(appID: store.selectedMarketAppID ?? "") }
+    private var marketingAllowed: Bool { model.isPreviewMode || billing.canAccess(appID: store.selectedMarketAppID ?? "") }
 
     private var contextKey: String {
         [model.user?.id ?? "signed-out", String(model.isPreviewMode),

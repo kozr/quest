@@ -1,4 +1,4 @@
-import {marketingBillingEnabled,hasMarketingAccess} from './marketing-billing.js';
+import {hasMarketingAccess} from './marketing-billing.js';
 import {randomUUID} from 'node:crypto';
 import {Timestamp,FieldPath} from 'firebase-admin/firestore';
 import {Store,documentKey} from './database.js';
@@ -76,7 +76,7 @@ export async function collectReddit(store:Store,provider:RedditApify,env=process
       for(const community of initialProfile.communities) communitySet.add(community);
     } else if(access.allAccounts) {
       // Query only opt-in settings/profiles, in pages; do not enumerate account identities.
-      for(const collection of [...(marketingBillingEnabled(env)?[]:['reddit_settings']),...(env.LEADS_ENABLED==='true'?['lead_profiles']:[])]) {
+      for(const collection of (env.LEADS_ENABLED==='true'?['lead_profiles']:[])) {
         let after:string|undefined;
         while(true) {
           let query=store.collection(collection).where('enabled','==',true).orderBy(FieldPath.documentId());
@@ -95,8 +95,6 @@ export async function collectReddit(store:Store,provider:RedditApify,env=process
     } else {
       for(const userId of [...access.allowed].slice(0,100)) {
         if(await store.accountDeleting(userId)) continue;
-        const setting=await store.get<RedditSettings>('reddit_settings',userId);
-        if(!marketingBillingEnabled(env)&&setting?.enabled) for(const community of setting.communities) communitySet.add(community);
         if(env.LEADS_ENABLED==='true') {
           const profiles=await store.list<LeadProfile>('lead_profiles',[['user_id','==',userId],['enabled','==',true]],100);
           for(const profile of profiles) if(await store.getApp(profile.app_id,userId)&&await hasMarketingAccess(store,userId,profile.app_id,env,now))

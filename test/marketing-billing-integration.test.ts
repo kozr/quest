@@ -28,7 +28,7 @@ async function fixture(store:Store) {
 test('verified subscriptions bind to account, enforce owned app coverage, and expire at the deadline',async()=>{
   const store=testStore(),f=await fixture(store);
   assert.equal(await hasMarketingAccess(store,f.user,f.apps[0],env),false);
-  assert.equal(await hasMarketingAccess(store,f.user,f.apps[0],{}),true,'disabled rollout preserves beta');
+  assert.equal(await hasMarketingAccess(store,f.user,f.apps[0],{}),false,'disabled billing must not unlock beta access');
   const paid=await syncMarketingTransaction(store,f.user,f.tx,[f.apps[0]],env);
   assert.equal(paid.active,true);assert.equal(paid.appLimit,1);
   assert.equal(await hasMarketingAccess(store,f.user,f.apps[0],env),true);
@@ -106,6 +106,11 @@ test('paid gates stop new research and old beta trials while leaving app setup a
   assert.equal((await fetch(`${url}/apps/${f.apps[0]}/leads`)).status,403);
   assert.equal((await fetch(`${url}/apps/${f.apps[0]}/leads/profile`)).status,200,'profile preparation stays available');
   assert.equal((await fetch(`${url}/onboarding/trial`,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})).status,410);
+  // Disabled or malformed rollout configuration must also lock legacy paid endpoints.
+  process.env.MARKETING_BILLING_ENABLED='false';
+  assert.equal((await fetch(`${url}/apps/${f.apps[0]}/leads`)).status,403);
+  assert.equal((await fetch(`${url}/reddit/posts`)).status,403);
+  process.env.MARKETING_BILLING_ENABLED='true';
   await syncMarketingTransaction(store,f.user,f.tx,[f.apps[0]],env);
   await requireQuestAccess(store,f.user,f.apps[0],'post1');
   assert.equal((await fetch(`${url}/apps/${f.apps[0]}/leads`)).status,200,'paid account escapes legacy free quest lock');
@@ -123,3 +128,15 @@ test('paid gates stop new research and old beta trials while leaving app setup a
   assert.equal((await fetch(`${url}/reddit/posts/uncovered`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:'saved'})})).status,404);
 
 });
+
+ test('TestFlight Sandbox entitlements require opt-in, owned coverage, and stop at expiry',async()=>{
+  const store=testStore(),f=await fixture(store);
+  const sandbox={...env,MARKETING_ALLOW_SANDBOX:'true'};
+  const tx=marketingTransaction({...f.payload,environment:'Sandbox'},sandbox,f.now);
+  await syncMarketingTransaction(store,f.user,tx,[f.apps[0]],sandbox);
+  assert.equal(await hasMarketingAccess(store,f.user,f.apps[0],sandbox),true);
+  assert.equal(await hasMarketingAccess(store,f.user,f.apps[1],sandbox),false);
+  assert.equal(await hasMarketingAccess(store,f.user,f.apps[0],env),false);
+  assert.equal(await hasMarketingAccess(store,f.user,f.apps[0],sandbox,tx.expiresAt),false);
+  assert.equal(await hasMarketingAccess(store,f.user,f.apps[0],{}),false);
+ });

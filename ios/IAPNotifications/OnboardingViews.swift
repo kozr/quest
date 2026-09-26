@@ -222,12 +222,12 @@ struct QuestOnboardingView: View {
             switch stage {
             case .app: FindQuestAppPage()
             case .quest:
-                if billing.subscription == nil && !model.isPreviewMode { MarketingConnectionView() }
-                else if billing.isEnabled && !billing.canAccess(appID: model.selectedLeadAppID ?? "") { MoreQuestsPage(startResearch: true) }
+                if billing.subscription == nil && !billing.simulatesNoPurchase && !model.isPreviewMode { MarketingConnectionView() }
+                else if !model.isPreviewMode && !billing.canAccess(appID: model.selectedLeadAppID ?? "") { MoreQuestsPage(startResearch: true) }
                 else { LoadQuestPage() }
             case .first:
-                if billing.subscription == nil && !model.isPreviewMode { MarketingConnectionView() }
-                else if billing.isEnabled && !billing.canAccess(appID: model.selectedLeadAppID ?? "") { MoreQuestsPage(startResearch: true) }
+                if billing.subscription == nil && !billing.simulatesNoPurchase && !model.isPreviewMode { MarketingConnectionView() }
+                else if !model.isPreviewMode && !billing.canAccess(appID: model.selectedLeadAppID ?? "") { MoreQuestsPage(startResearch: true) }
                 else if let lead = model.leadItems.first,
                    let app = model.apps.first(where: { $0.id == model.selectedLeadAppID }) {
                     FirstQuestPage(session: model.journal(for: lead, appName: app.name), app: app)
@@ -239,7 +239,7 @@ struct QuestOnboardingView: View {
         }
         .id(stage)
         .task(id: "\(model.selectedLeadAppID ?? "")|\(stage.rawValue)") {
-            guard stage == .first, model.isPreviewMode || billing.subscription != nil && (!billing.isEnabled || billing.canAccess(appID: model.selectedLeadAppID ?? "")) else { return }
+            guard stage == .first, model.isPreviewMode || billing.subscription != nil && billing.canAccess(appID: model.selectedLeadAppID ?? "") else { return }
             while !Task.isCancelled {
                 await model.refreshLeadBoard(background: true)
                 do { try await Task.sleep(for: .seconds(6)) } catch { return }
@@ -945,7 +945,7 @@ struct SalesConnectionPage: View {
         Task {
             do {
                 try await model.finishOnboarding()
-                if billing.isEnabled && !billing.hasActiveSubscription { model.selectedTab = "activity" }
+                if !billing.hasActiveSubscription { model.selectedTab = "activity" }
             }
             catch { self.error = error.localizedDescription }
             busy = false

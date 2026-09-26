@@ -100,6 +100,23 @@ final class MarketingStore: ObservableObject {
     @Published private(set) var statusMessage: String?
     @Published private(set) var isPreview = false
 
+    // Session-only and restrictive: debug can hide access, never invent a purchase.
+    @Published private(set) var simulatesNoPurchase = false
+    @Published private(set) var allowsPaywallDebug = false
+
+    func setPaywallDebugAvailable(_ available: Bool) {
+        allowsPaywallDebug = available && userID != nil && !isPreview
+        if !allowsPaywallDebug { simulatesNoPurchase = false }
+    }
+
+    func simulateNoPurchase(_ enabled: Bool) {
+        simulatesNoPurchase = allowsPaywallDebug && enabled
+    }
+
+    var needsPaywall: Bool {
+        simulatesNoPurchase || !hasActiveSubscription || subscription?.appIDs.isEmpty != false
+    }
+
     private var client: APIClient?
     private var userID: String?
     private var accountRevision = UUID()
@@ -109,7 +126,7 @@ final class MarketingStore: ObservableObject {
     private var expiryTask: Task<Void, Never>?
     private var pendingAppIDs: [String]?
 
-    var hasActiveSubscription: Bool { subscription?.isActive() == true }
+    var hasActiveSubscription: Bool { !simulatesNoPurchase && subscription?.isActive() == true }
     var isEnabled: Bool { subscription?.enabled == true }
     var isBusy: Bool { isLoading || isPurchasing || isRestoring || isUpdatingApps }
 
@@ -145,6 +162,8 @@ final class MarketingStore: ObservableObject {
         loadRequestID = UUID()
         expiryTask?.cancel()
         subscription = nil
+        simulatesNoPurchase = false
+        allowsPaywallDebug = false
         products = [:]
         pendingAppIDs = nil
         isLoading = false
@@ -157,7 +176,7 @@ final class MarketingStore: ObservableObject {
     }
 
     func canAccess(appID: String) -> Bool {
-        !isPreview && subscription?.grantsAccess(to: appID) == true
+        !isPreview && !simulatesNoPurchase && subscription?.grantsAccess(to: appID) == true
     }
 
     func displayPrice(for plan: MarketingPlan) -> String? {
@@ -176,7 +195,7 @@ final class MarketingStore: ObservableObject {
 
     func canPurchase(_ plan: MarketingPlan, appIDs: [String]) -> Bool {
         !isPreview && !isBusy && client != nil && userID != nil &&
-        isEnabled && !hasActiveSubscription && subscription?.accountToken != nil &&
+        isEnabled && subscription?.isActive() != true && subscription?.accountToken != nil &&
         products[plan.productID] != nil && plan.accepts(appIDs: appIDs)
     }
 

@@ -94,7 +94,8 @@ export async function marketingSubscription(store:Store,userId:string,env=proces
   return state(store,userId,env,now,true);
 }
 export async function hasMarketingAccess(store:Store,userId:string,appId:string,env=process.env,now=Date.now()) {
-  if(!marketingBillingEnabled(env)) return true;
+  // Billing availability must never grant unpaid access (including beta installs).
+  if(!marketingBillingEnabled(env)) return false;
   const [access,app]=await Promise.all([state(store,userId,env,now),store.getApp(appId,userId)]);
   return !!app&&access.active&&access.appIDs.includes(appId);
 }

@@ -1,6 +1,6 @@
 # Marketing subscriptions
 
-Sales analytics, customer purchase/trial analytics, and sales push notifications stay free. Marketing requires an active, server-verified Quest subscription for a selected connected app when the billing rollout is enabled. This includes lead results, suggested replies, Market results, scans, background AI qualification/discovery, and lead push notifications. App connection and marketing profile preparation remain available before purchase. When billing is enabled, the legacy account-level Reddit feed reads only communities and keywords from enabled profiles of currently covered apps; its account-level settings editor directs users to those app profiles.
+Sales analytics, customer purchase/trial analytics, and sales push notifications stay free. Marketing requires an active, server-verified Quest subscription for a selected connected app. Missing or disabled billing configuration denies paid access. This includes lead results, suggested replies, Market results, scans, background AI qualification/discovery, and lead push notifications. App connection and marketing profile preparation remain available before purchase. When billing is enabled, the legacy account-level Reddit feed reads only communities and keywords from enabled profiles of currently covered apps; its account-level settings editor directs users to those app profiles.
 
 ## Product configuration
 
@@ -17,7 +17,7 @@ No free trial, introductory rescue offer, or Family Sharing is configured by thi
 
 ## Explicit rollout controls
 
-Billing stays **disabled by default**. Existing beta backend access remains intact until both of these are present. The native offer replaces the old trial page; it never starts a free trial:
+Purchasing stays **disabled by default**. Paid access stays locked, including for beta accounts, until billing is configured and a verified subscription covers the app. The native offer replaces the old trial page; it never starts a free trial. Both of these must be present:
 
 - `MARKETING_BILLING_ENABLED=true`
 - `MARKETING_APP_APPLE_ID=<Quest's own numeric App Store ID>`
@@ -63,3 +63,13 @@ Account deletion removes token/account records and retained transaction payload 
 Automated tests cover disabled rollout, semantic signature-payload validation, original ownership, app-account binding, selected-app limits, expiry boundaries, out-of-order renewal/refund replay, deleted apps, downgrade pruning, restore without selection, forged input rejection, verified lifecycle routing, subscription gates and disabled legacy trials. Integration tests use the local Firebase emulator and server-only verifier fixtures, not real purchases.
 
 Before enabling real billing, test actual Apple Sandbox purchase, cancellation, pending approval, renewal, expiry, refund/revocation, restore on another device, wrong-Quest-account restore, 1↔3 coverage changes, and product localization. Confirm Terms, Privacy, Restore, and Manage Subscription links; show annual total billing amount prominently. Confirm sales analytics and sales push still function without a subscription. These are release checks; they are not represented as completed by local unit/integration tests.
+
+## TestFlight paywall gate — September 26, 2026
+
+The native Marketing tabs, per-app screens, and onboarding no longer treat `enabled: false` as free access. The API access helper also denies access when configuration is missing/disabled. Legacy Reddit feeds require a verified subscription, and the collector no longer discovers communities from unpaid account-level beta settings. Sales tracking remains free. Deploy these changes to the API and workers together; earlier deployment notes above describe the former beta bypass.
+
+On a detected TestFlight installation, **Settings → TestFlight → Simulate no Marketing purchase** forces the unpaid UI even for a subscribed tester. **Open Marketing paywall** opens the offer directly. Turn simulation off (also available within the paywall) to return to the real purchase status. Simulation never grants server access, changes an entitlement, or allows a duplicate subscription when the server already reports an active purchase. It resets when the account/server changes or the app restarts and is unavailable in App Store installations. To exercise the purchased state, complete a real Apple Sandbox purchase first.
+
+TestFlight uses Apple's Sandbox. Configure `MARKETING_BILLING_ENABLED=true`, `MARKETING_APP_APPLE_ID=6809939942`, and `MARKETING_ALLOW_SANDBOX=true` consistently on the API and marketing workers before testing purchases. The app cannot enable server billing through its debug switch. Do not interpret a disabled purchase button while billing is unavailable as a successful Sandbox purchase test.
+
+Validation: 14 billing XCTest cases passed in the macOS harness using the current native billing sources; all Release iOS Swift sources passed direct typechecking; 8 backend billing unit/integration tests passed with isolated Firebase Auth/Firestore emulators, including Sandbox opt-in, app coverage, expiry, disabled configuration, and legacy feed denial. These tests use fixture transactions and do not establish real Apple Sandbox checkout. Logs: `test-results/paywall-testflight/`. Xcode's full Release build stalled during compiler probing; no archive, TestFlight upload, or backend deployment is claimed for this change.

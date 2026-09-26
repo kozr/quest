@@ -93,6 +93,47 @@ final class MarketingTests: XCTestCase {
         for plan in MarketingPlan.all { XCTAssertFalse(store.canPurchase(plan, appIDs: ["a"])) }
     }
 
+    func testTestFlightToggleHidesRealCoverageAndRestoresItWithoutMutatingEntitlement() async throws {
+        let store = makeStore()
+        let body = try encoded(status(expiresAt: Date().addingTimeInterval(600).timeIntervalSince1970 * 1_000))
+        MarketingURLProtocol.handler = { _ in (200, body) }
+        await store.refresh()
+        XCTAssertFalse(store.needsPaywall)
+        store.simulateNoPurchase(true)
+        XCTAssertFalse(store.simulatesNoPurchase, "Unavailable debug controls cannot change access")
+        store.setPaywallDebugAvailable(true)
+        store.simulateNoPurchase(true)
+        XCTAssertTrue(store.needsPaywall)
+        XCTAssertFalse(store.hasActiveSubscription)
+        XCTAssertFalse(store.canAccess(appID: "a"))
+        XCTAssertTrue(store.subscription?.isActive() == true)
+        await store.refresh()
+        XCTAssertTrue(store.needsPaywall, "Refresh must preserve the debug state")
+        store.simulateNoPurchase(false)
+        XCTAssertTrue(store.canAccess(appID: "a"))
+        XCTAssertFalse(store.canAccess(appID: "b"))
+        store.simulateNoPurchase(true)
+        store.configure(client: nil, userID: nil)
+        XCTAssertFalse(store.simulatesNoPurchase)
+        XCTAssertFalse(store.allowsPaywallDebug)
+        XCTAssertTrue(store.needsPaywall)
+    }
+
+    func testDebugToggleCannotGrantAnUnpaidAccountAccess() async throws {
+        let store = makeStore()
+        let body = try encoded(status(enabled: false, active: false, appLimit: 0, appIDs: [], productID: nil, expiresAt: nil))
+        MarketingURLProtocol.handler = { _ in (200, body) }
+        await store.refresh()
+        store.setPaywallDebugAvailable(true)
+        for enabled in [true, false] {
+            store.simulateNoPurchase(enabled)
+            XCTAssertTrue(store.needsPaywall)
+            XCTAssertFalse(store.canAccess(appID: "a"))
+        }
+        store.setPaywallDebugAvailable(false)
+        XCTAssertFalse(store.simulatesNoPurchase)
+    }
+
     func testServerMarkedActiveButExpiredNeverUnlocksMarketing() async throws {
         let store = makeStore()
         let body = try encoded(status(expiresAt: Date().addingTimeInterval(-1).timeIntervalSince1970 * 1_000))

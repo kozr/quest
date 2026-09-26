@@ -48,3 +48,7 @@ The project uses developer team `ZMNPR5G4ZL` with Push Notifications and Sign in
 The embedded `NotificationService` extension uses bundle ID `com.kozr.quest.NotificationService`. For eligible event pushes, it downloads Apple-hosted HTTPS artwork and attaches a 256-pixel PNG thumbnail. The system notification icon remains Questline's icon. Missing artwork, redirects, invalid images, oversized downloads, and timeouts fall back to the text alert. Demo/Sandbox labels and the hide-amounts preference remain in effect.
 
 Compilation and simulator checks do not establish physical Apple sign-in, APNs display/tap, rich-notification delivery, or real Apple authorization revocation. Complete the device acceptance checklist in the release document before submission.
+
+## TestFlight paywall testing
+
+Open **Settings → TestFlight → Simulate no Marketing purchase** to force the unpaid Marketing gate, and use **Open Marketing paywall** to inspect the offer. Switch simulation off to restore actual Sandbox purchase status; this never fabricates a subscription or grants server access. The override is session-only and unavailable in App Store installations. Activity and sales tracking stay free. Real TestFlight checkout requires coordinated server Sandbox billing configuration; see `docs/MARKETING_BILLING.md`.

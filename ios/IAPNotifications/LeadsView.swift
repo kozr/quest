@@ -10,7 +10,7 @@ struct LeadsView: View {
     @State private var setupApp: ConnectedApp?
     @State private var showingQuestTrial = false
     @State private var journalPath: [LeadJournalSession] = []
-    private var marketingAllowed: Bool { model.isPreviewMode || !billing.isEnabled || billing.canAccess(appID: model.selectedLeadAppID ?? "") }
+    private var marketingAllowed: Bool { model.isPreviewMode || billing.canAccess(appID: model.selectedLeadAppID ?? "") }
     #if DEBUG
     @State private var didOpenPreviewJournal = false
     #endif

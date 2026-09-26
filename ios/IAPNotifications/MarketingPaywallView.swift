@@ -342,6 +342,12 @@ struct MarketingPaywallView: View {
     }
 
     @ViewBuilder private var messages: some View {
+        if billing.simulatesNoPurchase {
+            Text("TestFlight: showing the unpurchased state. Your real subscription is unchanged.")
+                .font(.footnote).accessibilityIdentifier("paywall.debugState")
+            Button("Use real purchase status") { billing.simulateNoPurchase(false) }
+                .frame(minHeight: 44)
+        }
         if !billing.isPreview && !billing.isEnabled && !billing.isLoading {
             Text("Marketing subscriptions are currently unavailable. You can continue with free sales tracking.")
                 .font(.footnote).foregroundStyle(QuestPageInk.secondary)
@@ -430,9 +436,9 @@ struct MarketingAccessView<Content: View>: View {
     @EnvironmentObject private var billing: MarketingStore
     @ViewBuilder var content: Content
     var body: some View {
-        if billing.subscription == nil && !model.isPreviewMode {
+        if billing.subscription == nil && !billing.simulatesNoPurchase && !model.isPreviewMode {
             MarketingConnectionView()
-        } else if billing.isEnabled && (!billing.hasActiveSubscription || billing.subscription?.appIDs.isEmpty == true) && !model.isPreviewMode {
+        } else if billing.needsPaywall && !model.isPreviewMode {
             MarketingPaywallView(onClose: { model.selectedTab = "activity" })
         } else { content }
     }

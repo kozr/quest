@@ -882,8 +882,16 @@ struct SettingsView: View {
                         .disabled(retryingOnboarding || model.isSigningOut || model.isRegisteringDevice)
                         .accessibilityIdentifier("retryOnboarding")
                         if let error = onboardingRetryError { ErrorMessage(message: error) }
+                        Toggle("Simulate no Marketing purchase", isOn: Binding(
+                            get: { billing.simulatesNoPurchase },
+                            set: { billing.simulateNoPurchase($0) }
+                        ))
+                        .disabled(!billing.allowsPaywallDebug || billing.isBusy)
+                        .accessibilityIdentifier("settings.simulateNoPurchase")
+                        Button("Open Marketing paywall") { showingMarketing = true }
+                            .accessibilityIdentifier("settings.debugPaywall")
                     } header: { QuestSettingsHeading(title: "TestFlight") }
-                    footer: { Text("Replay setup with your current account.") }
+                    footer: { Text("Replay setup or test the unpaid state. Turn the toggle off to use your real Sandbox purchase. Debug access resets on sign-out or app restart.") }
                 }
                 Section {
                     Button { showingMarketing = true } label: {
@@ -909,7 +917,10 @@ struct SettingsView: View {
             .refreshable { await model.loadSettings() }
             .fullScreenCover(isPresented: $showingMarketing) { MarketingPaywallView() }
             .task(id: model.selectedTab) {
-                if model.selectedTab == "settings" { await model.checkTestFlightInstallation() }
+                if model.selectedTab == "settings" {
+                    await model.checkTestFlightInstallation()
+                    billing.setPaywallDebugAvailable(model.isTestFlight)
+                }
             }
             .sheet(isPresented: $showingDeletion) { DeleteAccountView().environmentObject(model) }
             .confirmationDialog("Sign out and disconnect this phone?", isPresented: $confirmingLogout, titleVisibility: .visible) {
