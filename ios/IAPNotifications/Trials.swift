@@ -163,7 +163,7 @@ struct TrialsDashboardView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 24) {
                         VStack(alignment: .leading, spacing: 16) {
-                            ActivitySceneHeader(title: "Trials", badge: model.isPreviewMode ? "Demo" : model.selectedEnvironment.rawValue)
+                            ActivitySceneHeader(title: "Trials", badge: model.isPreviewMode ? "Demo" : model.selectedEnvironment.rawValue, topSpacing: 16)
                             ActivitySectionPicker(selection: $section)
                         }
                         filters
@@ -461,9 +461,10 @@ struct ActivitySceneHeader: View {
     let title: String
     let badge: String
     var topSafeArea: CGFloat = 0
+    var topSpacing: CGFloat = 80
 
     var body: some View {
-        QuestScenicHeader(title: title, topSafeArea: topSafeArea) {
+        QuestScenicHeader(title: title, topSafeArea: topSafeArea, topSpacing: topSpacing) {
             Text(badge).font(.caption.weight(.semibold))
                 .foregroundStyle(QuestStyle.muted)
                 .padding(.horizontal, 12).padding(.vertical, 7)
@@ -477,6 +478,7 @@ struct QuestScenicHeader<Trailing: View>: View {
     let title: String
     var systemImage: String? = nil
     var topSafeArea: CGFloat = 0
+    var topSpacing: CGFloat = 80
     @ViewBuilder var trailing: Trailing
     @Environment(\.dynamicTypeSize) private var typeSize
 
@@ -498,7 +500,7 @@ struct QuestScenicHeader<Trailing: View>: View {
             if !typeSize.isAccessibilitySize { Spacer(minLength: 0) }
             trailing
         }
-        .padding(.top, 80 + topSafeArea).padding(.bottom, 8)
+        .padding(.top, topSpacing + topSafeArea).padding(.bottom, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background {
             GeometryReader { geometry in

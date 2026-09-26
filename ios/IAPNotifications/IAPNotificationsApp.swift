@@ -435,7 +435,7 @@ struct ActivityView: View {
         Group {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    ActivitySceneHeader(title: "Events", badge: model.isPreviewMode ? "Demo" : model.selectedEnvironment.rawValue)
+                    ActivitySceneHeader(title: "Events", badge: model.isPreviewMode ? "Demo" : model.selectedEnvironment.rawValue, topSpacing: 16)
                     ActivitySectionPicker(selection: $section)
                     if !model.isPreviewMode {
                         Picker("Environment", selection: $model.selectedEnvironment) {
