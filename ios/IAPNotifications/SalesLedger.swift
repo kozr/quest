@@ -176,12 +176,12 @@ struct DisplayTimeZoneControl: View {
             ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
             : AnyLayout(HStackLayout(spacing: 12))
         layout {
-            Text("Time zone").font(.subheadline).foregroundStyle(QuestStyle.muted)
+            Text("Time zone").font(QuestTypography.secondary).foregroundStyle(QuestStyle.muted)
             if !typeSize.isAccessibilitySize { Spacer(minLength: 0) }
             HStack(spacing: 0) {
                 ForEach(DisplayTimeZone.allCases) { mode in
                     Button { selection = mode } label: {
-                        Text(mode.title).font(.subheadline.weight(.semibold))
+                        Text(mode.title).font(QuestTypography.secondaryAction)
                             .foregroundStyle(selection == mode ? QuestStyle.navy : QuestStyle.muted)
                             .frame(maxWidth: .infinity, minHeight: 44)
                             .background(selection == mode ? QuestStyle.gold : .clear, in: RoundedRectangle(cornerRadius: 10))
@@ -212,8 +212,8 @@ struct SalesPeriodPicker: View {
                 ForEach(SalesPeriod.allCases) { Text($0.rawValue).tag($0) }
             }
         } label: {
-            HStack(spacing: 6) { Text(sales.period.rawValue); Image(systemName: "chevron.down").font(.caption) }
-                .font(.subheadline).frame(minHeight: 44)
+            HStack(spacing: 6) { Text(sales.period.rawValue); Image(systemName: "chevron.down").font(QuestTypography.metadata) }
+                .font(QuestTypography.secondary).frame(minHeight: 44)
         }.accessibilityIdentifier("salesPeriod")
     }
 }
@@ -241,12 +241,12 @@ struct SalesSummaryView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             ViewThatFits(in: .horizontal) {
-                HStack { Text(sales.heading).font(.subheadline); Spacer(); SalesPeriodPicker(sales: sales) }
-                VStack(alignment: .leading, spacing: 0) { Text(sales.heading).font(.subheadline); SalesPeriodPicker(sales: sales) }
+                HStack { Text(sales.heading).font(QuestTypography.secondary); Spacer(); SalesPeriodPicker(sales: sales) }
+                VStack(alignment: .leading, spacing: 0) { Text(sales.heading).font(QuestTypography.secondary); SalesPeriodPicker(sales: sales) }
             }
             SalesConversionPicker(sales: sales)
             if let error = sales.error {
-                Text(error).font(.subheadline).foregroundStyle(QuestStyle.muted)
+                Text(error).font(QuestTypography.secondary).foregroundStyle(QuestStyle.muted)
                 Button("Try again") { Task { await sales.load(model, timeZone: timeZone) } }.frame(minHeight: 44)
             } else if sales.isLoading || !sales.hasResponse(in: timeZone) {
                 ProgressView("Loading total…").padding(.vertical, 12)
@@ -256,7 +256,7 @@ struct SalesSummaryView: View {
                 } label: {
                     VStack(alignment: .leading, spacing: 9) {
                         if let selected = sales.selected {
-                            Text(selected.money(selected.sales)).font(.system(.largeTitle, design: .rounded, weight: .semibold))
+                            Text(selected.money(selected.sales)).font(QuestTypography.metric)
                                 .monospacedDigit().foregroundStyle(.white)
                         } else if sales.isConverted && !sales.conversionAvailable {
                             Text("Conversion unavailable").font(.title3.weight(.semibold)).foregroundStyle(.white)
@@ -267,13 +267,13 @@ struct SalesSummaryView: View {
                             Text("Before Apple fees").foregroundStyle(QuestStyle.muted)
                             Spacer(minLength: 4)
                             Label("View ledger", systemImage: "chevron.right").labelStyle(.titleAndIcon).foregroundStyle(QuestStyle.gold)
-                        }.font(.caption)
+                        }.font(QuestTypography.metadata)
                         if !sales.isConverted && (sales.response?.currencies.count ?? 0) > 1 {
-                            Text("\(sales.response!.currencies.count) currencies · View separately in ledger").font(.caption).foregroundStyle(QuestStyle.muted)
+                            Text("\(sales.response!.currencies.count) currencies · View separately in ledger").font(QuestTypography.metadata).foregroundStyle(QuestStyle.muted)
                         }
-                        if sales.isConverted && !sales.conversionAvailable { Text(sales.conversionNote).font(.caption).foregroundStyle(QuestStyle.muted) }
+                        if sales.isConverted && !sales.conversionAvailable { Text(sales.conversionNote).font(QuestTypography.metadata).foregroundStyle(QuestStyle.muted) }
                         if (sales.selected?.unknownCount ?? 0) + (sales.response?.unassignedCount ?? 0) > 0 {
-                            Text("Some amounts are unavailable · Known amounts only").font(.caption).foregroundStyle(QuestStyle.gold)
+                            Text("Some amounts are unavailable · Known amounts only").font(QuestTypography.metadata).foregroundStyle(QuestStyle.gold)
                         }
                     }.frame(maxWidth: .infinity, alignment: .leading).padding(.bottom, 8)
                 }.buttonStyle(.plain).accessibilityIdentifier("openSalesLedger")
@@ -355,12 +355,12 @@ struct SalesGraph: View {
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(data.hourly ? "Hourly sales" : data.monthly ? "Monthly sales" : "Daily sales").font(.system(.title3, design: .serif, weight: .semibold))
+            Text(data.hourly ? "Hourly sales" : data.monthly ? "Monthly sales" : "Daily sales").font(QuestTypography.sectionTitle)
             if let selected {
                 Text("\(data.label(selected.date)) · \(SalesMoney.text(NSDecimalNumber(decimal: selected.amount * 1000).stringValue, currency: currency.currency))\(selected.unknownCount > 0 ? " · Known amounts" : "")")
-                    .font(.subheadline).foregroundStyle(QuestStyle.gold)
+                    .font(QuestTypography.secondary).foregroundStyle(QuestStyle.gold)
             } else {
-                Text("\(currency.currency) · Before refunds · Tap a bar for details").font(.caption).foregroundStyle(QuestStyle.muted)
+                Text("\(currency.currency) · Before refunds · Tap a bar for details").font(QuestTypography.metadata).foregroundStyle(QuestStyle.muted)
             }
             Chart(data.points) { point in
                 BarMark(x: .value("Date", point.date, unit: data.component),
@@ -396,7 +396,7 @@ struct SalesGraph: View {
             .frame(height: 180)
             .accessibilityIdentifier("salesGraph")
             if currency.days.contains(where: { $0.unknownCount > 0 }) {
-                Text("The graph includes known amounts only.").font(.caption).foregroundStyle(QuestStyle.gold)
+                Text("The graph includes known amounts only.").font(QuestTypography.metadata).foregroundStyle(QuestStyle.gold)
             }
         }
     }
@@ -411,7 +411,7 @@ struct SalesLedgerView: View {
         GeometryReader { geometry in
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
-                ActivitySceneHeader(title: "Sales ledger", badge: model.isPreviewMode ? "Demo" : model.selectedEnvironment.rawValue,
+                ActivitySceneHeader(title: "Sales ledger", badge: model.isPreviewMode ? "Sample" : model.selectedEnvironment.rawValue,
                                     topSafeArea: geometry.safeAreaInsets.top)
                 HStack {
                     SalesPeriodPicker(sales: sales)
@@ -431,24 +431,24 @@ struct SalesLedgerView: View {
                     ProgressView("Loading ledger…").frame(maxWidth: .infinity).padding(.vertical, 40)
                 } else if let response = sales.response {
                     if model.isPreviewMode || model.selectedEnvironment == .demo {
-                        Text("Sample data · Not real sales").font(.caption).foregroundStyle(QuestStyle.gold)
+                        Text("Sample data · Not real sales").font(QuestTypography.metadata).foregroundStyle(QuestStyle.gold)
                     } else if model.selectedEnvironment == .sandbox {
-                        Text("Test purchases · Not real sales").font(.caption).foregroundStyle(QuestStyle.gold)
+                        Text("Test purchases · Not real sales").font(QuestTypography.metadata).foregroundStyle(QuestStyle.gold)
                     }
                     Text("All apps · \(dateRange(response)) · \(Timestamp.zoneLabel(TimeZone(identifier: response.timeZone) ?? timeZone, at: Timestamp.date(response.to) ?? .now))")
-                        .font(.caption).foregroundStyle(QuestStyle.muted)
+                        .font(QuestTypography.metadata).foregroundStyle(QuestStyle.muted)
                     if sales.isConverted {
-                        Text(sales.heading).font(.headline)
-                        Text(sales.conversionNote).font(.caption).foregroundStyle(QuestStyle.muted)
+                        Text(sales.heading).font(QuestTypography.cardTitle)
+                        Text(sales.conversionNote).font(QuestTypography.metadata).foregroundStyle(QuestStyle.muted)
                     }
                     if let currency = sales.selected {
                         VStack(alignment: .leading, spacing: 12) {
-                            Text("After refunds").font(.system(.title3, design: .serif))
-                            Text(currency.money(currency.afterRefunds)).font(.system(.largeTitle, design: .rounded, weight: .semibold)).monospacedDigit()
-                            Text("Before Apple fees and taxes").font(.caption).foregroundStyle(QuestStyle.muted)
+                            Text("After refunds").font(QuestTypography.sectionTitle)
+                            Text(currency.money(currency.afterRefunds)).font(QuestTypography.metric).monospacedDigit()
+                            Text("Before Apple fees and taxes").font(QuestTypography.metadata).foregroundStyle(QuestStyle.muted)
                             if currency.unknownCount + response.unassignedCount > 0 {
                                 Label("\(currency.unknownCount + response.unassignedCount) events have unavailable amounts or currencies. Totals include known amounts only.", systemImage: "info.circle")
-                                    .font(.caption).foregroundStyle(QuestStyle.gold)
+                                    .font(QuestTypography.metadata).foregroundStyle(QuestStyle.gold)
                             }
                         }
                         SalesGraph(response: response, currency: currency).id("\(response.from)|\(response.to)|\(currency.currency)")
@@ -460,27 +460,27 @@ struct SalesLedgerView: View {
                             moneyRow("Refunds", amount: currency.refunds, currency: currency)
                             if currency.reversals != "0" { moneyRow("Refund reversals", amount: currency.reversals, currency: currency) }
                         }
-                        Text("Sales by app").font(.system(.title3, design: .serif, weight: .semibold))
+                        Text("Sales by app").font(QuestTypography.sectionTitle)
                         ForEach(currency.apps.sorted { SalesMoney.value($0.sales) > SalesMoney.value($1.sales) }) { app in
                             HStack(spacing: 12) {
                                 ActivityInventorySlot { AppArtwork(url: model.apps.first { $0.id == app.appId }?.iconUrl, name: app.appName, bundledIconName: model.apps.first { $0.id == app.appId }?.bundledIconName).accentColor(QuestStyle.gold) }
                                 let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 6)) : AnyLayout(HStackLayout(spacing: 8))
                                 layout {
-                                    Text(app.appName).font(.subheadline.weight(.semibold))
+                                    Text(app.appName).font(QuestTypography.appName)
                                     if !typeSize.isAccessibilitySize { Spacer(minLength: 0) }
-                                    Text(currency.money(app.sales)).font(.subheadline).monospacedDigit()
+                                    Text(currency.money(app.sales)).font(QuestTypography.secondary).monospacedDigit()
                                 }
                             }
                             Divider().overlay(QuestStyle.muted.opacity(0.15))
                         }
-                        Text("App totals show sales before refunds.").font(.caption).foregroundStyle(QuestStyle.muted)
+                        Text("App totals show sales before refunds.").font(QuestTypography.metadata).foregroundStyle(QuestStyle.muted)
                     } else if sales.isConverted && !sales.conversionAvailable {
                         Button("Retry conversion") { Task { await sales.load(model, timeZone: timeZone) } }.frame(minHeight: 44)
                     } else {
                         ContentUnavailableView("No recorded sales", systemImage: "chart.bar", description: Text("Choose another period or wait for a purchase to arrive."))
-                        if response.unassignedCount > 0 { Text("\(response.unassignedCount) events have unavailable currencies.").font(.caption).foregroundStyle(QuestStyle.gold) }
+                        if response.unassignedCount > 0 { Text("\(response.unassignedCount) events have unavailable currencies.").font(QuestTypography.metadata).foregroundStyle(QuestStyle.gold) }
                     }
-                    Text("Recorded activity only.").font(.caption).foregroundStyle(QuestStyle.muted)
+                    Text("Recorded activity only.").font(QuestTypography.metadata).foregroundStyle(QuestStyle.muted)
                 }
             }.padding(.horizontal, 24).padding(.bottom, 32)
         }
@@ -511,6 +511,6 @@ struct SalesLedgerView: View {
             Text(title).foregroundStyle(QuestStyle.muted)
             if !typeSize.isAccessibilitySize { Spacer() }
             Text(currency.money(amount)).monospacedDigit().foregroundStyle(amount.hasPrefix("-") ? Color(red: 1, green: 0.61, blue: 0.52) : .white)
-        }.font(.subheadline).frame(maxWidth: .infinity, alignment: .leading)
+        }.font(QuestTypography.secondary).frame(maxWidth: .infinity, alignment: .leading)
     }
 }

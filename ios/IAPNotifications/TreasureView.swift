@@ -7,22 +7,126 @@ enum QuestStyle {
     static let muted = Color(red: 194/255, green: 211/255, blue: 227/255)
 }
 
+/// Shared text roles for native screens. Semantic styles retain Dynamic Type
+/// scaling; serif is reserved for paper/section headings and rounded figures.
+enum QuestTypography {
+    static let pageTitle: Font = .system(.title, design: .rounded, weight: .bold)
+    static let paperTitle: Font = .system(.title, design: .serif, weight: .bold)
+    static let sectionTitle: Font = .system(.title3, design: .serif, weight: .semibold)
+    static let cardTitle: Font = .headline
+    static let editorialTitle: Font = .system(.headline, design: .serif, weight: .semibold)
+    static let body: Font = .body
+    static let secondary: Font = .subheadline
+    static let metadata: Font = .footnote
+    static let overline: Font = .system(.caption, design: .serif, weight: .semibold)
+    static let primaryAction: Font = .headline
+    static let secondaryAction: Font = .subheadline.weight(.semibold)
+    static let appName: Font = .headline
+    static let metric: Font = .system(.largeTitle, design: .rounded, weight: .semibold)
+    static let supportingMetric: Font = .system(.title2, design: .rounded, weight: .semibold)
+}
+
 struct QuestMainPageTitle: View {
     let title: String
     let systemImage: String
+    @ScaledMetric(relativeTo: .title3) private var iconWidth: CGFloat = 24
 
     var body: some View {
         HStack(spacing: 9) {
             Image(systemName: systemImage)
                 .foregroundStyle(QuestStyle.gold)
                 .font(.title3)
+                .frame(width: iconWidth)
                 .accessibilityHidden(true)
             Text(title)
-                .font(.system(.largeTitle, design: .rounded, weight: .bold))
+                .font(QuestTypography.pageTitle)
                 .foregroundStyle(.white)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
         }
+    }
+}
+
+/// One title and picker geometry for every main page.
+enum QuestPageLayout {
+    static let margin: CGFloat = 16
+    static let sectionSpacing: CGFloat = 16
+}
+
+struct QuestMainPageHeader<Actions: View>: View {
+    let title: String
+    let systemImage: String
+    var subtitle: String? = nil
+    var showsLandscape = true
+    @ViewBuilder var actions: Actions
+    @ScaledMetric(relativeTo: .title) private var titleHeight: CGFloat = 44
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 12) {
+                QuestMainPageTitle(title: title, systemImage: systemImage)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                actions
+            }
+            // Keep the title row aligned with the 44-point page actions.
+            .frame(minHeight: titleHeight, alignment: .topLeading)
+            Text(subtitle ?? " ")
+                .font(QuestTypography.metadata)
+                .foregroundStyle(QuestStyle.gold)
+                .accessibilityHidden(subtitle == nil)
+        }
+        .padding(QuestPageLayout.margin)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background {
+            if showsLandscape {
+                GeometryReader { geometry in
+                    Image("QuestLandscape").resizable().scaledToFill()
+                        .frame(width: geometry.size.width, height: geometry.size.height + 60, alignment: .top)
+                        .clipped()
+                        .overlay(LinearGradient(colors: [QuestStyle.navy.opacity(0.3), QuestStyle.navy],
+                                                startPoint: .top, endPoint: .bottom))
+                        .offset(y: -60)
+                }
+                .allowsHitTesting(false).accessibilityHidden(true)
+            }
+        }
+        .background(showsLandscape ? QuestStyle.navy : Color.clear)
+    }
+}
+
+struct QuestAppPickerLabel: View {
+    let app: ConnectedApp
+    @ScaledMetric(relativeTo: .subheadline) private var rowHeight: CGFloat = 48
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Group {
+                if let asset = app.bundledIconName {
+                    Image(asset).resizable().scaledToFill()
+                } else {
+                    AsyncImage(url: app.iconUrl.flatMap(URL.init(string:))) { image in
+                        image.resizable().scaledToFill()
+                    } placeholder: {
+                        Image(systemName: "app.fill").foregroundStyle(QuestStyle.gold)
+                    }
+                }
+            }
+            .frame(width: 32, height: 32)
+            .clipShape(RoundedRectangle(cornerRadius: 7)).accessibilityHidden(true)
+            Text(app.name)
+                .font(QuestTypography.appName)
+                .foregroundStyle(.white)
+                .fixedSize(horizontal: false, vertical: true)
+                .multilineTextAlignment(.leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Image(systemName: "chevron.down")
+                .font(QuestTypography.secondaryAction).foregroundStyle(QuestStyle.muted)
+        }
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .frame(maxWidth: .infinity, minHeight: rowHeight)
+        .background(QuestStyle.navy, in: RoundedRectangle(cornerRadius: 14))
+        .overlay(RoundedRectangle(cornerRadius: 14)
+            .stroke(Color(red: 0.19, green: 0.38, blue: 0.55), lineWidth: 1))
     }
 }
 
@@ -84,9 +188,9 @@ struct QuestView: View {
                                 lootSlots(width: geometry.size.width - 40)
                                 if let selected = reveal.selected {
                                     VStack(spacing: 4) {
-                                        Text(selected.appName).font(.headline)
+                                        Text(selected.appName).font(QuestTypography.cardTitle)
                                         Text("\(selected.kind == "renewal" ? "Transaction date · \(Timestamp.display(selected.occurredAt, timeZone: timeZone))" : "Purchase") · \(selected.amountDescription ?? "")")
-                                            .font(.subheadline).foregroundStyle(QuestStyle.muted)
+                                            .font(QuestTypography.secondary).foregroundStyle(QuestStyle.muted)
                                     }
                                     .multilineTextAlignment(.center)
                                     .padding(.horizontal, 18).padding(.vertical, 12)
@@ -102,7 +206,7 @@ struct QuestView: View {
                         } else {
                             VStack {
                                 Label(model.queuedSales.isEmpty ? "Your journey continues" : "\(model.queuedSales.count) new \(model.queuedSales.count == 1 ? "sale" : "sales")", systemImage: "sparkle")
-                                    .font(.subheadline.weight(.semibold))
+                                    .font(QuestTypography.secondaryAction)
                                     .padding(.horizontal, 16).padding(.vertical, 10)
                                     .background(QuestStyle.navy.opacity(0.88), in: Capsule())
                                 Spacer()
@@ -191,20 +295,10 @@ struct QuestView: View {
     }
 
     private var header: some View {
-        let layout = typeSize.isAccessibilitySize
-            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12))
-            : AnyLayout(HStackLayout(spacing: 9))
-        return layout {
-            QuestMainPageTitle(title: "Activity", systemImage: "diamond.fill")
-            if !typeSize.isAccessibilitySize { Spacer() }
-            if model.isPreviewMode {
-                Text("Demo").font(.caption.weight(.semibold))
-                    .padding(.horizontal, 12).padding(.vertical, 7)
-                    .background(QuestStyle.navy.opacity(0.75), in: Capsule())
-            }
-        }
-        .shadow(color: QuestStyle.navy.opacity(0.7), radius: 8, y: 2)
-        .padding(.horizontal, 24).padding(.top, 10).padding(.bottom, 6)
+        QuestMainPageHeader(title: "Activity", systemImage: "diamond.fill",
+                            subtitle: model.isPreviewMode ? "Sample sales" : nil,
+                            showsLandscape: false) { EmptyView() }
+            .shadow(color: QuestStyle.navy.opacity(0.7), radius: 8, y: 2)
     }
 
     private func lootSlots(width: CGFloat) -> some View {
@@ -256,18 +350,17 @@ struct QuestView: View {
     private var footer: some View {
         VStack(spacing: 14) {
             Text(reveal.isOpen ? "Your discoveries." : model.queuedSales.isEmpty ? "Ready for what’s next." : "Adventure awaits.")
-                .font(.system(.largeTitle, design: .serif, weight: .semibold))
-                .tracking(-0.6)
+                .font(QuestTypography.paperTitle)
                 .accessibilityAddTraits(.isHeader)
             if reveal.isOpen {
                 ForEach(TreasureTotal.summarize(reveal.sales)) { total in
-                    Text(total.formatted).font(.title2.bold()).monospacedDigit()
+                    Text(total.formatted).font(QuestTypography.metric).monospacedDigit()
                 }
                 Text("\(reveal.sales.count) \(reveal.sales.count == 1 ? "sale" : "sales") · Purchases and paid renewals")
-                    .font(.subheadline).foregroundStyle(QuestStyle.muted)
+                    .font(QuestTypography.secondary).foregroundStyle(QuestStyle.muted)
             } else {
                 Text(model.isLoadingQueuedSales && model.queuedSales.isEmpty ? "Checking for new sales…" : model.queuedSales.isEmpty ? "New sales will be waiting here. Explore your activity in the meantime." : "\(model.queuedSales.count) \(model.queuedSales.count == 1 ? "sale is" : "sales are") waiting inside.")
-                    .font(.body).foregroundStyle(QuestStyle.muted)
+                    .font(QuestTypography.body).foregroundStyle(QuestStyle.muted)
             }
             if let error = model.queuedSalesError {
                 Text(error).font(.footnote).foregroundStyle(QuestStyle.muted)
@@ -285,21 +378,21 @@ struct QuestView: View {
                     Text(reveal.isOpen || model.queuedSales.isEmpty ? "View activity" : "Open your chest")
                     Image(systemName: reveal.isOpen || model.queuedSales.isEmpty ? "arrow.right" : "sparkles")
                 }
-                .font(.headline).foregroundStyle(QuestStyle.navy)
+                .font(QuestTypography.primaryAction).foregroundStyle(QuestStyle.navy)
                 .frame(maxWidth: .infinity, minHeight: 54)
                 .background(LinearGradient(colors: [Color(red: 1, green: 0.85, blue: 0.43), QuestStyle.gold], startPoint: .topLeading, endPoint: .bottomTrailing), in: RoundedRectangle(cornerRadius: 14))
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier(reveal.isOpen || model.queuedSales.isEmpty ? "questActivity" : "openTreasure")
             Text(model.isPreviewMode ? "Sample sales · No real money" : "Gross sales before fees and refunds")
-                .font(.caption).foregroundStyle(QuestStyle.muted)
+                .font(QuestTypography.metadata).foregroundStyle(QuestStyle.muted)
             if !reveal.isOpen, !model.queuedSales.isEmpty {
                 Button("View activity") { model.showActivity() }
-                    .font(.subheadline).foregroundStyle(QuestStyle.muted).frame(minHeight: 44)
+                    .font(QuestTypography.secondary).foregroundStyle(QuestStyle.muted).frame(minHeight: 44)
                     .accessibilityIdentifier("questActivity")
             } else if reveal.isOpen, reveal.saved, !model.queuedSales.isEmpty {
                 Button("\(model.queuedSales.count) more sales waiting") { reveal.reset() }
-                    .font(.subheadline).frame(minHeight: 44)
+                    .font(QuestTypography.secondary).frame(minHeight: 44)
             }
         }
         .multilineTextAlignment(.center)

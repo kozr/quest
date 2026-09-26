@@ -1,0 +1,138 @@
+{
+  "appStoreConnectAppID": "6809939942",
+  "bundleID": "com.kozr.quest",
+  "subscriptionGroupID": "22416175",
+  "subscriptionGroupName": "Marketing",
+  "subscriptionGroupVersionID": "1893fe97-7834-4465-9cbf-27e0c13504a5",
+  "configuredDate": "2026-09-26",
+  "products": [
+    {
+      "productID": "com.kozr.quest.marketing.one.monthly",
+      "appStoreConnectID": "6816488261",
+      "versionID": "ec322ca0-acdc-404f-a108-81d3ad42a946",
+      "coverage": 1,
+      "period": "ONE_MONTH",
+      "groupLevel": 2,
+      "baseTerritory": "USA",
+      "baseCurrency": "USD",
+      "basePrice": "29.99",
+      "localizations": {
+        "en-CA": {
+          "name": "Marketing 1 App - Monthly",
+          "locale": "en-CA",
+          "description": "Leads, replies and market insights for 1 app."
+        },
+        "en-US": {
+          "name": "Marketing 1 App - Monthly",
+          "locale": "en-US",
+          "description": "Leads, replies and market insights for 1 app."
+        }
+      },
+      "reviewScreenshotID": "e2922b77-b90f-488b-8bfd-b6baba9f5a6e",
+      "familySharing": false,
+      "organizationalSeats": false,
+      "freeTrial": false,
+      "appStoreConnectState": "READY_TO_SUBMIT",
+      "verifiedTerritoryPriceCount": 175
+    },
+    {
+      "productID": "com.kozr.quest.marketing.one.annual",
+      "appStoreConnectID": "6816488189",
+      "versionID": "29116171-79cb-4f9b-9e57-202cdc12060d",
+      "coverage": 1,
+      "period": "ONE_YEAR",
+      "groupLevel": 2,
+      "baseTerritory": "USA",
+      "baseCurrency": "USD",
+      "basePrice": "299.00",
+      "localizations": {
+        "en-CA": {
+          "name": "Marketing 1 App - Annual",
+          "locale": "en-CA",
+          "description": "Leads, replies and market insights for 1 app."
+        },
+        "en-US": {
+          "name": "Marketing 1 App - Annual",
+          "locale": "en-US",
+          "description": "Leads, replies and market insights for 1 app."
+        }
+      },
+      "reviewScreenshotID": "28569d07-3033-4497-ba78-6fc6ab042d44",
+      "familySharing": false,
+      "organizationalSeats": false,
+      "freeTrial": false,
+      "appStoreConnectState": "READY_TO_SUBMIT",
+      "verifiedTerritoryPriceCount": 175
+    },
+    {
+      "productID": "com.kozr.quest.marketing.three.monthly",
+      "appStoreConnectID": "6816488154",
+      "versionID": "24a1b9fc-b634-4394-99a9-3f827740d367",
+      "coverage": 3,
+      "period": "ONE_MONTH",
+      "groupLevel": 1,
+      "baseTerritory": "USA",
+      "baseCurrency": "USD",
+      "basePrice": "74.99",
+      "localizations": {
+        "en-CA": {
+          "name": "Marketing 3 Apps - Monthly",
+          "locale": "en-CA",
+          "description": "Leads, replies and market insights for up to 3 apps."
+        },
+        "en-US": {
+          "name": "Marketing 3 Apps - Monthly",
+          "locale": "en-US",
+          "description": "Leads, replies and market insights for up to 3 apps."
+        }
+      },
+      "reviewScreenshotID": "e116e72d-74d5-452b-926a-df5aea178e8c",
+      "familySharing": false,
+      "organizationalSeats": false,
+      "freeTrial": false,
+      "appStoreConnectState": "READY_TO_SUBMIT",
+      "verifiedTerritoryPriceCount": 175
+    },
+    {
+      "productID": "com.kozr.quest.marketing.three.annual",
+      "appStoreConnectID": "6816488265",
+      "versionID": "9da502ed-7475-4d2f-bf6d-affc2b9b4b1c",
+      "coverage": 3,
+      "period": "ONE_YEAR",
+      "groupLevel": 1,
+      "baseTerritory": "USA",
+      "baseCurrency": "USD",
+      "basePrice": "799.99",
+      "localizations": {
+        "en-CA": {
+          "name": "Marketing 3 Apps - Annual",
+          "locale": "en-CA",
+          "description": "Leads, replies and market insights for up to 3 apps."
+        },
+        "en-US": {
+          "name": "Marketing 3 Apps - Annual",
+          "locale": "en-US",
+          "description": "Leads, replies and market insights for up to 3 apps."
+        }
+      },
+      "reviewScreenshotID": "4868edc3-7913-4490-9002-297d6073fdc6",
+      "familySharing": false,
+      "organizationalSeats": false,
+      "freeTrial": false,
+      "appStoreConnectState": "READY_TO_SUBMIT",
+      "verifiedTerritoryPriceCount": 175
+    }
+  ],
+  "releaseStatus": "All four products READY_TO_SUBMIT, with 700 storefront prices verified. Not submitted for review. Billing backend deployment, lifecycle notification setup, and real StoreKit Sandbox verification remain pending.",
+  "storeKit": {
+    "productLookup": "MarketingPlan.all -> Product.products(for:)",
+    "localizedPrice": "Product.displayPrice",
+    "entitlementVerification": "Server-verified signed Apple transaction and appAccountToken"
+  },
+  "serverNotifications": {
+    "url": "https://quest-liart-iota.vercel.app/webhooks/marketing/apple",
+    "configured": false,
+    "lastCheck": "2026-09-26: deployed endpoint returned HTTP 404; deploy the marketing billing backend before configuring notifications."
+  },
+  "verifiedAt": "2026-09-26T20:12:38.480958+00:00"
+}

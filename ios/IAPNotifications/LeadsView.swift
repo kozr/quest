@@ -18,9 +18,7 @@ struct LeadsView: View {
     var body: some View {
         NavigationStack(path: $journalPath) {
             ScrollView {
-                VStack(alignment: .leading, spacing: 10) {
-                    compactHeader
-
+                VStack(alignment: .leading, spacing: QuestPageLayout.sectionSpacing) {
                     appPicker
                     if marketingAllowed {
                         scanProgress
@@ -32,13 +30,14 @@ struct LeadsView: View {
                                 Label(locked.title, systemImage: "lock.fill")
                                 Spacer()
                                 Text("Explore ›")
-                            }.font(.subheadline.weight(.semibold)).padding().frame(minHeight: 48)
+                            }.font(QuestTypography.secondaryAction).padding().frame(minHeight: 48)
                         }.buttonStyle(.plain).foregroundStyle(QuestStyle.gold)
                     }
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, QuestPageLayout.margin)
                 .padding(.bottom, 24)
             }
+            .safeAreaInset(edge: .top, spacing: 0) { compactHeader }
             .background(QuestStyle.navy)
             .foregroundStyle(.white)
             .tint(QuestStyle.gold)
@@ -80,7 +79,7 @@ struct LeadsView: View {
                 }
                 #endif
             }
-            .navigationTitle("Quest board")
+            .navigationTitle("Leads")
             .toolbar(.hidden, for: .navigationBar)
             .toolbar(journalPath.isEmpty ? .visible : .hidden, for: .tabBar)
             .toolbarBackground(QuestStyle.navy, for: .tabBar)
@@ -112,45 +111,20 @@ struct LeadsView: View {
     }
 
     private var compactHeader: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .top, spacing: 10) {
-                QuestMainPageTitle(title: "High-intent leads", systemImage: "pin.fill")
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                Button(action: presentSetup) {
-                    Image(systemName: "slider.horizontal.3")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(QuestStyle.gold)
-                        .frame(width: 44, height: 44)
-                        .background(QuestStyle.navy.opacity(0.88), in: RoundedRectangle(cornerRadius: 12))
-                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(QuestStyle.gold.opacity(0.42), lineWidth: 1))
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Set up lead profile")
-                .accessibilityHint("Review what this app does and choose communities to monitor.")
-                .accessibilityIdentifier("leadsProfileSettings")
-            }
-            if model.isPreviewMode {
-                Label("Demo · Sample leads", systemImage: "sparkles")
-                    .font(.caption.weight(.medium))
+        QuestMainPageHeader(title: "Leads", systemImage: "pin.fill",
+                            subtitle: model.isPreviewMode ? "Sample leads" : nil) {
+            Button(action: presentSetup) {
+                Image(systemName: "slider.horizontal.3")
+                    .font(.system(size: 18, weight: .semibold))
                     .foregroundStyle(QuestStyle.gold)
-                    .accessibilityIdentifier("leadsDemoBadge")
+                    .frame(width: 44, height: 44)
+                    .background(QuestStyle.navy.opacity(0.88), in: RoundedRectangle(cornerRadius: 12))
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(QuestStyle.gold.opacity(0.42), lineWidth: 1))
             }
-        }
-        .padding(.top, 38)
-        .padding(.bottom, 8)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background {
-            GeometryReader { geometry in
-                Image("QuestLandscape").resizable().scaledToFill()
-                    .frame(width: geometry.size.width + 48, height: geometry.size.height + 90, alignment: .top)
-                    .clipped()
-                    .overlay(LinearGradient(stops: [
-                        .init(color: QuestStyle.navy.opacity(0.1), location: 0),
-                        .init(color: QuestStyle.navy.opacity(0.3), location: 0.45),
-                        .init(color: QuestStyle.navy, location: 1)
-                    ], startPoint: .top, endPoint: .bottom))
-                    .offset(x: -24, y: -60)
-            }.allowsHitTesting(false).accessibilityHidden(true)
+            .buttonStyle(.plain)
+            .accessibilityLabel("Set up lead profile")
+            .accessibilityHint("Review what this app does and choose communities to monitor.")
+            .accessibilityIdentifier("leadsProfileSettings")
         }
     }
 
@@ -170,7 +144,7 @@ struct LeadsView: View {
         if !model.isPreparingLeadBoard, let progress = visibleProgress, progress.isWorking || progress.phase == "queued" {
             VStack(alignment: .leading, spacing: 9) {
                 Text(progress.background == true ? "Searching in the background" : progress.isWorking ? "Finding relevant posts…" : "Waiting to start…")
-                    .font(.subheadline.weight(.medium))
+                    .font(QuestTypography.secondary)
                     .foregroundStyle(.white)
                 LeadsScanBar(fraction: progress.normalizedFraction,
                              moving: progress.isWorking, reduceMotion: reduceMotion)
@@ -179,7 +153,7 @@ struct LeadsView: View {
                     Text(!model.leadItems.isEmpty || model.deviceId == nil
                          ? "You can leave this screen. Matching posts will appear here as we find them."
                          : "You can leave this screen. We’ll notify you when your first match is ready.")
-                        .font(.footnote)
+                        .font(QuestTypography.metadata)
                         .foregroundStyle(.white.opacity(0.85))
                 }
             }
@@ -198,17 +172,17 @@ struct LeadsView: View {
             LeadsPinnedPaper {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(post.state == "reviewing" ? "Reviewing a post" : "Last reviewed")
-                        .font(.caption)
+                        .font(QuestTypography.metadata)
                         .foregroundStyle(LeadInk.secondary)
                     HStack(spacing: 7) {
                         Image("RedditLogo").resizable().scaledToFit().frame(width: 20, height: 20).accessibilityHidden(true)
-                        Text("r/\(post.community)").font(.footnote.weight(.semibold)).foregroundStyle(LeadInk.secondary)
+                        Text("r/\(post.community)").font(QuestTypography.metadata.weight(.semibold)).foregroundStyle(LeadInk.secondary)
                     }
                     Text(post.title)
-                        .font(.body.weight(.semibold)).foregroundStyle(LeadInk.primary)
+                        .font(QuestTypography.cardTitle).foregroundStyle(LeadInk.primary)
                         .fixedSize(horizontal: false, vertical: true)
                     if !post.excerpt.isEmpty {
-                        Text(post.excerpt).font(.subheadline).foregroundStyle(LeadInk.secondary)
+                        Text(post.excerpt).font(QuestTypography.body).foregroundStyle(LeadInk.secondary)
                             .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
                     }
                 }
@@ -221,7 +195,7 @@ struct LeadsView: View {
     private var undoBanner: some View {
         if let undo = model.leadUndoAction, undo.appId == model.selectedLeadAppID {
             HStack(spacing: 12) {
-                Text("Lead dismissed").font(.subheadline.weight(.semibold)).foregroundStyle(.white)
+                Text("Lead dismissed").font(QuestTypography.secondary).foregroundStyle(.white)
                 Spacer(minLength: 4)
                 Button {
                     Task { await model.undoLeadDismissal() }
@@ -230,7 +204,7 @@ struct LeadsView: View {
                         if model.leadPendingPostID == undo.lead.postId { ProgressView().tint(QuestStyle.navy) }
                         Text("Undo")
                     }
-                    .font(.subheadline.weight(.bold))
+                    .font(QuestTypography.secondaryAction)
                     .foregroundStyle(QuestStyle.navy)
                     .padding(.horizontal, 15).frame(minHeight: 44)
                     .background(QuestStyle.gold, in: Capsule())
@@ -262,22 +236,7 @@ struct LeadsView: View {
                         .accessibilityIdentifier("leadAppOption-\(option.id)")
                     }
                 } label: {
-                    HStack(spacing: 12) {
-                        LeadAppArtwork(app: app, size: 28)
-                        Text(app.name)
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.white)
-                            .lineLimit(2)
-                            .multilineTextAlignment(.leading)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        Image(systemName: "chevron.down")
-                            .font(.subheadline.weight(.bold))
-                            .foregroundStyle(QuestStyle.muted)
-                    }
-                    .padding(.horizontal, 10).padding(.vertical, 7)
-                    .frame(maxWidth: .infinity, minHeight: 46)
-                    .background(QuestStyle.navy.opacity(0.94), in: RoundedRectangle(cornerRadius: 14))
-                    .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color(red: 0.19, green: 0.38, blue: 0.55), lineWidth: 1))
+                    QuestAppPickerLabel(app: app)
                 }
                 .accessibilityLabel("Selected app, \(app.name)")
                 .accessibilityHint("Choose which connected app this board is for.")
@@ -285,7 +244,7 @@ struct LeadsView: View {
             } else if model.isLoadingApps {
                 HStack(spacing: 10) {
                     ProgressView().tint(QuestStyle.gold)
-                    Text("Loading connected apps…").font(.subheadline)
+                    Text("Loading connected apps…").font(QuestTypography.secondary)
                 }
                 .foregroundStyle(QuestStyle.muted)
                 .frame(maxWidth: .infinity, minHeight: 58, alignment: .leading)
@@ -298,7 +257,7 @@ struct LeadsView: View {
         VStack(spacing: 8) {
             HStack(spacing: 12) {
                 Text("QUEST BOARD")
-                    .font(.system(.caption, design: .serif).weight(.semibold))
+                    .font(QuestTypography.overline)
                     .tracking(2.5)
                     .fixedSize(horizontal: false, vertical: true)
                     .layoutPriority(1)
@@ -320,10 +279,10 @@ struct LeadsView: View {
                 HStack(alignment: .top, spacing: 10) {
                     Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Color(red: 0.58, green: 0.21, blue: 0.10))
                     VStack(alignment: .leading, spacing: 6) {
-                        Text(mutationError).font(.subheadline.weight(.semibold))
+                        Text(mutationError).font(QuestTypography.body)
                         if model.leadFailedDismissal != nil {
                             Button("Try again") { Task { await model.retryLeadDismissal() } }
-                                .font(.subheadline.weight(.bold))
+                                .font(QuestTypography.secondaryAction)
                                 .frame(minHeight: 44)
                         }
                     }
@@ -458,7 +417,7 @@ struct LeadsView: View {
                             if model.isLoadingMoreLeads { ProgressView().tint(QuestStyle.gold) }
                             Text(model.isLoadingMoreLeads ? "Loading more leads…" : "Load more")
                         }
-                        .font(.subheadline.weight(.semibold))
+                        .font(QuestTypography.secondaryAction)
                         .foregroundStyle(.white)
                         .frame(maxWidth: .infinity, minHeight: 48)
                         .background(QuestStyle.navy.opacity(0.9), in: Capsule())
@@ -561,7 +520,7 @@ private struct LeadsLoadingPlaceholder: View {
                             ProgressView().tint(LeadInk.primary)
                         }
                         Text("Loading leads…")
-                            .font(.system(.title3, design: .serif).weight(.bold))
+                            .font(QuestTypography.sectionTitle)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     .foregroundStyle(LeadInk.primary)
@@ -690,12 +649,12 @@ private struct LeadsBoardMessage<Actions: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Label(title, systemImage: symbol)
-                .font(.system(.title3, design: .serif).weight(.bold))
+                .font(QuestTypography.sectionTitle)
                 .foregroundStyle(LeadInk.primary)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
             Text(message)
-                .font(.body)
+                .font(QuestTypography.body)
                 .foregroundStyle(LeadInk.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             actions
@@ -712,11 +671,6 @@ private struct LeadCardView: View {
     let onPickUp: () -> Void
     let onDismiss: () -> Void
 
-    @ScaledMetric(relativeTo: .body) private var titleSize = 16
-    @ScaledMetric(relativeTo: .subheadline) private var bodySize = 14
-    @ScaledMetric(relativeTo: .footnote) private var fitSize = 13
-    @ScaledMetric(relativeTo: .caption) private var metadataSize = 12
-
     var body: some View {
         LeadsPinnedPaper {
             VStack(alignment: .leading, spacing: 10) {
@@ -725,7 +679,7 @@ private struct LeadCardView: View {
                         VStack(alignment: .leading, spacing: 3) {
                             communityLabel
                             Text(ageDescription)
-                                .font(.system(size: metadataSize))
+                                .font(QuestTypography.metadata)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                     } else {
@@ -733,7 +687,7 @@ private struct LeadCardView: View {
                             communityLabel
                             Spacer(minLength: 4)
                             Text(ageDescription)
-                                .font(.system(size: metadataSize))
+                                .font(QuestTypography.metadata)
                                 .lineLimit(1)
                                 .layoutPriority(1)
                         }
@@ -744,13 +698,13 @@ private struct LeadCardView: View {
                 .accessibilityLabel("Reddit, r/\(lead.community), \(ageDescription)")
 
                 Text(lead.title)
-                    .font(.system(size: titleSize, weight: .semibold))
+                    .font(QuestTypography.cardTitle)
                     .foregroundStyle(LeadInk.primary)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityAddTraits(.isHeader)
 
                 Text(lead.excerpt)
-                    .font(.system(size: bodySize))
+                    .font(QuestTypography.body)
                     .foregroundStyle(LeadInk.secondary)
                     .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
                     .fixedSize(horizontal: false, vertical: true)
@@ -758,7 +712,7 @@ private struct LeadCardView: View {
                 HStack(alignment: .top, spacing: 8) {
                     LeadAppArtwork(app: app, size: 22)
                     Text("Matches: \(lead.whyItFits)")
-                        .font(.system(size: fitSize))
+                        .font(QuestTypography.secondary)
                         .foregroundStyle(LeadInk.secondary)
                         .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
                         .truncationMode(.tail)
@@ -766,41 +720,7 @@ private struct LeadCardView: View {
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel("\(app.name). AI-assessed fit. \(lead.whyItFits)")
 
-                let actionsLayout = dynamicTypeSize.isAccessibilitySize
-                    ? AnyLayout(VStackLayout(spacing: 6))
-                    : AnyLayout(HStackLayout(spacing: 6))
-                actionsLayout {
-                    Button(action: onPickUp) {
-                        HStack(spacing: 5) {
-                            Image(systemName: "arrow.up.right").accessibilityHidden(true)
-                            Text("Pick Up Quest")
-                                .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
-                                .minimumScaleFactor(0.9)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                        .font(.system(size: fitSize, weight: .semibold))
-                        .foregroundStyle(QuestStyle.gold)
-                        .frame(maxWidth: .infinity, minHeight: 44)
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, dynamicTypeSize.isAccessibilitySize ? 6 : 0)
-                        .background(QuestStyle.navy, in: RoundedRectangle(cornerRadius: 10))
-                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(LeadInk.rule, lineWidth: 1))
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(isDismissing)
-                    .accessibilityIdentifier("leadPickUp-\(lead.id)")
-
-                    Button(action: onDismiss) {
-                        Label("Not relevant", systemImage: "xmark")
-                            .font(.system(size: fitSize, weight: .medium))
-                            .foregroundStyle(LeadInk.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .frame(minWidth: 44, maxWidth: dynamicTypeSize.isAccessibilitySize ? .infinity : 108, minHeight: 44)
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(isDismissing)
-                    .accessibilityIdentifier("leadDismiss-\(lead.id)")
-                }
+                actions
             }
             .foregroundStyle(LeadInk.primary)
             .overlay {
@@ -812,13 +732,72 @@ private struct LeadCardView: View {
         }
     }
 
+    @ViewBuilder
+    private var actions: some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(spacing: 6) {
+                pickUpButton
+                dismissButton
+            }
+        } else {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 10) {
+                    pickUpButton
+                    dismissButton
+                }
+                .fixedSize(horizontal: true, vertical: false)
+
+                VStack(spacing: 6) {
+                    pickUpButton
+                    dismissButton
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private var pickUpButton: some View {
+        Button(action: onPickUp) {
+            HStack(spacing: 5) {
+                Image(systemName: "arrow.up.right").accessibilityHidden(true)
+                Text("Pick Up Quest")
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .font(QuestTypography.primaryAction)
+            .multilineTextAlignment(.center)
+            .foregroundStyle(QuestStyle.gold)
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .padding(.horizontal, 7)
+            .padding(.vertical, dynamicTypeSize.isAccessibilitySize ? 6 : 0)
+            .background(QuestStyle.navy, in: RoundedRectangle(cornerRadius: 10))
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(LeadInk.rule, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .disabled(isDismissing)
+        .accessibilityIdentifier("leadPickUp-\(lead.id)")
+    }
+
+    private var dismissButton: some View {
+        Button(action: onDismiss) {
+            Label("Not relevant", systemImage: "xmark")
+                .font(QuestTypography.secondaryAction)
+                .multilineTextAlignment(.center)
+                .foregroundStyle(LeadInk.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(minWidth: 44, maxWidth: .infinity, minHeight: 44)
+        }
+        .buttonStyle(.plain)
+        .disabled(isDismissing)
+        .accessibilityIdentifier("leadDismiss-\(lead.id)")
+    }
+
     private var communityLabel: some View {
         HStack(alignment: .center, spacing: 7) {
             Image("RedditLogo").resizable().scaledToFit()
                 .frame(width: 18, height: 18)
                 .accessibilityHidden(true)
             Text("r/\(lead.community)")
-                .font(.system(size: metadataSize, weight: .semibold))
+                .font(QuestTypography.metadata.weight(.semibold))
                 .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -840,7 +819,7 @@ private struct LeadCardView: View {
 private struct LeadsPrimaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.subheadline.weight(.bold))
+            .font(QuestTypography.primaryAction)
             .foregroundStyle(QuestStyle.gold)
             .padding(.horizontal, 17)
             .frame(minHeight: 48)

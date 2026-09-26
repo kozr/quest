@@ -2,17 +2,19 @@ import Foundation
 
 enum MarketExamples {
     // Fictional demo summaries only; never used as a fallback for live research.
+    // These names and statements are fictional; they are not real users or testimonials.
+    private static let peopleNames = ["Alex Chen", "Sam Rivera", "Jordan Lee", "Taylor Brooks", "Morgan Ellis", "Casey Park", "Riley Evans", "Jamie Patel", "Avery Kim", "Drew Carter", "Robin Lane", "Cameron Reed", "Quinn Hayes", "Blair Morgan"]
     static let landscape: [MarketResearch.Finding] = [
-        .init(title: "Collection apps", summary: "Sample landscape: dedicated trackers organize owned figures and wishlists. Compare catalog coverage, pricing, and sharing tools when reviewing real alternatives.", sources: []),
-        .init(title: "Notes and spreadsheets", summary: "Sample landscape: a collector keeps separate lists for owned figures, wishlists, and trades. A visual checklist could make this workflow easier to maintain.", sources: [])
+        .init(title: "Focus timer apps", summary: "Sample landscape: focus timers offer work intervals and breaks. Compare setup effort, flexibility, and how easily someone can begin a session.", sources: []),
+        .init(title: "Phone timers and planners", summary: "Sample landscape: students combine phone timers with paper planners. This works, but planning breaks and restarting each session takes extra effort.", sources: [])
     ]
-    static let problemTrackingID = "sample-problem-keeping-track-of-missing-figures"
-    static let problemSubscriptionsID = "sample-problem-subscription-frustration"
-    static let problemSeriesID = "sample-problem-missing-series"
+    static let problemTrackingID = "sample-problem-starting-study"
+    static let problemSubscriptionsID = "sample-problem-timer-setup"
+    static let problemSeriesID = "sample-problem-planning-breaks"
     static let app = ConnectedApp(
-        id: "sample-blind-box-tracker",
-        name: "Blind Box Tracker",
-        bundleId: "example.questline.blindboxtracker",
+        id: "sample-pocket-focus",
+        name: "Pocket Focus",
+        bundleId: "com.example.focus",
         appleId: "0",
         source: "sample",
         iconUrl: nil,
@@ -21,7 +23,7 @@ enum MarketExamples {
         lastProductionEventAt: nil,
         lastSandboxEventAt: nil,
         forwardingUrl: nil,
-        bundledIconName: "BlindBoxTrackerMarketIcon"
+        bundledIconName: "DemoFocusIcon"
     )
 
     static func overview(now: Date = Date()) -> MarketOverview {
@@ -29,20 +31,20 @@ enum MarketExamples {
         let subscriptionEvidence = subscriptionEvidence(now: now)
         let missingSeriesEvidence = missingSeriesEvidence(now: now)
         let problems = [
-            MarketProblem(id: problemTrackingID, title: "Keeping track of missing figures",
-                          summary: "Collectors use Notes and spreadsheets to remember what they own.",
+            MarketProblem(id: problemTrackingID, title: "Getting started is the hard part",
+                          summary: "Students want a simple way to start a focused study session.",
                           signalKind: .recurringProblem, peopleCount: 7, conversationCount: 4,
                           observationCount: trackingEvidence.count,
                           representativeEvidenceId: trackingEvidence.first?.id,
                           lastObservedAt: trackingEvidence.first?.source.createdAt),
-            MarketProblem(id: problemSubscriptionsID, title: "Subscription frustration",
-                          summary: "Collectors want a clear way to manage recurring charges.",
+            MarketProblem(id: problemSubscriptionsID, title: "Too much timer setup",
+                          summary: "Complicated timer settings get in the way of beginning work.",
                           signalKind: .competitorComplaint, peopleCount: 4, conversationCount: 2,
                           observationCount: subscriptionEvidence.count,
                           representativeEvidenceId: subscriptionEvidence.first?.id,
                           lastObservedAt: subscriptionEvidence.first?.source.createdAt),
-            MarketProblem(id: problemSeriesID, title: "Missing series",
-                          summary: "Collectors have trouble finding complete series checklists.",
+            MarketProblem(id: problemSeriesID, title: "Planning breaks by hand",
+                          summary: "Students combine alarms and notes to plan work and breaks.",
                           signalKind: .workaround, peopleCount: 3, conversationCount: 2,
                           observationCount: missingSeriesEvidence.count,
                           representativeEvidenceId: missingSeriesEvidence.first?.id,
@@ -66,34 +68,34 @@ enum MarketExamples {
 
     static func people(for overview: MarketOverview, problemID: String? = nil) -> MarketPeoplePageDTO {
         let examples: [(String, String, MarketProspectStatus, String, String, Int)] = [
-            (problemTrackingID, "I couldn’t find a better way to catalogue my collection.", .needsReview,
-             "Sample evidence only; review the source before drawing a conclusion.", "SonnyAngel", 0),
-            (problemTrackingID, "I still keep a note so I can remember which figures I own.", .potentialFit,
-             "The sample describes an unresolved tracking need.", "SonnyAngel", 1),
-            (problemTrackingID, "My checklist lives in a spreadsheet I update by hand.", .potentialFit,
-             "The sample describes an unresolved tracking need.", "SonnyAngel", 2),
-            (problemTrackingID, "I have to search old photos to check what is missing.", .needsReview,
-             "Sample evidence only; review the source before drawing a conclusion.", "SonnyAngel", 3),
-            (problemTrackingID, "I use Notes to remember the series I already opened.", .potentialFit,
-             "The sample describes an unresolved tracking need.", "SonnyAngel", 4),
-            (problemTrackingID, "Tracking duplicates and missing ones takes a lot of notes.", .needsReview,
-             "Sample evidence only; review the source before drawing a conclusion.", "SonnyAngel", 5),
-            (problemTrackingID, "I made a small list to keep track of my collection.", .potentialFit,
-             "The sample describes an unresolved tracking need.", "SonnyAngel", 6),
-            (problemSubscriptionsID, "I wish the recurring plan was easier to manage.", .notAProspect,
-             "Sample complaint; this does not establish buying intent.", "blindbox", 7),
-            (problemSubscriptionsID, "The subscription settings are hard to find.", .needsReview,
-             "Sample evidence only; review the source before drawing a conclusion.", "blindbox", 8),
-            (problemSubscriptionsID, "I cancelled because I only needed one collection.", .notAProspect,
-             "This sample describes a resolved request.", "blindbox", 9),
-            (problemSubscriptionsID, "The monthly charge was a surprise.", .needsReview,
-             "Sample evidence only; review the source before drawing a conclusion.", "blindbox", 10),
-            (problemSeriesID, "I can never find a complete list of each series.", .potentialFit,
-             "The sample describes an unresolved tracking need.", "SonnyAngel", 11),
-            (problemSeriesID, "I save screenshots because the checklist is incomplete.", .needsReview,
-             "Sample evidence only; review the source before drawing a conclusion.", "SonnyAngel", 12),
-            (problemSeriesID, "I made my own checklist after missing a figure.", .potentialFit,
-             "The sample describes an unresolved tracking need.", "SonnyAngel", 13)
+            (problemTrackingID, "I sit down to study, then spend twenty minutes putting off the first task.", .needsReview,
+             "Sample evidence only; review the source before drawing a conclusion.", "study", 0),
+            (problemTrackingID, "Is there a simple timer that helps me start studying and reminds me to take a break?", .potentialFit,
+             "The sample describes an unresolved need relevant to Pocket Focus.", "study", 1),
+            (problemTrackingID, "I write study blocks in my planner, then set a separate alarm for each one.", .potentialFit,
+             "The sample describes an unresolved need relevant to Pocket Focus.", "study", 2),
+            (problemTrackingID, "I keep planning long study sessions instead of starting a small task.", .needsReview,
+             "Sample evidence only; review the source before drawing a conclusion.", "study", 3),
+            (problemTrackingID, "I want one button to start a short focus session.", .potentialFit,
+             "The sample describes an unresolved need relevant to Pocket Focus.", "study", 4),
+            (problemTrackingID, "It takes me ages to get started, even when I know what to study.", .needsReview,
+             "Sample evidence only; review the source before drawing a conclusion.", "study", 5),
+            (problemTrackingID, "I need a timer that makes work and break times easy to follow.", .potentialFit,
+             "The sample describes an unresolved need relevant to Pocket Focus.", "study", 6),
+            (problemSubscriptionsID, "I tried a focus timer, but there were too many settings to configure.", .notAProspect,
+             "Sample complaint; this does not establish buying intent.", "productivity", 7),
+            (problemSubscriptionsID, "My timer makes me build a whole routine before I can start.", .needsReview,
+             "Sample evidence only; review the source before drawing a conclusion.", "productivity", 8),
+            (problemSubscriptionsID, "I stopped using timer apps after finding a paper routine that works for me.", .notAProspect,
+             "This sample describes a resolved request.", "productivity", 9),
+            (problemSubscriptionsID, "I wish I could change the work interval without digging through menus.", .needsReview,
+             "Sample evidence only; review the source before drawing a conclusion.", "productivity", 10),
+            (problemSeriesID, "I set phone alarms for breaks, but keep forgetting to restart the timer.", .potentialFit,
+             "The sample describes an unresolved need relevant to Pocket Focus.", "study", 11),
+            (problemSeriesID, "I use a planner for study blocks and a separate timer for breaks.", .needsReview,
+             "Sample evidence only; review the source before drawing a conclusion.", "study", 12),
+            (problemSeriesID, "I made a checklist to remind myself when to work and when to take a break.", .potentialFit,
+             "The sample describes an unresolved need relevant to Pocket Focus.", "study", 13)
         ]
 
         let all = examples.enumerated().compactMap { index, item -> MarketPersonDTO? in
@@ -101,7 +103,7 @@ enum MarketExamples {
                   let evidence = overview.evidence.first(where: { $0.id == "sample-evidence-\(item.5)" }) else { return nil }
             return MarketPersonDTO(
                 id: "sample-person-\(item.5)", authorKey: nil,
-                authorDisplayName: "Sample person \(index + 1)",
+                authorDisplayName: peopleNames[index],
                 prospectStatus: item.2, prospectReason: item.3,
                 problemIds: [item.0], evidence: [evidence], isSample: true
             )
@@ -115,51 +117,51 @@ enum MarketExamples {
 
     private static func trackingEvidence(now: Date) -> [MarketEvidenceDTO] {
         let quotes = [
-            "I couldn’t find a better way to catalogue my collection.",
-            "I still keep a note so I can remember which figures I own.",
-            "My checklist lives in a spreadsheet I update by hand.",
-            "I have to search old photos to check what is missing.",
-            "I use Notes to remember the series I already opened.",
-            "Tracking duplicates and missing ones takes a lot of notes.",
-            "I made a small list to keep track of my collection."
+            "I sit down to study, then spend twenty minutes putting off the first task.",
+            "Is there a simple timer that helps me start studying and reminds me to take a break?",
+            "I write study blocks in my planner, then set a separate alarm for each one.",
+            "I keep planning long study sessions instead of starting a small task.",
+            "I want one button to start a short focus session.",
+            "It takes me ages to get started, even when I know what to study.",
+            "I need a timer that makes work and break times easy to follow."
         ]
         return quotes.enumerated().map { index, quote in
             let conversationIndex = index < 2 ? 0 : (index < 4 ? 1 : (index < 6 ? 2 : 3))
             return evidence(index: index, problemID: problemTrackingID, kind: .recurringProblem,
-                            quote: quote, explanation: "Collectors use Notes and spreadsheets to remember what they own.",
+                            quote: quote, explanation: "Students want a simple way to start a focused study session.",
                             status: [0, 3, 5].contains(index) ? .needsReview : .potentialFit,
-                            community: "SonnyAngel", thread: "sample-thread-tracking-\(conversationIndex)",
+                            community: "study", thread: "sample-thread-tracking-\(conversationIndex)",
                             now: now, age: Double(index * 1_800))
         }
     }
 
     private static func subscriptionEvidence(now: Date) -> [MarketEvidenceDTO] {
         let quotes = [
-            "I wish the recurring plan was easier to manage.",
-            "The subscription settings are hard to find.",
-            "I cancelled because I only needed one collection.",
-            "The monthly charge was a surprise."
+            "I tried a focus timer, but there were too many settings to configure.",
+            "My timer makes me build a whole routine before I can start.",
+            "I stopped using timer apps after finding a paper routine that works for me.",
+            "I wish I could change the work interval without digging through menus."
         ]
         return quotes.enumerated().map { index, quote in
             evidence(index: index + 7, problemID: problemSubscriptionsID, kind: .competitorComplaint,
-                     quote: quote, explanation: "Collectors describe friction with recurring plans.",
+                     quote: quote, explanation: "Students describe friction with complicated focus timers.",
                      status: index == 0 || index == 2 ? .notAProspect : .needsReview,
-                     community: "blindbox", thread: "sample-thread-subscription-\(index < 2 ? 0 : 1)",
+                     community: "productivity", thread: "sample-thread-subscription-\(index < 2 ? 0 : 1)",
                      now: now, age: Double((index + 7) * 1_800))
         }
     }
 
     private static func missingSeriesEvidence(now: Date) -> [MarketEvidenceDTO] {
         let quotes = [
-            "I can never find a complete list of each series.",
-            "I save screenshots because the checklist is incomplete.",
-            "I made my own checklist after missing a figure."
+            "I set phone alarms for breaks, but keep forgetting to restart the timer.",
+            "I use a planner for study blocks and a separate timer for breaks.",
+            "I made a checklist to remind myself when to work and when to take a break."
         ]
         return quotes.enumerated().map { index, quote in
             evidence(index: index + 11, problemID: problemSeriesID, kind: .workaround,
-                     quote: quote, explanation: "Collectors create their own series checklists.",
+                     quote: quote, explanation: "Students plan work sessions and breaks manually.",
                      status: index == 1 ? .needsReview : .potentialFit,
-                     community: "SonnyAngel", thread: "sample-thread-series-\(index < 2 ? 0 : 1)",
+                     community: "study", thread: "sample-thread-series-\(index < 2 ? 0 : 1)",
                      now: now, age: Double((index + 11) * 1_800))
         }
     }
@@ -170,7 +172,7 @@ enum MarketExamples {
         let date = ISO8601DateFormatter().string(from: now.addingTimeInterval(-age))
         let source = MarketSourceDTO(
             id: "sample-source-\(index)", provider: "reddit", kind: .post,
-            threadId: thread, parentId: nil, authorKey: nil, authorDisplayName: nil,
+            threadId: thread, parentId: nil, authorKey: nil, authorDisplayName: peopleNames[index],
             title: nil, text: quote, community: community, url: nil,
             createdAt: date, fetchedAt: ISO8601DateFormatter().string(from: now),
             contentHash: "sample-content-hash-\(index)",

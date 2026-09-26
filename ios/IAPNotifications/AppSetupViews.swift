@@ -12,23 +12,7 @@ struct AppsView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
-                    QuestScenicHeader(title: "Apps", systemImage: "square.grid.2x2") {
-                        if !model.isPreviewMode {
-                            Button { choosingSetup = true } label: {
-                                Label("Add app", systemImage: "plus")
-                                    .foregroundStyle(QuestStyle.gold)
-                                    .font(.subheadline.weight(.semibold))
-                                    .padding(.horizontal, 12).frame(minHeight: 44)
-                                    .background(QuestStyle.navy.opacity(0.9), in: RoundedRectangle(cornerRadius: 10))
-                                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(QuestStyle.gold.opacity(0.8)))
-                            }.accessibilityIdentifier("addApp")
-                        }
-                    }
-                    if model.isPreviewMode {
-                        Text("Demo mode · Sample apps")
-                            .font(.caption).foregroundStyle(QuestStyle.muted)
-                    }
+                VStack(alignment: .leading, spacing: QuestPageLayout.sectionSpacing) {
                     if let error = error ?? model.appsError {
                         VStack(alignment: .leading, spacing: 8) {
                             SetupError(message: error)
@@ -50,7 +34,7 @@ struct AppsView: View {
                     } else {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(model.isPreviewMode ? "Sample apps" : "Your apps")
-                                .font(.subheadline).foregroundStyle(QuestStyle.muted)
+                                .font(QuestTypography.sectionTitle).foregroundStyle(QuestStyle.muted)
                                 .accessibilityAddTraits(.isHeader)
                             ForEach(model.apps) { app in
                                 NavigationLink { AppDetailView(appID: app.id) } label: { appRow(app) }
@@ -62,18 +46,33 @@ struct AppsView: View {
                                     HStack(spacing: 14) {
                                         Image(systemName: "safari").font(.title2)
                                         VStack(alignment: .leading, spacing: 5) {
-                                            Text("Open dashboard").font(.body)
+                                            Text("Open dashboard").font(QuestTypography.body)
                                             Text("Manage your apps and connections.")
-                                                .font(.caption).foregroundStyle(QuestStyle.muted)
+                                                .font(QuestTypography.metadata).foregroundStyle(QuestStyle.muted)
                                         }
                                         Spacer(minLength: 0)
-                                        Image(systemName: "arrow.up.right.square").font(.subheadline)
+                                        Image(systemName: "arrow.up.right.square").font(QuestTypography.secondary)
                                     }.frame(minHeight: 44).padding(.vertical, 16)
                                 }.foregroundStyle(QuestStyle.muted).accessibilityIdentifier("appsDashboard")
                             }
                         }
                     }
-                }.padding(.horizontal, 24).padding(.bottom, 24)
+                }.padding(.horizontal, QuestPageLayout.margin).padding(.bottom, 24)
+            }
+            .safeAreaInset(edge: .top, spacing: 0) {
+                QuestMainPageHeader(title: "Apps", systemImage: "square.grid.2x2",
+                                    subtitle: model.isPreviewMode ? "Sample apps" : nil) {
+                    if !model.isPreviewMode {
+                        Button { choosingSetup = true } label: {
+                            Label("Add app", systemImage: "plus").labelStyle(.iconOnly)
+                                .font(QuestTypography.secondaryAction)
+                                .foregroundStyle(QuestStyle.gold)
+                                .frame(width: 44, height: 44)
+                                .background(QuestStyle.navy.opacity(0.9), in: RoundedRectangle(cornerRadius: 10))
+                                .overlay(RoundedRectangle(cornerRadius: 10).stroke(QuestStyle.gold.opacity(0.8)))
+                        }.accessibilityIdentifier("addApp")
+                    }
+                }
             }
             .background(QuestStyle.navy.ignoresSafeArea())
             .foregroundStyle(.white).tint(QuestStyle.gold)
@@ -112,19 +111,19 @@ struct AppsView: View {
             VStack(alignment: .leading, spacing: 7) {
                 ViewThatFits(in: .horizontal) {
                     HStack(alignment: .firstTextBaseline, spacing: 12) {
-                        Text(app.name).font(.headline).fixedSize()
+                        Text(app.name).font(QuestTypography.cardTitle).fixedSize()
                         connectionStatus(app).fixedSize()
                     }
                     VStack(alignment: .leading, spacing: 7) {
-                        Text(app.name).font(.headline)
+                        Text(app.name).font(QuestTypography.cardTitle)
                         connectionStatus(app)
                     }
                 }
-                Text(app.bundleId).font(.caption).foregroundStyle(QuestStyle.muted)
+                Text(app.bundleId).font(QuestTypography.metadata).foregroundStyle(QuestStyle.muted)
                     .fixedSize(horizontal: false, vertical: true)
             }
             if !typeSize.isAccessibilitySize { Spacer(minLength: 0) }
-            Image(systemName: "chevron.right").font(.caption).foregroundStyle(QuestStyle.muted)
+            Image(systemName: "chevron.right").font(QuestTypography.metadata).foregroundStyle(QuestStyle.muted)
         }
         .padding(.vertical, 16)
         .accessibilityElement(children: .combine)
@@ -133,7 +132,7 @@ struct AppsView: View {
     private func connectionStatus(_ app: ConnectedApp) -> some View {
         Label(model.isPreviewMode ? "Sample app" : app.lastProductionEventAt == nil ? "Waiting for Apple" : "Connected",
               systemImage: model.isPreviewMode ? "square.grid.2x2" : app.lastProductionEventAt == nil ? "clock" : "checkmark.circle.fill")
-            .font(.caption)
+            .font(QuestTypography.metadata)
             .foregroundStyle(model.isPreviewMode ? QuestStyle.muted : app.lastProductionEventAt == nil ? QuestStyle.gold : Color(.systemGreen))
     }
 
@@ -192,11 +191,11 @@ struct AddAppSetupSheet: View {
 
     private func setupOption(_ title: String, symbol: String, recommended: Bool, detail: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Label(title, systemImage: symbol).font(.headline).foregroundStyle(Color(.label))
+            Label(title, systemImage: symbol).font(QuestTypography.cardTitle).foregroundStyle(Color(.label))
             if recommended {
-                Text("Recommended").font(.subheadline.weight(.semibold)).foregroundStyle(Color.accentColor)
+                Text("Recommended").font(QuestTypography.secondaryAction).foregroundStyle(Color.accentColor)
             }
-            Text(detail).font(.subheadline).foregroundStyle(Color(.label))
+            Text(detail).font(QuestTypography.secondary).foregroundStyle(Color(.label))
         }
         .fixedSize(horizontal: false, vertical: true)
         .padding(.vertical, 8)
@@ -221,7 +220,7 @@ struct BrowserAppSetupView: View {
                     } label: { Label(copied ? "Link copied" : "Copy link", systemImage: "doc.on.doc") }
                     DisclosureGroup("View dashboard address") {
                         Text(access.url.absoluteString)
-                            .font(.subheadline)
+                            .font(QuestTypography.secondary)
                             .textSelection(.enabled)
                     }
                 } header: {

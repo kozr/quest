@@ -120,9 +120,6 @@ private struct LeadJournalPage: View {
     @State private var expandedRequest = false
     @State private var expandedReplyID: String?
     @FocusState private var editorFocused: Bool
-    @ScaledMetric(relativeTo: .title) private var titleSize = 27
-    @ScaledMetric(relativeTo: .subheadline) private var choiceSize = 15
-    @ScaledMetric(relativeTo: .subheadline) private var summarySize = 14
 
     var body: some View {
         VStack(spacing: 0) {
@@ -193,7 +190,7 @@ private struct LeadJournalPage: View {
     private var briefing: some View {
         Group {
             HStack(spacing: 10) {
-                Text("QUEST JOURNAL").font(.system(.caption, design: .serif).weight(.semibold)).tracking(1.5)
+                Text("QUEST JOURNAL").font(QuestTypography.overline).tracking(1.5)
                     .fixedSize(horizontal: false, vertical: true)
                 if !typeSize.isAccessibilitySize {
                     Rectangle().fill(JournalInk.rule.opacity(0.6)).frame(height: 0.5)
@@ -203,20 +200,21 @@ private struct LeadJournalPage: View {
             .padding(.leading, 26).padding(.bottom, 12)
 
             Text(session.plan?.title ?? session.lead.title)
-                .font(.system(size: titleSize, weight: .bold, design: .serif))
+                .font(QuestTypography.paperTitle)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
                 .padding(.leading, 26)
                 .padding(.bottom, 8)
             Text("r/\(session.lead.community)" + (session.lead.isSample ? " · Example post" : ""))
-                .font(.subheadline.weight(.semibold)).foregroundStyle(JournalInk.secondary)
+                .font(QuestTypography.metadata.weight(.semibold)).foregroundStyle(JournalInk.secondary)
                 .padding(.leading, 26).padding(.bottom, 14)
 
             heading("The request")
             HStack(alignment: .top, spacing: 12) {
                 RoundedRectangle(cornerRadius: 2).fill(JournalInk.secondary.opacity(0.4)).frame(width: 3)
                 Text("“\(requestText)”")
-                    .font(.system(.body, design: .serif).italic())
+                    .font(QuestTypography.body.italic())
+                    .fontDesign(.serif)
                     .lineSpacing(3)
                     .lineLimit(expandedRequest || typeSize.isAccessibilitySize ? nil : 5)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -225,15 +223,15 @@ private struct LeadJournalPage: View {
             .padding(.top, 8).padding(.bottom, 12)
             if requestText.count > 230 {
                 Button(expandedRequest ? "Show less" : "Read more") { expandedRequest.toggle() }
-                    .font(.subheadline.weight(.medium)).padding(.bottom, 14)
+                    .font(QuestTypography.secondaryAction).padding(.bottom, 14)
             }
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: "safari").font(.system(size: 35, weight: .light))
                     .foregroundStyle(JournalInk.gold).accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Objective").font(.headline)
+                    Text("Objective").font(QuestTypography.cardTitle)
                     Text(session.plan?.objective ?? "Help with the request above.")
-                        .font(.subheadline).foregroundStyle(JournalInk.secondary)
+                        .font(QuestTypography.body).foregroundStyle(JournalInk.secondary)
                 }
             }
             rule.padding(.vertical, 10)
@@ -249,7 +247,7 @@ private struct LeadJournalPage: View {
                     if index == 0 { Divider().overlay(JournalInk.rule.opacity(0.4)) }
                 }
                 rule.padding(.top, 8).padding(.bottom, 10)
-                Text("For \(session.appName)").font(.system(.footnote, design: .serif))
+                Text("For \(session.appName)").font(QuestTypography.metadata)
                     .foregroundStyle(JournalInk.secondary).padding(.bottom, 10)
             } else {
                 loadingOrError.padding(.vertical, 20)
@@ -279,16 +277,16 @@ private struct LeadJournalPage: View {
                         .frame(width: 30).accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 8) {
                         HStack(spacing: 8) {
-                            Text("Reply \(index + 1)").font(.system(size: choiceSize, weight: .semibold))
+                            Text("Reply \(index + 1)").font(QuestTypography.cardTitle)
                             Spacer(minLength: 8)
                             Image(systemName: expanded ? "checkmark" : "chevron.down")
                                 .font(.system(size: 14, weight: .semibold))
                                 .foregroundStyle(expanded ? JournalInk.gold : JournalInk.secondary)
                                 .accessibilityHidden(true)
                         }
-                        Text(text).font(.system(size: summarySize)).lineSpacing(3)
+                        Text(text).font(QuestTypography.body).lineSpacing(3)
                             .foregroundStyle(JournalInk.secondary)
-                            .lineLimit(expanded ? nil : 3)
+                            .lineLimit(expanded || typeSize.isAccessibilitySize ? nil : 3)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -331,7 +329,7 @@ private struct LeadJournalPage: View {
                 .pickerStyle(.segmented).accessibilityIdentifier("journalReplyPicker")
             }
             TextEditor(text: Binding(get: { session.replyText }, set: { session.replyText = $0 }))
-                .font(.body).lineSpacing(5)
+                .font(QuestTypography.body).lineSpacing(5)
                 .scrollContentBackground(.hidden)
                 .frame(minHeight: typeSize.isAccessibilitySize ? 400 : 280)
                 .focused($editorFocused)
@@ -339,7 +337,7 @@ private struct LeadJournalPage: View {
                 .accessibilityIdentifier("journalReplyEditor")
             rule
             if editorFocused {
-                Button("Done editing") { editorFocused = false }.font(.body.weight(.semibold))
+                Button("Done editing") { editorFocused = false }.font(QuestTypography.primaryAction)
             }
             primary(copiedText == session.replyText ? "Copied" : "Copy reply", symbol: copiedText == session.replyText ? "checkmark" : "doc.on.doc") {
                 editorFocused = false
@@ -359,10 +357,10 @@ private struct LeadJournalPage: View {
                 ProgressView("Preparing two replies…").tint(JournalInk.primary)
             } else {
                 Text(session.error ?? "Prepare two suggestions for this request.")
-                    .font(.subheadline).foregroundStyle(JournalInk.secondary)
+                    .font(QuestTypography.body).foregroundStyle(JournalInk.secondary)
                 Button(session.error == nil ? "Prepare suggestions" : "Check again") {
                     Task { await model.prepareJournal(session) }
-                }.font(.body.weight(.semibold))
+                }.font(QuestTypography.primaryAction)
             }
         }
     }
@@ -375,13 +373,13 @@ private struct LeadJournalPage: View {
             }
         } label: {
             Label(isEditing ? "Open Reddit" : "View original post", systemImage: "arrow.up.right")
-                .font(.subheadline.weight(.semibold)).frame(maxWidth: .infinity, minHeight: 44)
+                .font(QuestTypography.secondaryAction).frame(maxWidth: .infinity, minHeight: 44)
         }
         .accessibilityIdentifier("journalOpenPost")
     }
 
     private func heading(_ title: String) -> some View {
-        Text(title).font(.system(.title3, design: .serif).weight(.bold)).accessibilityAddTraits(.isHeader)
+        Text(title).font(QuestTypography.sectionTitle).accessibilityAddTraits(.isHeader)
     }
 
     private var rule: some View {
@@ -395,7 +393,7 @@ private struct LeadJournalPage: View {
     private func primary(_ title: String, symbol: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 8) { Text(title); Image(systemName: symbol) }
-                .font(.body.weight(.semibold)).foregroundStyle(QuestStyle.gold)
+                .font(QuestTypography.primaryAction).foregroundStyle(QuestStyle.gold)
                 .frame(maxWidth: .infinity, minHeight: 48).padding(.horizontal, 12)
                 .background(QuestStyle.navy, in: RoundedRectangle(cornerRadius: 11))
                 .overlay(RoundedRectangle(cornerRadius: 11).stroke(JournalInk.gold, lineWidth: 1))

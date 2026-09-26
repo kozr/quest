@@ -186,7 +186,7 @@ final class MarketingStore: ObservableObject {
             case (.one, .monthly): return "$29.99"
             case (.one, .annual): return "$299.00"
             case (.three, .monthly): return "$74.99"
-            case (.three, .annual): return "$749.99"
+            case (.three, .annual): return "$799.99"
             }
         }
         #endif

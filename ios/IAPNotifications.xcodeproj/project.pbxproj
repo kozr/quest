@@ -43,6 +43,9 @@ A00000000000000000000012 = {isa = PBXBuildFile; fileRef = B000000000000000000000
 AA7100000000000000000001 /* MarketingStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA7200000000000000000001; };
 AA7100000000000000000002 /* MarketingPaywallView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA7200000000000000000002; };
 AA7100000000000000000003 /* MarketingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA7200000000000000000003; };
+		7A7100000000000000000001 /* Tavern.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A7200000000000000000001; };
+		7A7100000000000000000002 /* TavernView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A7200000000000000000002; };
+7A7100000000000000000003 /* TavernTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A7200000000000000000003; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -98,6 +101,9 @@ B00000000000000000000018 = {isa = PBXFileReference; lastKnownFileType = file; pa
 AA7200000000000000000001 /* MarketingStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketingStore.swift; sourceTree = "<group>"; };
 AA7200000000000000000002 /* MarketingPaywallView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketingPaywallView.swift; sourceTree = "<group>"; };
 AA7200000000000000000003 /* MarketingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketingTests.swift; sourceTree = "<group>"; };
+		7A7200000000000000000001 /* Tavern.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tavern.swift; sourceTree = "<group>"; };
+		7A7200000000000000000002 /* TavernView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TavernView.swift; sourceTree = "<group>"; };
+7A7200000000000000000003 /* TavernTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TavernTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -146,6 +152,8 @@ AA7200000000000000000001 /* MarketingStore.swift */,
 				F0F200000000000000000002 /* MarketExamples.swift */,
 				F0F200000000000000000003 /* MarketStore.swift */,
 				F0F200000000000000000004 /* MarketView.swift */,
+				7A7200000000000000000002 /* TavernView.swift */,
+				7A7200000000000000000001 /* Tavern.swift */,
 				F0F200000000000000000005 /* MarketPeopleView.swift */,
 				EAD200000000000000000006 /* LeadJournalExamples.swift */,
 				EAD200000000000000000005 /* LeadJournal.swift */,
@@ -175,6 +183,7 @@ AA7200000000000000000001 /* MarketingStore.swift */,
 				B00000000000000000000005 /* ClientTests.swift */,
 0BD200000000000000000003 /* OnboardingTests.swift */,
 AA7200000000000000000003 /* MarketingTests.swift */,
+7A7200000000000000000003 /* TavernTests.swift */,
 				EAD200000000000000000004 /* LeadsTests.swift */,
 					B0B0B0000000000000000002 /* TrialsTests.swift */,
 					F0F200000000000000000006 /* MarketTests.swift */,
@@ -314,6 +323,8 @@ AA7100000000000000000001 /* MarketingStore.swift in Sources */,
 				F0F100000000000000000002 /* MarketExamples.swift in Sources */,
 				F0F100000000000000000003 /* MarketStore.swift in Sources */,
 				F0F100000000000000000004 /* MarketView.swift in Sources */,
+				7A7100000000000000000002 /* TavernView.swift in Sources */,
+				7A7100000000000000000001 /* Tavern.swift in Sources */,
 				F0F100000000000000000005 /* MarketPeopleView.swift in Sources */,
 				EAD100000000000000000006 /* LeadJournalExamples.swift in Sources */,
 				EAD100000000000000000005 /* LeadJournal.swift in Sources */,
@@ -339,6 +350,7 @@ AA7100000000000000000001 /* MarketingStore.swift in Sources */,
 				A00000000000000000000005 /* ClientTests.swift in Sources */,
 0BD100000000000000000003 /* OnboardingTests.swift in Sources */,
 AA7100000000000000000003 /* MarketingTests.swift in Sources */,
+7A7100000000000000000003 /* TavernTests.swift in Sources */,
 				EAD100000000000000000004 /* LeadsTests.swift in Sources */,
 					A0A0A0000000000000000002 /* TrialsTests.swift in Sources */,
 					F0F100000000000000000006 /* MarketTests.swift in Sources */,
@@ -407,7 +419,7 @@ AA7100000000000000000003 /* MarketingTests.swift in Sources */,
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = IAPNotifications/IAPNotifications.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 29;
+				CURRENT_PROJECT_VERSION = 31;
 				DEVELOPMENT_TEAM = ZMNPR5G4ZL;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = "IAPNotifications/Info-Debug.plist";
@@ -433,7 +445,7 @@ AA7100000000000000000003 /* MarketingTests.swift in Sources */,
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = IAPNotifications/IAPNotifications.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 29;
+				CURRENT_PROJECT_VERSION = 31;
 				DEVELOPMENT_TEAM = ZMNPR5G4ZL;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = "IAPNotifications/Info-Release.plist";
@@ -499,7 +511,7 @@ AA7100000000000000000003 /* MarketingTests.swift in Sources */,
 90000000000000000000000E = {isa = XCBuildConfiguration; buildSettings = {
 APPLICATION_EXTENSION_API_ONLY = YES;
 CODE_SIGN_STYLE = Automatic;
-CURRENT_PROJECT_VERSION = 29;
+CURRENT_PROJECT_VERSION = 31;
 DEVELOPMENT_TEAM = ZMNPR5G4ZL;
 GENERATE_INFOPLIST_FILE = NO;
 INFOPLIST_FILE = NotificationService/Info.plist;
@@ -516,7 +528,7 @@ TARGETED_DEVICE_FAMILY = 1;
 90000000000000000000000F = {isa = XCBuildConfiguration; buildSettings = {
 APPLICATION_EXTENSION_API_ONLY = YES;
 CODE_SIGN_STYLE = Automatic;
-CURRENT_PROJECT_VERSION = 29;
+CURRENT_PROJECT_VERSION = 31;
 DEVELOPMENT_TEAM = ZMNPR5G4ZL;
 GENERATE_INFOPLIST_FILE = NO;
 INFOPLIST_FILE = NotificationService/Info.plist;

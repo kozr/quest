@@ -23,6 +23,9 @@ struct MarketPeopleView: View {
                 .padding(.top, 12)
                 .padding(.bottom, 24)
         }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            MarketTabBarBackdrop()
+        }
         .background(QuestStyle.navy)
         .scrollIndicators(.hidden)
         .refreshable { await refreshMarket() }
@@ -74,6 +77,7 @@ struct MarketPeopleView: View {
 }
 
 struct MarketPeopleList: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @ObservedObject var store: MarketStore
     let problem: MarketProblem?
     let people: [MarketPersonDTO]
@@ -84,22 +88,19 @@ struct MarketPeopleList: View {
     let onRetry: () -> Void
     let onLoadMore: () -> Void
 
-    @ScaledMetric(relativeTo: .title3) private var titleSize: CGFloat = 23
-    @ScaledMetric(relativeTo: .body) private var bodySize: CGFloat = 15
-
     var body: some View {
         let filteredProblem = problem.flatMap { store.activeProblemFilterID == $0.id ? $0 : nil }
         MarketPaperBoard {
             VStack(alignment: .leading, spacing: 0) {
                 Text(filteredProblem?.title ?? "People")
-                    .font(.system(size: titleSize, weight: .bold, design: .serif))
+                    .font(QuestTypography.paperTitle)
                     .foregroundStyle(MarketPeopleInk.primary)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityAddTraits(.isHeader)
 
                 Text(filteredProblem.map { "\($0.peopleCount) people · \($0.conversationCount) conversations" }
                      ?? "\(people.count) people observed")
-                    .font(.system(size: bodySize, weight: .semibold))
+                    .font(QuestTypography.secondary.weight(.semibold))
                     .foregroundStyle(MarketPeopleInk.secondary)
                     .padding(.top, 6)
                     .padding(.bottom, 12)
@@ -109,14 +110,15 @@ struct MarketPeopleList: View {
                     Button(action: onFilterClear) {
                         HStack(spacing: 7) {
                             Text("Problem · \(filterTitle)")
-                                .lineLimit(2)
+                                .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
+                                .fixedSize(horizontal: false, vertical: true)
                             Image(systemName: "xmark.circle.fill")
                                 .accessibilityHidden(true)
                         }
-                        .font(.footnote.weight(.semibold))
+                        .font(QuestTypography.secondaryAction)
                         .foregroundStyle(MarketPeopleInk.primary)
                         .padding(.horizontal, 11)
-                        .frame(minHeight: 36)
+                        .frame(minHeight: 44)
                         .background(QuestStyle.gold.opacity(0.28), in: Capsule())
                         .contentShape(Capsule())
                     }
@@ -129,9 +131,9 @@ struct MarketPeopleList: View {
                 if let error {
                     VStack(alignment: .leading, spacing: 10) {
                         Label("People could not load", systemImage: "exclamationmark.arrow.triangle.2.circlepath")
-                            .font(.system(.title3, design: .serif).weight(.bold))
+                            .font(QuestTypography.sectionTitle)
                             .foregroundStyle(MarketPeopleInk.primary)
-                        Text(error).font(.body).foregroundStyle(MarketPeopleInk.secondary)
+                        Text(error).font(QuestTypography.body).foregroundStyle(MarketPeopleInk.secondary)
                         Button("Try again", action: onRetry).buttonStyle(MarketPrimaryButtonStyle())
                     }
                     .padding(.vertical, 14)
@@ -143,7 +145,7 @@ struct MarketPeopleList: View {
                         .accessibilityIdentifier("marketPeopleLoading")
                 } else if people.isEmpty {
                     Text("No people with identified author accounts were found in this view.")
-                        .font(.body).foregroundStyle(MarketPeopleInk.secondary)
+                        .font(QuestTypography.body).foregroundStyle(MarketPeopleInk.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.vertical, 16)
                 } else {
@@ -171,7 +173,7 @@ struct MarketPeopleList: View {
 
                 if let page = store.peoplePage, page.coverage == .partial {
                     Text(store.overview?.research?.peopleCoverage ?? (people.contains(where: { $0.researchProspect != nil }) ? "Partial coverage · public sources may include older conversations" : "Partial coverage · evidence collected from \(page.windowStart.map(MarketDate.label) ?? "the last 30 days")"))
-                        .font(.system(size: 11, weight: .medium))
+                        .font(QuestTypography.metadata)
                         .foregroundStyle(MarketPeopleInk.secondary)
                         .padding(.top, 13)
                 }
@@ -186,117 +188,161 @@ struct MarketPeopleList: View {
 private struct MarketPersonEvidenceCard: View {
     let person: MarketPersonDTO
     let onSource: (MarketSourceDTO) -> Void
-    @ScaledMetric(relativeTo: .body) private var quoteSize: CGFloat = 15
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @State private var showingDetails = false
+
+    private var author: String {
+        guard let prospect = person.researchProspect else {
+            return person.authorDisplayName ?? "Community member"
+        }
+        if prospect.provider == "reddit" {
+            return prospect.publicHandle.lowercased().hasPrefix("u/")
+                ? prospect.publicHandle : "u/\(prospect.publicHandle)"
+        }
+        return prospect.displayName
+    }
+
+    private var matchSummary: String {
+        guard let prospect = person.researchProspect else { return person.prospectReason }
+        switch prospect.matchType {
+        case "exact": return "Same problem · \(prospect.problem)"
+        case "similar": return "Similar problem · \(prospect.problem)"
+        default: return prospect.fitReason
+        }
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(person.authorDisplayName ?? "Community member")
-                    .font(.system(.headline, design: .serif).weight(.bold))
+        let headerLayout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 6))
+            : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: 8))
+        VStack(alignment: .leading, spacing: 8) {
+            headerLayout {
+                Text(author)
+                    .font(QuestTypography.editorialTitle)
                     .foregroundStyle(MarketPeopleInk.primary)
-                    .lineLimit(2)
-                if person.isSample {
-                    Text("SAMPLE")
-                        .font(.system(size: 9, weight: .bold))
-                        .tracking(1)
-                        .foregroundStyle(MarketPeopleInk.secondary)
-                        .padding(.horizontal, 6).padding(.vertical, 3)
-                        .background(QuestStyle.gold.opacity(0.23), in: Capsule())
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 8) {
+                    if person.isSample {
+                        Text("SAMPLE")
+                            .font(QuestTypography.overline)
+                            .foregroundStyle(MarketPeopleInk.secondary)
+                    }
+                    if person.researchProspect?.needStatus == "subsequently_resolved" {
+                        Text("Resolved")
+                            .font(QuestTypography.metadata.weight(.semibold))
+                            .foregroundStyle(MarketPeopleInk.primary)
+                            .padding(.horizontal, 8).padding(.vertical, 4)
+                            .background(QuestStyle.gold.opacity(0.28), in: Capsule())
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityLabel("Reported finding a solution")
+                    }
                 }
-                Spacer(minLength: 0)
-                MarketProspectPill(status: person.prospectStatus)
             }
 
-            Text(person.prospectReason)
-                .font(.footnote)
+            if let prospect = person.researchProspect, let evidence = prospect.evidence.first {
+                quote(evidence.excerpt, isVideo: prospect.provider == "youtube", compact: true)
+            } else if let evidence = person.evidence.first {
+                quote(evidence.quote, compact: true)
+            }
+
+            Text(matchSummary)
+                .font(QuestTypography.secondary)
                 .foregroundStyle(MarketPeopleInk.secondary)
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
                 .fixedSize(horizontal: false, vertical: true)
 
-            if let prospect = person.researchProspect {
-                Text("\(prospect.platformLabel) · \(prospect.relationshipLabel)")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(MarketPeopleInk.primary)
-                Text(prospect.problem)
-                    .font(.footnote)
-                    .foregroundStyle(MarketPeopleInk.secondary)
-                if let status = prospect.needStatusLabel {
-                    Text(status).font(.caption).foregroundStyle(MarketPeopleInk.secondary)
-                }
-                if let profileURL = prospect.profileURL {
-                    Link("View \(prospect.provider == "youtube" ? "channel" : "profile") · \(prospect.publicHandle)", destination: profileURL)
-                        .font(.footnote.weight(.semibold))
-                        .foregroundStyle(MarketPeopleInk.fit)
-                        .frame(minHeight: 44, alignment: .leading)
-                }
-                ForEach(Array(prospect.evidence.enumerated()), id: \.offset) { _, evidence in
-                    VStack(alignment: .leading, spacing: 7) {
-                        Text(evidence.verification == "web_search" ? "Found in web search · not independently verified" : evidence.verification == "video_metadata" ? "Video title · channel verified" : "Public post excerpt · author verified")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(MarketPeopleInk.secondary)
-                        Text(evidence.excerpt)
-                            .font(.system(size: quoteSize, design: .serif))
-                            .foregroundStyle(MarketPeopleInk.primary)
-                            .fixedSize(horizontal: false, vertical: true)
-                        if let date = evidence.publishedAt {
-                            Text(MarketDate.label(date)).font(.caption).foregroundStyle(MarketPeopleInk.secondary)
-                        } else {
-                            Text("Publication date unavailable").font(.caption).foregroundStyle(MarketPeopleInk.secondary)
-                        }
-                        if let sourceURL = evidence.publicURL {
-                            Link(prospect.provider == "youtube" ? "Watch original video" : "Open original conversation", destination: sourceURL)
-                                .font(.footnote.weight(.semibold))
-                                .foregroundStyle(MarketPeopleInk.fit)
+            if let prospect = person.researchProspect, let evidence = prospect.evidence.first {
+                researchLink(evidence, provider: prospect.provider)
+            } else if let evidence = person.evidence.first {
+                conversationButton(evidence)
+            }
+
+            DisclosureGroup(isExpanded: $showingDetails) {
+                VStack(alignment: .leading, spacing: 12) {
+                    MarketProspectPill(status: person.prospectStatus)
+                    if let prospect = person.researchProspect {
+                        Text(prospect.fitReason)
+                        Text("\(prospect.platformLabel) · \(prospect.relationshipLabel)")
+                            .fontWeight(.semibold)
+                        Text(prospect.problem)
+                        if let status = prospect.needStatusLabel { Text(status) }
+                        if let profileURL = prospect.profileURL {
+                            Link(prospect.provider == "youtube" ? "View channel" : "View profile", destination: profileURL)
                                 .frame(minHeight: 44, alignment: .leading)
                         }
+                        ForEach(Array(prospect.evidence.enumerated()), id: \.offset) { _, evidence in
+                            VStack(alignment: .leading, spacing: 7) {
+                                quote(evidence.excerpt, isVideo: prospect.provider == "youtube")
+                                Text(evidence.verification == "web_search" ? "Found in web search · not independently verified" : evidence.verification == "video_metadata" ? "Video title · channel verified" : "Public post excerpt · author verified")
+                                    .font(QuestTypography.metadata)
+                                Text(evidence.publishedAt.map(MarketDate.label) ?? "Publication date unavailable")
+                                    .font(QuestTypography.metadata)
+                                researchLink(evidence, provider: prospect.provider)
+                            }
+                        }
+                        if prospect.provider == "youtube" {
+                            Text("Creator topic match; personal need and video transcript have not been verified.")
+                                .font(QuestTypography.metadata)
+                        }
+                    } else {
+                        Text(person.prospectReason)
                     }
-                    .padding(12)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color(red: 0.96, green: 0.89, blue: 0.73).opacity(0.38), in: RoundedRectangle(cornerRadius: 10))
-                }
-                if prospect.provider == "youtube" {
-                    Text("Creator topic match; personal need and video transcript have not been verified.")
-                        .font(.caption).foregroundStyle(MarketPeopleInk.secondary)
-                }
-            }
-
-            ForEach(person.evidence) { evidence in
-                VStack(alignment: .leading, spacing: 7) {
-                    Text("“\(evidence.quote)”")
-                        .font(.system(size: quoteSize, weight: .regular, design: .serif).italic())
-                        .foregroundStyle(MarketPeopleInk.primary)
-                        .lineSpacing(2)
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    HStack(spacing: 7) {
-                        Image("RedditLogo").resizable().scaledToFit().frame(width: 16, height: 16)
-                            .accessibilityHidden(true)
-                        Text("r/\(evidence.source.community)")
-                            .font(.footnote.weight(.medium))
-                        if let date = evidence.source.createdAt {
-                            Text("· \(MarketDate.label(date))").font(.footnote)
+                    ForEach(person.evidence) { evidence in
+                        VStack(alignment: .leading, spacing: 7) {
+                            quote(evidence.quote)
+                            Text("r/\(evidence.source.community)")
+                                .font(QuestTypography.metadata)
+                            if let date = evidence.source.createdAt {
+                                Text(MarketDate.label(date)).font(QuestTypography.metadata)
+                            }
+                            conversationButton(evidence, inDetails: true)
                         }
                     }
-                    .foregroundStyle(MarketPeopleInk.secondary)
-
-                    Button { onSource(evidence.source) } label: {
-                        Label(evidence.isSample ? "View sample source details" : "Open original conversation",
-                              systemImage: evidence.isSample ? "info.circle" : "arrow.up.right.square")
-                            .font(.footnote.weight(.semibold))
-                            .foregroundStyle(MarketPeopleInk.fit)
-                            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("marketSource-\(evidence.id)")
                 }
-                .padding(12)
+                .font(QuestTypography.secondary)
+                .foregroundStyle(MarketPeopleInk.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color(red: 0.96, green: 0.89, blue: 0.73).opacity(0.38),
-                            in: RoundedRectangle(cornerRadius: 10))
+                .padding(.top, 8)
+            } label: {
+                Text("Details").font(QuestTypography.secondaryAction)
+                    .frame(minHeight: 44, alignment: .leading)
             }
+            .tint(MarketPeopleInk.fit)
+            .accessibilityIdentifier("marketPersonDetails-\(person.id)")
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("marketPerson-\(person.id)")
+    }
+
+    private func quote(_ text: String, isVideo: Bool = false, compact: Bool = false) -> some View {
+        Text(isVideo ? text : "“\(text)”")
+            .font(QuestTypography.body).fontDesign(.serif)
+            .foregroundStyle(MarketPeopleInk.primary)
+            .lineSpacing(2)
+            .lineLimit(compact && !dynamicTypeSize.isAccessibilitySize ? 4 : nil)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    @ViewBuilder
+    private func researchLink(_ evidence: MarketResearchProspect.Evidence, provider: String) -> some View {
+        if let url = evidence.publicURL {
+            Link(provider == "youtube" ? "View video" : "View conversation", destination: url)
+                .font(QuestTypography.secondaryAction)
+                .foregroundStyle(MarketPeopleInk.fit)
+                .frame(minHeight: 44, alignment: .leading)
+        }
+    }
+
+    private func conversationButton(_ evidence: MarketEvidenceDTO, inDetails: Bool = false) -> some View {
+        Button { onSource(evidence.source) } label: {
+            Text(evidence.isSample ? "View sample conversation" : "View conversation")
+                .font(QuestTypography.secondaryAction)
+                .foregroundStyle(MarketPeopleInk.fit)
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("marketSource-\(evidence.id)\(inDetails ? "-details" : "")")
     }
 }
 
@@ -313,7 +359,7 @@ private struct MarketProspectPill: View {
 
     var body: some View {
         Text(label)
-            .font(.system(size: 10, weight: .semibold))
+            .font(QuestTypography.metadata.weight(.semibold))
             .foregroundStyle(MarketPeopleInk.primary)
             .padding(.horizontal, 8).padding(.vertical, 5)
             .background(QuestStyle.gold.opacity(0.28), in: Capsule())

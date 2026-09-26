@@ -185,6 +185,23 @@ final class AppModel: ObservableObject {
     var privacyURL: URL { URL(string: "https://quest-liart-iota.vercel.app/privacy/")! }
     var supportURL: URL { URL(string: "https://quest-liart-iota.vercel.app/support/")! }
     var marketingClient: APIClient? { user != nil && !isPreviewMode ? try? client() : nil }
+    var tavernEnabled: Bool { user != nil && !isPreviewMode && !isSigningOut && config?.tavernEnabled == true }
+    var tavernClient: APIClient? { tavernEnabled ? try? client() : nil }
+
+    /// Refresh independently from unrelated settings requests; stale enablement fails closed.
+    func refreshTavernFlag() async {
+        guard user != nil, !isPreviewMode, !isSigningOut else { return }
+        let generation = sessionGeneration
+        do {
+            let response: ServerConfig = try await client().request("/api/config")
+            guard generation == sessionGeneration else { return }
+            config = response
+        } catch {
+            guard generation == sessionGeneration else { return }
+            config = nil
+            _ = handleUnauthorized(error)
+        }
+    }
 
     var pushEnvironment: String {
         #if DEBUG
@@ -314,6 +331,7 @@ final class AppModel: ObservableObject {
         await refreshDeletionStatus()
         await refreshPermission()
         guard hasBootstrapped, !isBootstrapping, !isAuthenticating, user != nil else { return }
+        await refreshTavernFlag()
         await refreshAll()
         await loadOnboarding()
         await setUpNotifications()

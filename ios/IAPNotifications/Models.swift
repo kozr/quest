@@ -25,7 +25,7 @@ enum PreviewContent {
             ("auto_renew_disabled", "Auto-renew turned off", "Access continues until the subscription expires.", nil, 1)
         ]
         let formatter = ISO8601DateFormatter()
-        return examples.enumerated().map { index, item in
+        let recent = examples.enumerated().map { index, item in
             let app = apps[item.4]
             let time = formatter.string(from: now.addingTimeInterval(-Double(index * 2800 + 240)))
             return ActivityEvent(id: "demo-event-\(index)", appId: app.id, appName: app.name, kind: item.0,
@@ -35,6 +35,25 @@ enum PreviewContent {
                                  receivedAt: time, notificationType: "DEMO", subtype: nil,
                                  isMonetary: ["sale", "renewal", "refund"].contains(item.0))
         }
+        #if DEBUG
+        // Explicit offline screenshot fixture; never changes normal demo or live data.
+        if ProcessInfo.processInfo.arguments.contains("--quest-store-sales-preview") {
+            let monthStart = Calendar.current.dateInterval(of: .month, for: now)!.start
+            let span = now.timeIntervalSince(monthStart)
+            let amounts: [Int64] = [12990, 9990, 19990, 4990, 24990, 14990, 29990, 17990]
+            let history = amounts.enumerated().map { index, amount in
+                let app = apps[index % apps.count]
+                let time = formatter.string(from: now.addingTimeInterval(-span * Double(index + 1) / 9))
+                return ActivityEvent(id: "demo-store-history-\(index)", appId: app.id, appName: app.name,
+                                     kind: "sale", title: "New purchase", detail: "Sample event. A purchase was recorded.",
+                                     amountMilliunits: amount, currency: "USD", productId: "example.history.\(index)",
+                                     transactionId: "sample-history-\(index)", environment: "Demo", occurredAt: time,
+                                     receivedAt: time, notificationType: "DEMO", subtype: nil, isMonetary: true)
+            }
+            return recent + history
+        }
+        #endif
+        return recent
     }
     static var preferences: AlertPreferences {
         // Fixed app-owned sample data; decoding also preserves legacy preference defaults.
@@ -49,6 +68,8 @@ struct ServerConfig: Decodable {
     let demoEnabled: Bool
     let apnsConfigured: Bool
     let publicUrl: String
+    // Missing on older servers must fail closed.
+    var tavernEnabled: Bool? = nil
 }
 
 struct AuthResponse: Decodable {

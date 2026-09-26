@@ -191,11 +191,11 @@ struct RootView: View {
                                     .foregroundStyle(QuestStyle.gold)
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(model.connectionProgress(for: app).step == .status ? "Waiting for your store" : "Finish setting up sales alerts")
-                                        .font(.subheadline.weight(.semibold))
-                                    Text(app.name).font(.caption).foregroundStyle(.white.opacity(0.75))
+                                        .font(QuestTypography.secondaryAction)
+                                    Text(app.name).font(QuestTypography.metadata).foregroundStyle(.white.opacity(0.75))
                                 }
                                 Spacer(minLength: 4)
-                                Image(systemName: "chevron.right").font(.caption.weight(.semibold))
+                                Image(systemName: "chevron.right").font(QuestTypography.metadata.weight(.semibold))
                             }.foregroundStyle(.white).padding(.horizontal, 18).padding(.vertical, 12)
                                 .frame(maxWidth: .infinity, minHeight: 56).background(QuestStyle.navy)
                         }.buttonStyle(.plain).accessibilityIdentifier("storeSetup.reminder")
@@ -245,7 +245,7 @@ private struct AuthenticationView: View {
                                 .tracking(-0.6)
                                 .accessibilityAddTraits(.isHeader)
                             Text("Purchase, renewal, and refund alerts for your apps, wherever you are.")
-                                .font(.body)
+                                .font(QuestTypography.body)
                                 .foregroundStyle(QuestStyle.muted)
                                 .frame(maxWidth: 355)
                         }
@@ -325,12 +325,12 @@ private struct AuthenticationView: View {
         VStack(spacing: 12) {
             if let notice = model.accountNotice {
                 Label(notice, systemImage: "checkmark.circle")
-                    .font(.subheadline)
+                    .font(QuestTypography.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             if let message = model.pairingSignInNotice {
                 Label(message, systemImage: "qrcode.viewfinder")
-                    .font(.subheadline)
+                    .font(QuestTypography.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             appleSignIn
@@ -342,7 +342,7 @@ private struct AuthenticationView: View {
                         Text("Explore demo")
                         Image(systemName: "arrow.right").accessibilityHidden(true)
                     }
-                    .font(.headline)
+                    .font(QuestTypography.cardTitle)
                     .foregroundStyle(QuestStyle.gold)
                     .padding(.vertical, 8)
                     .frame(maxWidth: .infinity, minHeight: 44)
@@ -411,9 +411,9 @@ struct DemoNotice: View {
     var body: some View {
         Label {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Demo mode").font(.subheadline.weight(.semibold))
+                Text("Demo mode").font(QuestTypography.secondaryAction)
                 Text("Sample data · Not real sales")
-                    .font(.caption).foregroundStyle(.secondary)
+                    .font(QuestTypography.metadata).foregroundStyle(.secondary)
             }
         } icon: {
             Image(systemName: "info.circle").foregroundStyle(.secondary)
@@ -453,7 +453,7 @@ struct ActivityView: View {
         Group {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    ActivitySceneHeader(title: "Events", badge: model.isPreviewMode ? "Demo" : model.selectedEnvironment.rawValue, topSpacing: 16, showsLandscape: false)
+                    ActivitySceneHeader(title: "Events", badge: model.isPreviewMode ? "Sample" : model.selectedEnvironment.rawValue, topSpacing: 16, showsLandscape: false)
                     ActivitySectionPicker(selection: $section)
                     if !model.isPreviewMode {
                         Picker("Environment", selection: $model.selectedEnvironment) {
@@ -461,7 +461,7 @@ struct ActivityView: View {
                         }.pickerStyle(.segmented).accessibilityIdentifier("activityEnvironment")
                         if model.selectedEnvironment != .production {
                             Label(model.selectedEnvironment == .demo ? "Sample events · Not real sales" : "Test purchases · Not real sales", systemImage: "info.circle")
-                                .font(.caption).foregroundStyle(QuestStyle.muted)
+                                .font(QuestTypography.metadata).foregroundStyle(QuestStyle.muted)
                         }
                     }
                     DisplayTimeZoneControl()
@@ -471,7 +471,7 @@ struct ActivityView: View {
                             HStack(spacing: 8) {
                                 ForEach(EventFilter.allCases) { option in
                                     Button { filter = option } label: {
-                                        Text(option == .all ? "All" : option.rawValue).font(.subheadline.weight(.semibold))
+                                        Text(option == .all ? "All" : option.rawValue).font(QuestTypography.secondaryAction)
                                             .padding(.horizontal, 13).frame(minHeight: 44)
                                             .foregroundStyle(filter == option ? QuestStyle.navy : QuestStyle.muted)
                                             .background(filter == option ? QuestStyle.gold : QuestStyle.navy, in: Capsule())
@@ -488,13 +488,13 @@ struct ActivityView: View {
                         }.accessibilityLabel("Refresh events").disabled(model.isLoadingActivity)
                     }
                     if model.isPreviewMode {
-                        Text("Sample data · Not real sales").font(.caption).foregroundStyle(QuestStyle.muted)
+                        Text("Sample data · Not real sales").font(QuestTypography.metadata).foregroundStyle(QuestStyle.muted)
                     }
                     if let error = model.activityError {
                         VStack(alignment: .leading, spacing: 8) {
                             Label(error, systemImage: "exclamationmark.triangle")
                             Button("Try again") { Task { await model.loadActivity() } }.frame(minHeight: 44)
-                        }.font(.subheadline).padding(16)
+                        }.font(QuestTypography.secondary).padding(16)
                             .overlay(RoundedRectangle(cornerRadius: 12).stroke(QuestStyle.gold.opacity(0.5)))
                     }
                     if model.isLoadingActivity && model.events.isEmpty {
@@ -511,14 +511,14 @@ struct ActivityView: View {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(eventDays, id: \.self) { day in
                             HStack {
-                                Text(dayTitle(day)).font(.headline)
+                                Text(dayTitle(day)).font(QuestTypography.cardTitle)
                                 if day != .distantPast {
-                                    Text(Timestamp.zoneLabel(timeZone, at: day)).font(.caption)
+                                    Text(Timestamp.zoneLabel(timeZone, at: day)).font(QuestTypography.metadata)
                                 }
                                 Spacer()
                                 if day != .distantPast {
                                     Text(day.formatted(Date.FormatStyle(timeZone: timeZone).month(.abbreviated).day()))
-                                        .font(.caption).foregroundStyle(QuestStyle.muted)
+                                        .font(QuestTypography.metadata).foregroundStyle(QuestStyle.muted)
                                 }
                                 Rectangle().fill(QuestStyle.muted.opacity(0.25)).frame(height: 1)
                                 Image(systemName: "diamond.fill").font(.system(size: 6))
@@ -543,12 +543,12 @@ struct ActivityView: View {
                                 Text("Load older events")
                                 Spacer()
                                 if model.isLoadingActivity { ProgressView() } else { Image(systemName: "arrow.down") }
-                            }.font(.subheadline.weight(.semibold)).padding(16)
+                            }.font(QuestTypography.secondaryAction).padding(16)
                                 .overlay(RoundedRectangle(cornerRadius: 12).stroke(QuestStyle.muted.opacity(0.35)))
                         }.disabled(model.isLoadingActivity)
                         if filter != .all {
                             Text("Filters apply to loaded events. Load more to check older activity.")
-                                .font(.caption).foregroundStyle(QuestStyle.muted)
+                                .font(QuestTypography.metadata).foregroundStyle(QuestStyle.muted)
                         }
                     }
                 }.padding(.horizontal, 24).padding(.bottom, 24)
@@ -609,7 +609,7 @@ struct AppArtwork: View {
                     image.resizable().scaledToFill()
                 } placeholder: {
                     Text(name.split(whereSeparator: \.isWhitespace).prefix(2).compactMap(\.first).map(String.init).joined().uppercased())
-                        .font(.headline)
+                        .font(QuestTypography.cardTitle)
                         .foregroundStyle(Color.accentColor)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .background(Color.accentColor.opacity(0.12))
@@ -647,17 +647,17 @@ private struct ActivityRow: View {
             VStack(alignment: .leading, spacing: 7) {
                 ViewThatFits(in: .horizontal) {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        Text(event.appName).font(.headline).fixedSize()
+                        Text(event.appName).font(QuestTypography.cardTitle).fixedSize()
                         Spacer(minLength: 4)
                         amount.fixedSize()
                     }
                     VStack(alignment: .leading, spacing: 5) {
-                        Text(event.appName).font(.headline)
+                        Text(event.appName).font(QuestTypography.cardTitle)
                         amount
                     }
                 }
                 Text(event.kind == "renewal" ? "Transaction date · \(Timestamp.display(event.occurredAt, timeZone: timeZone))" : event.title)
-                    .font(.subheadline).foregroundStyle(eventColor)
+                    .font(QuestTypography.secondary).foregroundStyle(eventColor)
                     .fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: 6) {
                     Image(systemName: event.symbol)
@@ -665,8 +665,8 @@ private struct ActivityRow: View {
                         Text(date, style: .time)
                     } else { Text("Time unavailable") }
                     Spacer(minLength: 0)
-                    Image(systemName: "chevron.right").font(.caption2)
-                }.font(.caption).foregroundStyle(QuestStyle.muted)
+                    Image(systemName: "chevron.right").font(QuestTypography.metadata)
+                }.font(QuestTypography.metadata).foregroundStyle(QuestStyle.muted)
             }
         }
         .foregroundStyle(.white)
@@ -677,7 +677,7 @@ private struct ActivityRow: View {
     private var amount: some View {
         Group {
             if let amount = event.amountDescription {
-                Text(amount).font(.subheadline.weight(.semibold)).monospacedDigit().foregroundStyle(eventColor)
+                Text(amount).font(QuestTypography.secondaryAction).monospacedDigit().foregroundStyle(eventColor)
             }
         }
     }
@@ -692,9 +692,9 @@ struct EventDetailView: View {
             Section {
                 VStack(alignment: .leading, spacing: 10) {
                     Label(event.title, systemImage: event.symbol)
-                        .font(.headline)
+                        .font(QuestTypography.cardTitle)
                     if let amount = event.amountDescription {
-                        Text(amount).font(.largeTitle.weight(.semibold)).monospacedDigit()
+                        Text(amount).font(QuestTypography.metric).monospacedDigit()
                     }
                     Text(event.detail).foregroundStyle(.secondary)
                 }
@@ -747,17 +747,15 @@ struct SettingsView: View {
                         DemoNotice()
                         Button("Exit demo") { Task { await model.logout() } }
                             .accessibilityIdentifier("exitDemo")
-                    } header: {
-                        scenicHeader
                     } footer: {
                         Text("Preferences reset when you exit. No notifications are sent.")
                     }
                     Section {
                         VStack(alignment: .leading, spacing: 6) {
-                            Text("Orbit Journal").font(.headline)
+                            Text("Orbit Journal").font(QuestTypography.cardTitle)
                             Text(model.preferences?.hideAmounts == true ? "New purchase" : "New purchase · USD 12.99")
-                                .font(.subheadline)
-                            Text("Sample notification").font(.caption).foregroundStyle(QuestStyle.muted)
+                                .font(QuestTypography.secondary)
+                            Text("Sample notification").font(QuestTypography.metadata).foregroundStyle(QuestStyle.muted)
                         }
                         .padding(.vertical, 4)
                         .accessibilityElement(children: .combine)
@@ -768,7 +766,7 @@ struct SettingsView: View {
                     LabeledContent { Text(model.permissionDescription) } label: { Label("Permission", systemImage: "bell.fill") }
                     if let config = model.config, !config.apnsConfigured {
                         Label("Notifications are temporarily unavailable. Please try again later.", systemImage: "exclamationmark.triangle")
-                            .font(.subheadline).foregroundStyle(QuestStyle.muted)
+                            .font(QuestTypography.secondary).foregroundStyle(QuestStyle.muted)
                     }
                     if model.permissionStatus == .denied {
                         Button("Open notification settings") {
@@ -796,13 +794,10 @@ struct SettingsView: View {
                         }
                     }
                     .disabled(model.deviceId == nil || model.config?.apnsConfigured != true || model.isTestingPush || model.isSigningOut)
-                    if let message = model.pushMessage { Text(message).font(.caption).foregroundStyle(QuestStyle.muted) }
+                    if let message = model.pushMessage { Text(message).font(QuestTypography.metadata).foregroundStyle(QuestStyle.muted) }
                     if let error = model.pushError { ErrorMessage(message: error) }
                 } header: {
-                    VStack(spacing: 24) {
-                        scenicHeader
-                        QuestSettingsHeading(title: "Notifications")
-                    }
+                    QuestSettingsHeading(title: "Notifications")
                 }
                 }
                 Section {
@@ -845,6 +840,11 @@ struct SettingsView: View {
                 } header: { QuestSettingsHeading(title: "Computer access") }
                 }
                 if !model.isPreviewMode { Section {
+                    if model.tavernEnabled {
+                        NavigationLink { TavernView(openSettings: true) } label: {
+                            Label("Tavern", systemImage: "bubble.left.and.bubble.right.fill")
+                        }.accessibilityIdentifier("tavernSettingsLink")
+                    }
                     LabeledContent("Email", value: model.user?.email ?? "")
                     Button(role: .destructive) { confirmingLogout = true } label: {
                         HStack {
@@ -897,7 +897,7 @@ struct SettingsView: View {
                     Button { showingMarketing = true } label: {
                         Label(billing.hasActiveSubscription ? "Manage Marketing" : "Explore Marketing", systemImage: "sparkles")
                     }.accessibilityIdentifier("settings.marketing")
-                    Text("Sales analytics and sales push notifications are free.").font(.caption)
+                    Text("Sales analytics and sales push notifications are free.").font(QuestTypography.metadata)
                 } header: { QuestSettingsHeading(title: "Marketing") }
                 Section {
                     Link("Privacy policy", destination: model.privacyURL)
@@ -905,6 +905,11 @@ struct SettingsView: View {
                 } header: { QuestSettingsHeading(title: "About Questline") }
                 }.listRowBackground(Color.white.opacity(0.045))
             }
+            .safeAreaInset(edge: .top, spacing: 0) {
+                QuestMainPageHeader(title: "Settings", systemImage: "gearshape",
+                                    subtitle: model.isPreviewMode ? "Sample preferences" : nil) { EmptyView() }
+            }
+            .contentMargins(.horizontal, QuestPageLayout.margin, for: .scrollContent)
             .scrollContentBackground(.hidden)
             .contentMargins(.top, 0, for: .scrollContent)
             .background(QuestStyle.navy.ignoresSafeArea())
@@ -931,12 +936,6 @@ struct SettingsView: View {
         }
     }
 
-    private var scenicHeader: some View {
-        QuestScenicHeader(title: "Settings", systemImage: "gearshape") { EmptyView() }
-            .textCase(nil)
-            .padding(.horizontal, -12)
-    }
-
     private func preference(_ keyPath: WritableKeyPath<AlertPreferences, Bool>) -> Binding<Bool> {
         Binding(get: { model.preferences?[keyPath: keyPath] ?? false },
                 set: { value in Task { await model.setPreference(keyPath, value: value) } })
@@ -949,7 +948,7 @@ private struct QuestSettingsHeading: View {
     var body: some View {
         HStack(spacing: 10) {
             Rectangle().fill(QuestStyle.muted.opacity(0.25)).frame(height: 1)
-            Text(title).font(.subheadline).textCase(nil).foregroundStyle(QuestStyle.muted)
+            Text(title).font(QuestTypography.sectionTitle).textCase(nil).foregroundStyle(QuestStyle.muted)
                 .fixedSize(horizontal: false, vertical: true).layoutPriority(1)
             Image(systemName: "diamond.fill").font(.system(size: 6)).foregroundStyle(QuestStyle.gold)
                 .accessibilityHidden(true)
@@ -970,7 +969,7 @@ private struct DeleteAccountView: View {
             Form {
                 Section {
                     Text("Permanently delete your Questline account?")
-                        .font(.headline)
+                        .font(QuestTypography.cardTitle)
                     Text("Your connected apps, activity, preferences, device registrations, and queued deliveries will be removed. All your Questline sessions will end. This cannot be undone.")
                     Text("This only deletes data held by Questline. It does not delete your apps from Apple or cancel your customers’ purchases.")
                         .foregroundStyle(.secondary)
@@ -1037,7 +1036,7 @@ private struct ErrorMessage: View {
     let message: String
     var body: some View {
         Label(message, systemImage: "exclamationmark.circle")
-            .font(.subheadline)
+            .font(QuestTypography.secondary)
             .foregroundStyle(.red)
             .fixedSize(horizontal: false, vertical: true)
             .accessibilityLabel("Error: \(message)")

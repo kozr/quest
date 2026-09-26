@@ -17,15 +17,8 @@ struct MarketView: View {
     @State private var navigationPath: [MarketPeopleRoute] = []
     @State private var showingSampleSource = false
     @State private var showingUnavailableSource = false
-    @ScaledMetric(relativeTo: .body) private var segmentFontSize: CGFloat = 15
-    @ScaledMetric(relativeTo: .body) private var appNameSize: CGFloat = 16
-    @ScaledMetric(relativeTo: .body) private var eyebrowSize: CGFloat = 11
-    @ScaledMetric(relativeTo: .largeTitle) private var problemTitleSize: CGFloat = 32
-    @ScaledMetric(relativeTo: .body) private var countSize: CGFloat = 15
-    @ScaledMetric(relativeTo: .body) private var summarySize: CGFloat = 15
-    @ScaledMetric(relativeTo: .body) private var quoteSize: CGFloat = 17
-    @ScaledMetric(relativeTo: .body) private var attributionSize: CGFloat = 13
-    @ScaledMetric(relativeTo: .body) private var actionFontSize: CGFloat = 16
+    @State private var showingTavern = false
+    @ScaledMetric(relativeTo: .subheadline) private var scaledSegmentHeight: CGFloat = 37
     private var marketingAllowed: Bool { model.isPreviewMode || billing.canAccess(appID: store.selectedMarketAppID ?? "") }
 
     private var contextKey: String {
@@ -57,13 +50,35 @@ struct MarketView: View {
         NavigationStack(path: $navigationPath) {
             ScrollView {
                 VStack(spacing: 0) {
-                    MarketHeader(isSample: store.isSample)
                     appPicker
                     if marketingAllowed {
-                        segmentControl.padding(.top, 12)
-                        mainContent.padding(.top, 4).padding(.bottom, 18)
+                        segmentControl.padding(.top, QuestPageLayout.sectionSpacing)
+                        mainContent
+                            .padding(.horizontal, QuestPageLayout.margin - 3)
+                            .padding(.top, QuestPageLayout.sectionSpacing)
+                            .padding(.bottom, 18)
                     } else { MarketingCoverageNotice() }
                 }
+            }
+            .safeAreaInset(edge: .top, spacing: 0) {
+                QuestMainPageHeader(title: "Market", systemImage: "chart.bar.xaxis",
+                                    subtitle: store.isSample ? "Sample data" : nil) {
+                    if model.tavernEnabled {
+                        Button { showingTavern = true } label: {
+                            Image(systemName: "bubble.left.and.bubble.right.fill")
+                                .font(.system(size: 18, weight: .semibold))
+                                .foregroundStyle(QuestStyle.gold)
+                                .frame(width: 44, height: 44)
+                                .background(QuestStyle.navy.opacity(0.88), in: RoundedRectangle(cornerRadius: 12))
+                                .overlay(RoundedRectangle(cornerRadius: 12).stroke(QuestStyle.gold.opacity(0.42)))
+                        }.buttonStyle(.plain)
+                            .accessibilityLabel("Tavern global chat")
+                            .accessibilityIdentifier("openTavern")
+                    }
+                }
+            }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                MarketTabBarBackdrop()
             }
             .background(QuestStyle.navy)
             .scrollIndicators(.hidden)
@@ -75,6 +90,9 @@ struct MarketView: View {
                 } else {
                     MarketUnavailablePeopleView()
                 }
+            }
+            .navigationDestination(isPresented: $showingTavern) {
+                if model.tavernEnabled { TavernView() }
             }
         }
         .frame(width: constrainedPreviewWidth)
@@ -113,6 +131,7 @@ struct MarketView: View {
             Text("This source link could not be verified. Refresh the Market evidence before opening it.")
         }
         .accessibilityIdentifier("marketRoot")
+        .onChange(of: model.tavernEnabled) { _, enabled in if !enabled { showingTavern = false } }
     }
 
     private var appPicker: some View {
@@ -132,23 +151,7 @@ struct MarketView: View {
                         .accessibilityIdentifier("marketAppOption-\(option.id)")
                     }
                 } label: {
-                    HStack(spacing: 13) {
-                        MarketAppArtwork(app: app)
-                        Text(app.name)
-                            .font(.system(size: appNameSize, weight: .medium, design: .default))
-                            .foregroundStyle(.white)
-                            .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
-                            .multilineTextAlignment(.leading)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: 15, weight: .bold))
-                            .foregroundStyle(QuestStyle.muted)
-                    }
-                    .padding(.horizontal, 11)
-                    .frame(maxWidth: .infinity, minHeight: 46)
-                    .background(QuestStyle.navy.opacity(0.94), in: RoundedRectangle(cornerRadius: 13))
-                    .overlay(RoundedRectangle(cornerRadius: 13)
-                        .stroke(Color(red: 0.13, green: 0.34, blue: 0.51), lineWidth: 1))
+                    QuestAppPickerLabel(app: app)
                 }
                 .accessibilityLabel("Selected app, \(app.name)")
                 .accessibilityHint("Choose which app’s market insights to view.")
@@ -156,23 +159,59 @@ struct MarketView: View {
             } else if model.isLoadingApps {
                 HStack(spacing: 10) {
                     ProgressView().tint(QuestStyle.gold)
-                    Text("Loading connected apps…").font(.subheadline)
+                    Text("Loading connected apps…").font(QuestTypography.secondary)
                 }
                 .foregroundStyle(QuestStyle.muted)
                 .frame(maxWidth: .infinity, minHeight: 46, alignment: .leading)
             }
         }
-        .padding(.horizontal, 17)
+        .padding(.horizontal, QuestPageLayout.margin)
     }
 
     private var segmentControl: some View {
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(spacing: 8) {
+                    ForEach(MarketSegment.allCases) { segment in
+                        Button {
+                            store.selectSegment(segment)
+                        } label: {
+                            Text(segment.rawValue)
+                                .font(QuestTypography.secondaryAction)
+                                .foregroundStyle(store.selectedSegment == segment ? MarketInk.primary : MarketInk.mutedBlue)
+                                .multilineTextAlignment(.center)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .frame(maxWidth: .infinity, minHeight: 44)
+                                .padding(.vertical, 8)
+                                .background(store.selectedSegment == segment ? QuestStyle.gold : QuestStyle.navy,
+                                            in: RoundedRectangle(cornerRadius: 12))
+                                .overlay(RoundedRectangle(cornerRadius: 12)
+                                    .stroke(Color(red: 0.13, green: 0.34, blue: 0.51), lineWidth: 1))
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityAddTraits(store.selectedSegment == segment ? .isSelected : [])
+                        .accessibilityIdentifier("marketSegment-\(segment.rawValue.lowercased())")
+                    }
+                }
+            } else {
+                standardSegmentControl
+            }
+        }
+        .padding(.horizontal, QuestPageLayout.margin)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Market view")
+        .accessibilityIdentifier("marketSegments")
+    }
+
+    private var standardSegmentControl: some View {
         HStack(spacing: 2) {
             ForEach(MarketSegment.allCases) { segment in
                 Button {
                     store.selectSegment(segment)
                 } label: {
                     Text(segment.rawValue)
-                        .font(.system(size: segmentFontSize, weight: .semibold))
+                        .font(QuestTypography.secondaryAction)
                         .foregroundStyle(store.selectedSegment == segment ? MarketInk.primary : MarketInk.mutedBlue)
                         .frame(maxWidth: .infinity, minHeight: segmentVisualHeight)
                         .fixedSize(horizontal: false, vertical: true)
@@ -203,14 +242,10 @@ struct MarketView: View {
                 .stroke(Color(red: 0.13, green: 0.34, blue: 0.51), lineWidth: 1)
                 .frame(height: segmentVisualHeight)
         }
-        .padding(.horizontal, 17)
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Market view")
-        .accessibilityIdentifier("marketSegments")
     }
 
     private var segmentVisualHeight: CGFloat {
-        max(37, segmentFontSize * (37 / 15))
+        max(37, scaledSegmentHeight)
     }
 
     private var segmentHitHeight: CGFloat {
@@ -260,10 +295,10 @@ struct MarketView: View {
                 HStack(alignment: .top, spacing: 10) {
                     Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(QuestStyle.gold)
                     VStack(alignment: .leading, spacing: 5) {
-                        Text("Market data could not refresh").font(.subheadline.weight(.semibold))
-                        Text(error).font(.footnote)
+                        Text("Market data could not refresh").font(QuestTypography.secondaryAction)
+                        Text(error).font(QuestTypography.metadata)
                         Button("Retry") { Task { await refreshOverview() } }
-                            .font(.footnote.weight(.bold)).frame(minHeight: 44)
+                            .font(QuestTypography.secondaryAction).frame(minHeight: 44)
                     }
                     Spacer(minLength: 0)
                 }
@@ -307,21 +342,21 @@ struct MarketView: View {
     private func landscapeBoard(overview: MarketOverview) -> some View {
         VStack(alignment: .leading, spacing: 18) {
             Text("What already exists")
-                .font(.system(size: problemTitleSize, weight: .bold, design: .serif))
+                .font(QuestTypography.paperTitle)
                 .foregroundStyle(MarketInk.primary)
                 .accessibilityAddTraits(.isHeader)
             Text("Competitors, alternatives, and the workarounds people use.")
-                .font(.subheadline).foregroundStyle(MarketInk.secondary)
+                .font(QuestTypography.secondary).foregroundStyle(MarketInk.secondary)
             if let findings = store.isSample ? MarketExamples.landscape : overview.research?.landscape, !findings.isEmpty {
                 ForEach(Array(findings.enumerated()), id: \.offset) { _, finding in
                     VStack(alignment: .leading, spacing: 10) {
-                        Text(finding.title).font(.title3.weight(.semibold))
-                        Text(finding.summary).font(.body)
+                        Text(finding.title).font(QuestTypography.cardTitle)
+                        Text(finding.summary).font(QuestTypography.body)
                         ForEach(Array(finding.sources.enumerated()), id: \.offset) { _, source in
                             if let url = source.publicURL {
                                 Link(destination: url) {
                                     Label(source.title, systemImage: "arrow.up.right.square")
-                                        .font(.subheadline).multilineTextAlignment(.leading)
+                                        .font(QuestTypography.secondary).multilineTextAlignment(.leading)
                                         .frame(minHeight: 44, alignment: .leading)
                                 }
                             }
@@ -354,28 +389,28 @@ struct MarketView: View {
     private func researchBoard(_ research: MarketResearch, overview: MarketOverview) -> some View {
         VStack(alignment: .leading, spacing: 18) {
             Text("MARKET RESEARCH")
-                .font(.system(size: eyebrowSize, weight: .semibold, design: .serif))
+                .font(QuestTypography.overline)
                 .tracking(1.7).foregroundStyle(MarketInk.secondary)
             Text("Problems worth exploring")
-                .font(.system(size: problemTitleSize, weight: .bold, design: .serif))
+                .font(QuestTypography.paperTitle)
                 .foregroundStyle(MarketInk.primary)
                 .accessibilityAddTraits(.isHeader)
             Text("Early findings from Reddit and the wider web, including older discussions. These are research summaries, not verified counts of people or recurring demand.")
-                .font(.subheadline).foregroundStyle(MarketInk.secondary)
+                .font(QuestTypography.secondary).foregroundStyle(MarketInk.secondary)
             if research.findings.isEmpty {
                 Text("The search did not find enough evidence to suggest a problem yet. You can run another search or refine your app profile.")
                     .foregroundStyle(MarketInk.primary)
             }
             ForEach(Array(research.findings.enumerated()), id: \.offset) { _, finding in
                 VStack(alignment: .leading, spacing: 10) {
-                    Text(finding.title).font(.title3.weight(.semibold))
+                    Text(finding.title).font(QuestTypography.cardTitle)
                         .foregroundStyle(MarketInk.primary)
-                    Text(finding.summary).font(.body).foregroundStyle(MarketInk.primary)
+                    Text(finding.summary).font(QuestTypography.body).foregroundStyle(MarketInk.primary)
                     ForEach(Array(finding.sources.enumerated()), id: \.offset) { _, source in
                         if let url = source.publicURL {
                             Link(destination: url) {
                                 Label(source.title, systemImage: "arrow.up.right.square")
-                                    .font(.subheadline).multilineTextAlignment(.leading)
+                                    .font(QuestTypography.secondary).multilineTextAlignment(.leading)
                                     .frame(minHeight: 44, alignment: .leading)
                             }
                             .foregroundStyle(MarketInk.primary)
@@ -395,30 +430,29 @@ struct MarketView: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 12) {
                 Text(featured.peopleCount >= 2 ? "RECURRING PROBLEM" : "EARLY SIGNAL")
-                    .font(.system(size: eyebrowSize, weight: .semibold, design: .serif))
+                    .font(QuestTypography.overline)
                     .tracking(1.7)
                     .foregroundStyle(MarketInk.secondary)
-                    .fixedSize()
+                    .fixedSize(horizontal: false, vertical: true)
+                    .layoutPriority(1)
                 Rectangle().fill(MarketInk.rule.opacity(0.72)).frame(height: 1)
             }
             .padding(.bottom, 11)
 
             Text(featured.title)
-                .font(.system(size: problemTitleSize, weight: .bold, design: .serif))
-                .tracking(-0.7)
-                .lineSpacing(-5)
+                .font(QuestTypography.paperTitle)
                 .foregroundStyle(MarketInk.primary)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
                 .padding(.bottom, 7)
 
             Text("\(featured.peopleCount) people · \(featured.conversationCount) conversations")
-                .font(.system(size: countSize, weight: .semibold))
+                .font(QuestTypography.secondary.weight(.semibold))
                 .foregroundStyle(MarketInk.secondary)
                 .padding(.bottom, 8)
 
             Text(featured.summary)
-                .font(.system(size: summarySize, weight: .regular))
+                .font(QuestTypography.body)
                 .lineSpacing(3)
                 .foregroundStyle(MarketInk.primary.opacity(0.9))
                 .fixedSize(horizontal: false, vertical: true)
@@ -430,14 +464,13 @@ struct MarketView: View {
                         Capsule().fill(MarketInk.softGold).frame(width: 4)
                         VStack(alignment: .leading, spacing: 4) {
                             Text("“\(evidence.quote)”")
-                                .font(.system(size: quoteSize, weight: .regular, design: .serif).italic())
-                                .tracking(-0.15)
+                                .font(QuestTypography.body).fontDesign(.serif).italic()
                                 .lineSpacing(1)
                                 .foregroundStyle(MarketInk.primary)
                                 .fixedSize(horizontal: false, vertical: true)
                             Text(evidence.source.authorDisplayName.map { "\($0) in r/\(evidence.source.community)" }
                                  ?? "A collector in r/\(evidence.source.community)")
-                                .font(.system(size: attributionSize, weight: .medium))
+                                .font(QuestTypography.metadata)
                                 .foregroundStyle(MarketInk.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
@@ -460,10 +493,11 @@ struct MarketView: View {
                 HStack(spacing: 10) {
                     Spacer(minLength: 0)
                     Text("View \(featured.peopleCount) people")
+                        .fixedSize(horizontal: false, vertical: true)
                     Image(systemName: "arrow.right")
                     Spacer(minLength: 0)
                 }
-                .font(.system(size: actionFontSize, weight: .semibold))
+                .font(QuestTypography.primaryAction)
                 .foregroundStyle(QuestStyle.gold)
                 .frame(maxWidth: .infinity, minHeight: 44)
                 .background(QuestStyle.navy, in: RoundedRectangle(cornerRadius: 12))
@@ -495,7 +529,7 @@ struct MarketView: View {
             }
             if !overview.isSample && overview.coverage == .partial {
                 Text("Partial coverage · \(overview.sources.map { "\($0.provider.capitalized) \($0.collectedCount)" }.joined(separator: ", ")) collected")
-                    .font(.system(size: 11, weight: .medium))
+                    .font(QuestTypography.metadata)
                     .foregroundStyle(MarketInk.secondary)
                     .padding(.top, 10)
             }
@@ -516,13 +550,13 @@ struct MarketView: View {
                         .tint(MarketInk.primary)
                     Text(scanLabel(scan.status))
                 }
-                .font(.subheadline.weight(.semibold))
+                .font(QuestTypography.secondaryAction)
                 .foregroundStyle(MarketInk.secondary)
                 .frame(minHeight: 44)
                 .accessibilityElement(children: .combine)
                 .accessibilityIdentifier("marketScanProgress")
                 if let scanError = store.scanError {
-                    Text(scanError).font(.footnote).foregroundStyle(MarketInk.secondary)
+                    Text(scanError).font(QuestTypography.metadata).foregroundStyle(MarketInk.secondary)
                     Button("Check scan status") { Task { await refreshOverview() } }
                         .buttonStyle(MarketPrimaryButtonStyle())
                 }
@@ -531,10 +565,10 @@ struct MarketView: View {
             VStack(alignment: .leading, spacing: 8) {
                 if let scan = overview.scan {
                     Text("Last scan · \(scanLabel(scan.status))")
-                        .font(.footnote.weight(.medium)).foregroundStyle(MarketInk.secondary)
+                        .font(QuestTypography.metadata).foregroundStyle(MarketInk.secondary)
                 }
                 if let scanError = store.scanError {
-                    Text(scanError).font(.footnote).foregroundStyle(MarketInk.secondary)
+                    Text(scanError).font(QuestTypography.metadata).foregroundStyle(MarketInk.secondary)
                 }
                 Button {
                     Task { await store.beginScan { try await model.startMarketScan(appID: $0, revision: $1, idempotencyKey: $2) } }
@@ -623,50 +657,6 @@ struct MarketView: View {
     }
 }
 
-private struct MarketHeader: View {
-    let isSample: Bool
-    @ScaledMetric(relativeTo: .body) private var badgeSize: CGFloat = 13
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            QuestMainPageTitle(title: "Market insights", systemImage: "chart.bar.xaxis")
-            if isSample {
-                Label("Demo · Sample data", systemImage: "sparkles")
-                    .font(.system(size: badgeSize, weight: .medium))
-                    .foregroundStyle(QuestStyle.gold)
-                    .padding(.top, 8)
-                    .accessibilityIdentifier("marketDemoBadge")
-            }
-        }
-        .padding(.horizontal, 26)
-        .padding(.top, 45)
-        .padding(.bottom, 10)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .fixedSize(horizontal: false, vertical: true)
-        .background {
-            GeometryReader { geometry in
-                Image("QuestLandscape").resizable().scaledToFill()
-                    .frame(width: geometry.size.width, height: geometry.size.height + 76, alignment: .top)
-                    .clipped()
-                    .overlay {
-                        LinearGradient(stops: [
-                            .init(color: QuestStyle.navy.opacity(0.02), location: 0),
-                            .init(color: QuestStyle.navy.opacity(0.02), location: 0.23),
-                            .init(color: QuestStyle.navy.opacity(0.40), location: 0.58),
-                            .init(color: QuestStyle.navy.opacity(0.94), location: 0.82),
-                            .init(color: QuestStyle.navy, location: 0.90),
-                            .init(color: QuestStyle.navy, location: 1)
-                        ], startPoint: .top, endPoint: .bottom)
-                    }
-                    .offset(y: -50)
-            }
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
-        }
-        .frame(minHeight: 145, alignment: .topLeading)
-    }
-}
-
 private struct MarketAppArtwork: View {
     let app: ConnectedApp
     @ScaledMetric(relativeTo: .body) private var size: CGFloat = 36
@@ -686,6 +676,17 @@ private struct MarketAppArtwork: View {
         .frame(width: min(size, 48), height: min(size, 48))
         .clipShape(RoundedRectangle(cornerRadius: 5))
         .accessibilityHidden(true)
+    }
+}
+
+struct MarketTabBarBackdrop: View {
+    var body: some View {
+        QuestStyle.navy
+            .frame(height: 8)
+            // Keep parchment and evidence text out of the translucent native tab bar.
+            .background(QuestStyle.navy.ignoresSafeArea(.container, edges: .bottom))
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 }
 
@@ -743,7 +744,6 @@ private struct MarketRuleDivider: View {
 private struct MarketProblemRow: View {
     let problem: MarketProblem
     let action: () -> Void
-    @ScaledMetric(relativeTo: .body) private var titleSize: CGFloat = 16
 
     private var symbol: String {
         switch problem.id {
@@ -764,11 +764,11 @@ private struct MarketProblemRow: View {
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(problem.title)
-                        .font(.system(size: titleSize, weight: .bold, design: .serif))
+                        .font(QuestTypography.editorialTitle)
                         .foregroundStyle(MarketInk.primary)
                         .fixedSize(horizontal: false, vertical: true)
                     Text("\(problem.peopleCount) people")
-                        .font(.system(size: 13, weight: .medium))
+                        .font(QuestTypography.metadata)
                         .foregroundStyle(MarketInk.secondary)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -795,12 +795,12 @@ struct MarketBoardMessage<Actions: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Label(title, systemImage: symbol)
-                .font(.system(.title3, design: .serif).weight(.bold))
+                .font(QuestTypography.sectionTitle)
                 .foregroundStyle(MarketInk.primary)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
             Text(message)
-                .font(.body).foregroundStyle(MarketInk.secondary)
+                .font(QuestTypography.body).foregroundStyle(MarketInk.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             actions
         }
@@ -814,7 +814,8 @@ struct MarketBoardMessage<Actions: View>: View {
 struct MarketPrimaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.subheadline.weight(.bold))
+            .font(QuestTypography.primaryAction)
+            .fixedSize(horizontal: false, vertical: true)
             .foregroundStyle(QuestStyle.gold)
             .frame(maxWidth: .infinity, minHeight: 44)
             .padding(.horizontal, 14)
@@ -831,7 +832,7 @@ private struct MarketUnavailablePeopleView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("This problem is no longer available")
-                .font(.system(.title2, design: .serif).weight(.bold))
+                .font(QuestTypography.sectionTitle)
             Text("Refresh Market to load the current evidence.")
                 .foregroundStyle(QuestStyle.muted)
             Spacer()

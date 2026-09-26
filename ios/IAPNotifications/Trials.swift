@@ -171,7 +171,7 @@ struct TrialsDashboardView: View {
                             VStack(alignment: .leading, spacing: 8) {
                                 Label(error, systemImage: "exclamationmark.triangle")
                                 Button("Try again") { Task { await trials.load(model) } }.buttonStyle(.bordered)
-                            }.font(.subheadline)
+                            }.font(QuestTypography.secondary)
                         }
                         if trials.isLoading && trials.response == nil {
                             ProgressView("Loading trials…").frame(maxWidth: .infinity).padding(.vertical, 36)
@@ -211,7 +211,7 @@ struct TrialsDashboardView: View {
                     ForEach(model.apps) { app in Button(app.name) { appID = app.id } }
                 } label: {
                     Label(model.apps.first { $0.id == appID }?.name ?? "All apps", systemImage: "chevron.down")
-                        .font(.subheadline.weight(.semibold)).padding(12)
+                        .font(QuestTypography.appName).padding(12)
                         .overlay(RoundedRectangle(cornerRadius: 10).stroke(TrialsStyle.muted.opacity(0.5)))
                 }
                 Spacer()
@@ -219,7 +219,7 @@ struct TrialsDashboardView: View {
             }
             if model.isPreviewMode {
                 Text("Sample data · Not real subscribers")
-                    .font(.caption).foregroundStyle(TrialsStyle.muted)
+                    .font(QuestTypography.metadata).foregroundStyle(TrialsStyle.muted)
             }
             if !model.isPreviewMode {
                 Picker("Trial environment", selection: $model.selectedEnvironment) {
@@ -235,15 +235,15 @@ struct TrialsDashboardView: View {
             let layout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4)) : AnyLayout(HStackLayout(alignment: .center, spacing: 14))
             layout {
                 Text("\(response.truncated ? "≥" : "")\(live.count)")
-                    .font(.system(size: 64, weight: .bold, design: .rounded)).monospacedDigit()
+                    .font(QuestTypography.metric).monospacedDigit()
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Live trials").font(.title2.bold())
-                    Text("Still within their free trial period").font(.subheadline).foregroundStyle(TrialsStyle.muted)
+                    Text("Live trials").font(QuestTypography.sectionTitle)
+                    Text("Still within their free trial period").font(QuestTypography.secondary).foregroundStyle(TrialsStyle.muted)
                 }
             }.accessibilityElement(children: .combine)
             if response.truncated {
                 Label("Partial results · counts may be higher", systemImage: "info.circle")
-                    .font(.subheadline).foregroundStyle(TrialsStyle.gold)
+                    .font(QuestTypography.secondary).foregroundStyle(TrialsStyle.gold)
             }
             distribution(live)
             let metricLayout = typeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12)) : AnyLayout(HStackLayout(spacing: 8))
@@ -255,8 +255,8 @@ struct TrialsDashboardView: View {
                         VStack(alignment: .leading, spacing: 6) {
                             Image(systemName: status.symbol).font(.title2).foregroundStyle(status.color)
                             Text("\(live.filter { $0.renewalStatus == status }.count)")
-                                .font(.title2.bold()).monospacedDigit().foregroundStyle(.white)
-                            Text(status.title).font(.caption).foregroundStyle(TrialsStyle.muted)
+                                .font(QuestTypography.supportingMetric).monospacedDigit().foregroundStyle(.white)
+                            Text(status.title).font(QuestTypography.metadata).foregroundStyle(TrialsStyle.muted)
                                 .fixedSize(horizontal: false, vertical: true)
                         }.frame(maxWidth: .infinity, minHeight: 50, alignment: .leading)
                     }.accessibilityLabel("\(live.filter { $0.renewalStatus == status }.count) live trials, \(status.title). Show trials.")
@@ -275,22 +275,22 @@ struct TrialsDashboardView: View {
                             .frame(width: 36, height: 36)
                     }
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Ending in 24 hours").font(.headline)
+                        Text("Ending in 24 hours").font(QuestTypography.cardTitle)
                         Text("\(ending.filter { $0.renewalStatus == .on }.count) on · \(ending.filter { $0.renewalStatus == .off }.count) off · \(ending.filter { $0.renewalStatus == .unknown }.count) unknown")
-                            .font(.caption).foregroundStyle(TrialsStyle.muted)
+                            .font(QuestTypography.metadata).foregroundStyle(TrialsStyle.muted)
                     }
                     if !typeSize.isAccessibilitySize { Spacer(minLength: 0) }
-                    Text("\(ending.count)").font(.title3.bold())
-                    Image(systemName: "chevron.right").font(.caption)
+                    Text("\(ending.count)").font(QuestTypography.supportingMetric)
+                    Image(systemName: "chevron.right").font(QuestTypography.metadata)
                 }.padding(14)
                     .background(Color.white.opacity(0.025), in: RoundedRectangle(cornerRadius: 12))
                     .overlay(RoundedRectangle(cornerRadius: 12).stroke(TrialsStyle.gold.opacity(0.7)))
             }.foregroundStyle(.white)
             if live.isEmpty {
                 Text("No live trials in the received updates. Trials will appear here when Apple sends a free-trial transaction.")
-                    .font(.subheadline).foregroundStyle(TrialsStyle.muted)
+                    .font(QuestTypography.secondary).foregroundStyle(TrialsStyle.muted)
             } else {
-                Text("By app").font(.title3.bold()).accessibilityAddTraits(.isHeader)
+                Text("By app").font(QuestTypography.sectionTitle).accessibilityAddTraits(.isHeader)
                 ForEach(model.apps.filter { app in live.contains { $0.appId == app.id } }) { app in
                     NavigationLink {
                         TrialListView(trials: trials, appID: app.id)
@@ -302,10 +302,10 @@ struct TrialsDashboardView: View {
                             ActivityInventorySlot {
                                 AppArtwork(url: app.iconUrl, name: app.name, bundledIconName: app.bundledIconName).accentColor(TrialsStyle.gold)
                             }
-                            Text(app.name).font(.headline)
+                            Text(app.name).font(QuestTypography.cardTitle)
                             if !typeSize.isAccessibilitySize { Spacer() }
-                            Text("\(live.filter { $0.appId == app.id }.count) live").font(.subheadline)
-                            Image(systemName: "chevron.right").font(.caption)
+                            Text("\(live.filter { $0.appId == app.id }.count) live").font(QuestTypography.secondary)
+                            Image(systemName: "chevron.right").font(QuestTypography.metadata)
                         }.padding(.vertical, 6)
                     }.foregroundStyle(.white)
                     Divider().overlay(TrialsStyle.muted.opacity(0.2))
@@ -314,7 +314,7 @@ struct TrialsDashboardView: View {
                     HStack {
                         Text("View all live trials")
                         Spacer()
-                        Image(systemName: "chevron.right").font(.caption)
+                        Image(systemName: "chevron.right").font(QuestTypography.metadata)
                     }.frame(minHeight: 44)
                 }
             }
@@ -357,7 +357,7 @@ struct TrialsDashboardView: View {
                 if response.truncated { Text("Partial results: showing up to 1,000 live trials. Counts may be higher.") }
             }
             Text("Renewal on does not guarantee payment.")
-        }.font(.caption).foregroundStyle(TrialsStyle.muted)
+        }.font(QuestTypography.metadata).foregroundStyle(TrialsStyle.muted)
     }
 }
 
@@ -388,7 +388,7 @@ struct TrialListView: View {
                     Text(endingSoon ? "\(all.count) trials end in the next 24 hours" : "\(all.count) trials still live")
                         .foregroundStyle(TrialsStyle.muted)
                     if trials.response?.truncated == true {
-                        Text("Partial results · counts may be higher").font(.caption).foregroundStyle(TrialsStyle.gold)
+                        Text("Partial results · counts may be higher").font(QuestTypography.metadata).foregroundStyle(TrialsStyle.gold)
                     }
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 10) {
@@ -407,13 +407,13 @@ struct TrialListView: View {
                         }
                     }
                     VStack(alignment: .leading, spacing: 8) {
-                        Label("Cancelled can still be live", systemImage: "hourglass").font(.headline)
+                        Label("Cancelled can still be live", systemImage: "hourglass").font(QuestTypography.cardTitle)
                         Text("Renewal off means no automatic payment is scheduled. Trial access may continue until it ends.")
-                            .font(.subheadline).foregroundStyle(TrialsStyle.muted)
+                            .font(QuestTypography.secondary).foregroundStyle(TrialsStyle.muted)
                     }.padding(16).overlay(RoundedRectangle(cornerRadius: 12).stroke(TrialsStyle.muted.opacity(0.4)))
                     Text(model.isPreviewMode ? "Sample data · Not real subscribers" : "Based on received Apple updates. Renewal on does not guarantee payment.")
-                        .font(.caption).foregroundStyle(TrialsStyle.muted)
-                    if let error = trials.error { Text(error).font(.caption) }
+                        .font(QuestTypography.metadata).foregroundStyle(TrialsStyle.muted)
+                    if let error = trials.error { Text(error).font(QuestTypography.metadata) }
                 }.padding(24)
             }.refreshable { await trials.load(model) }
         }
@@ -427,7 +427,7 @@ struct TrialListView: View {
 
     private func filter(_ title: String, value: TrialRenewalStatus?) -> some View {
         Button(title) { status = value }
-            .font(.subheadline.weight(.semibold)).padding(.horizontal, 14).frame(minHeight: 44)
+            .font(QuestTypography.secondaryAction).padding(.horizontal, 14).frame(minHeight: 44)
             .overlay(RoundedRectangle(cornerRadius: 10).stroke(status == value ? TrialsStyle.gold : TrialsStyle.muted.opacity(0.5)))
             .foregroundStyle(status == value ? TrialsStyle.gold : .white)
             .accessibilityAddTraits(status == value ? .isSelected : [])
@@ -440,17 +440,17 @@ struct TrialListView: View {
                 AppArtwork(url: model.apps.first { $0.id == record.appId }?.iconUrl, name: record.appName, bundledIconName: model.apps.first { $0.id == record.appId }?.bundledIconName).accentColor(TrialsStyle.gold)
             }
             VStack(alignment: .leading, spacing: 6) {
-                Text(record.appName).font(.headline)
-                Text(record.productId).font(.caption).foregroundStyle(TrialsStyle.muted)
-                Text("Trial #\(record.id.suffix(6).uppercased())").font(.caption2).foregroundStyle(TrialsStyle.muted)
+                Text(record.appName).font(QuestTypography.cardTitle)
+                Text(record.productId).font(QuestTypography.metadata).foregroundStyle(TrialsStyle.muted)
+                Text("Trial #\(record.id.suffix(6).uppercased())").font(QuestTypography.metadata).foregroundStyle(TrialsStyle.muted)
             }
             if !typeSize.isAccessibilitySize { Spacer(minLength: 0) }
             VStack(alignment: typeSize.isAccessibilitySize ? .leading : .trailing, spacing: 6) {
                 let remaining = max(1, Int(ceil((Timestamp.date(record.endsAt) ?? now).timeIntervalSince(now) / 60)))
                 Text(remaining < 60 ? "Ends in \(remaining)m" : remaining < 1440 ? "Ends in \(Int(ceil(Double(remaining) / 60)))h" : "Ends in \(Int(ceil(Double(remaining) / 1440)))d")
-                    .font(.subheadline)
+                    .font(QuestTypography.secondary)
                 Label(record.renewalStatus.title, systemImage: record.renewalStatus.symbol)
-                    .font(.caption).foregroundStyle(record.renewalStatus.color)
+                    .font(QuestTypography.metadata).foregroundStyle(record.renewalStatus.color)
             }
         }.accessibilityElement(children: .combine)
     }
@@ -466,7 +466,7 @@ struct ActivitySceneHeader: View {
 
     var body: some View {
         QuestScenicHeader(title: title, topSafeArea: topSafeArea, topSpacing: topSpacing, showsLandscape: showsLandscape) {
-            Text(badge).font(.caption.weight(.semibold))
+            Text(badge).font(QuestTypography.metadata.weight(.semibold))
                 .foregroundStyle(QuestStyle.muted)
                 .padding(.horizontal, 12).padding(.vertical, 7)
                 .background(QuestStyle.navy.opacity(0.9), in: Capsule())
@@ -493,7 +493,8 @@ struct QuestScenicHeader<Trailing: View>: View {
                 if let systemImage {
                     QuestMainPageTitle(title: title, systemImage: systemImage)
                 } else {
-                    Text(title).font(.system(.largeTitle, design: .serif).bold())
+                    Text(title).font(QuestTypography.pageTitle)
+                        .fixedSize(horizontal: false, vertical: true)
                         .foregroundStyle(.white)
                         .accessibilityAddTraits(.isHeader)
                 }
@@ -557,7 +558,7 @@ struct ActivitySectionPicker: View {
                         if selection == section {
                             Image(systemName: "diamond.fill").font(.system(size: 7)).foregroundStyle(QuestStyle.gold)
                         }
-                        Text(section.rawValue).font(.subheadline.weight(.semibold))
+                        Text(section.rawValue).font(QuestTypography.secondaryAction)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     .foregroundStyle(selection == section ? .white : QuestStyle.muted)
