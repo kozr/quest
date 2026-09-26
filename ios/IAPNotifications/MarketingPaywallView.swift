@@ -219,10 +219,11 @@ struct MarketingPaywallView: View {
             feature("Sales analytics", free: true)
             feature("Sales push alerts", free: true)
             feature("Ongoing lead discovery", free: false)
-            feature("New lead alerts", free: false)
+            feature("Fast push alerts", free: false)
             feature("Suggested replies", free: false)
             feature("Customer problems", free: false)
             feature("Competitors & alternatives", free: false)
+            feature("Latest Market News", free: false)
             feature("Source-backed research", free: false)
         }
     }
