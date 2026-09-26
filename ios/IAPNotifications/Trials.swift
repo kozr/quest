@@ -163,7 +163,7 @@ struct TrialsDashboardView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 24) {
                         VStack(alignment: .leading, spacing: 16) {
-                            ActivitySceneHeader(title: "Trials", badge: model.isPreviewMode ? "Demo" : model.selectedEnvironment.rawValue, topSpacing: 16)
+                            ActivitySceneHeader(title: "Trials", badge: model.isPreviewMode ? "Demo" : model.selectedEnvironment.rawValue, topSpacing: 16, showsLandscape: false)
                             ActivitySectionPicker(selection: $section)
                         }
                         filters
@@ -182,13 +182,13 @@ struct TrialsDashboardView: View {
                     }.padding(.horizontal, 24).padding(.bottom, 28)
                 }
                 .refreshable { await trials.load(model) }
-                .background(TrialsStyle.navy.ignoresSafeArea())
+                .background { ActivityPageBackground() }
             }
             .foregroundStyle(.white).tint(TrialsStyle.gold)
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar(.visible, for: .navigationBar)
-            .toolbarBackground(TrialsStyle.navy, for: .navigationBar)
+            .toolbarBackground(.hidden, for: .navigationBar)
             .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbarBackground(TrialsStyle.navy, for: .tabBar)
             .toolbarBackground(.visible, for: .tabBar)
@@ -462,9 +462,10 @@ struct ActivitySceneHeader: View {
     let badge: String
     var topSafeArea: CGFloat = 0
     var topSpacing: CGFloat = 80
+    var showsLandscape = true
 
     var body: some View {
-        QuestScenicHeader(title: title, topSafeArea: topSafeArea, topSpacing: topSpacing) {
+        QuestScenicHeader(title: title, topSafeArea: topSafeArea, topSpacing: topSpacing, showsLandscape: showsLandscape) {
             Text(badge).font(.caption.weight(.semibold))
                 .foregroundStyle(QuestStyle.muted)
                 .padding(.horizontal, 12).padding(.vertical, 7)
@@ -479,6 +480,7 @@ struct QuestScenicHeader<Trailing: View>: View {
     var systemImage: String? = nil
     var topSafeArea: CGFloat = 0
     var topSpacing: CGFloat = 80
+    var showsLandscape = true
     @ViewBuilder var trailing: Trailing
     @Environment(\.dynamicTypeSize) private var typeSize
 
@@ -503,18 +505,44 @@ struct QuestScenicHeader<Trailing: View>: View {
         .padding(.top, topSpacing + topSafeArea).padding(.bottom, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background {
-            GeometryReader { geometry in
+            if showsLandscape {
+                GeometryReader { geometry in
+                    Image("QuestLandscape").resizable().scaledToFill()
+                        .frame(width: geometry.size.width + 48, height: geometry.size.height + 90, alignment: .top)
+                        .clipped()
+                        .overlay(LinearGradient(stops: [
+                            .init(color: QuestStyle.navy.opacity(0.1), location: 0),
+                            .init(color: QuestStyle.navy.opacity(0.3), location: 0.45),
+                            .init(color: QuestStyle.navy, location: 1)
+                        ], startPoint: .top, endPoint: .bottom))
+                        .offset(x: -24, y: -60)
+                }.allowsHitTesting(false).accessibilityHidden(true)
+            }
+        }
+    }
+}
+
+/// The artwork extends under system chrome; scroll content keeps its native safe area.
+struct ActivityPageBackground: View {
+    @ScaledMetric(relativeTo: .largeTitle) private var landscapeHeight: CGFloat = 260
+
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack(alignment: .top) {
+                QuestStyle.navy
                 Image("QuestLandscape").resizable().scaledToFill()
-                    .frame(width: geometry.size.width + 48, height: geometry.size.height + 90, alignment: .top)
+                    .frame(width: geometry.size.width, height: landscapeHeight, alignment: .top)
                     .clipped()
                     .overlay(LinearGradient(stops: [
                         .init(color: QuestStyle.navy.opacity(0.1), location: 0),
                         .init(color: QuestStyle.navy.opacity(0.3), location: 0.45),
                         .init(color: QuestStyle.navy, location: 1)
                     ], startPoint: .top, endPoint: .bottom))
-                    .offset(x: -24, y: -60)
-            }.allowsHitTesting(false).accessibilityHidden(true)
+            }
         }
+        .ignoresSafeArea()
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 }
 

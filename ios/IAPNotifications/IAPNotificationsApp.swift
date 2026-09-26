@@ -435,7 +435,7 @@ struct ActivityView: View {
         Group {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    ActivitySceneHeader(title: "Events", badge: model.isPreviewMode ? "Demo" : model.selectedEnvironment.rawValue, topSpacing: 16)
+                    ActivitySceneHeader(title: "Events", badge: model.isPreviewMode ? "Demo" : model.selectedEnvironment.rawValue, topSpacing: 16, showsLandscape: false)
                     ActivitySectionPicker(selection: $section)
                     if !model.isPreviewMode {
                         Picker("Environment", selection: $model.selectedEnvironment) {
@@ -535,14 +535,14 @@ struct ActivityView: View {
                     }
                 }.padding(.horizontal, 24).padding(.bottom, 24)
             }
-            .background(QuestStyle.navy)
+            .background { ActivityPageBackground() }
             .foregroundStyle(.white).tint(QuestStyle.gold)
             .refreshable { await model.loadActivity() }
             .onChange(of: model.selectedEnvironment) { _, _ in Task { await model.loadActivity() } }
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar(.visible, for: .navigationBar)
-            .toolbarBackground(QuestStyle.navy, for: .navigationBar)
+            .toolbarBackground(.hidden, for: .navigationBar)
             .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbarBackground(QuestStyle.navy, for: .tabBar)
             .toolbarBackground(.visible, for: .tabBar)
