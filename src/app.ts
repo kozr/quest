@@ -1,3 +1,8 @@
+import {marketingBillingRouter,marketingWebhookRouter,type MarketingBillingOptions} from './marketing-billing.js';
+import {redditRouter} from './reddit.js';
+import {leadsRouter,type LeadsRouterOptions} from './leads.js';
+import {marketRouter,type MarketRouterOptions} from './market.js';
+import {onboardingRouter} from './onboarding.js';
 import express,{type Request,type Response,type NextFunction} from 'express';
 import {randomUUID} from 'node:crypto';
 import {Timestamp} from 'firebase-admin/firestore';
@@ -31,6 +36,10 @@ export interface ApplicationOptions extends Configuration {
   webDirectory?:string;
   /** Test-only repository injection, never selected via an HTTP parameter. */
   store?:Store;
+  /** Server-side injection points for App Store metadata and provider contract tests. */
+  leads?:LeadsRouterOptions;
+  market?:MarketRouterOptions;
+  marketing?:MarketingBillingOptions;
 }
 const appleCredentials=z.object({idToken:z.string().min(1).max(16384),rawNonce:z.string().regex(/^[A-Za-z0-9_-]{43}$/),client:z.literal('ios')}).strict();
 const appInput=z.object({name:z.string().trim().min(1).max(80),bundleId:z.string().trim().min(3).max(255).regex(/^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/),appleId:z.string().trim().regex(/^[1-9]\d{0,14}$/),source:z.enum(['apple','revenuecat']),iconUrl:z.string().max(2048).nullable().optional()}).strict();
@@ -57,6 +66,7 @@ export function createApplication(options:ApplicationOptions) {
   app.get('/healthz',async(_req,res)=>{await store.collection('health').doc('probe').get();res.json({ok:true});});
   const webhookBodies=new WeakMap<object,string>();
   app.use('/webhooks',limit('webhooks',3000,60000),express.json({limit:'256kb',verify:(req,_res,buffer)=>{webhookBodies.set(req,buffer.toString('utf8'));}}));
+  app.use('/webhooks',marketingWebhookRouter(store,options.marketing));
   app.post('/webhooks/apple/:secret/:environment',async(req,res)=>{
     const source=await store.appForSecret(req.params.secret);
     if(!source || !['production','sandbox','forward'].includes(req.params.environment)) throw new ServiceError(404,'Notification endpoint not found.');
@@ -102,7 +112,9 @@ export function createApplication(options:ApplicationOptions) {
       // Only hashes are retained. The 24h replay record outlives the 5m
       // accepted credential age, including clock skew and asynchronous TTL.
       await s.set('apple_sign_ins',nonceHash,{expireAt:Timestamp.fromMillis(Date.now()+86400000)});
-      await s.set('users',user.id,{...user,updated_at:new Date().toISOString()},true);
+      // Enroll at account creation, not from a client-controlled onboarding call.
+      // Existing beta profiles retain access; a new account cannot bypass its free-quest limit with an older client.
+      await s.set('users',user.id,{...user,updated_at:new Date().toISOString(),...(!profile?{questOnboarding:{stage:'app'}}:{})},true);
       return createSession(s,user.id,authTime);
     });
     res.json({user,token});
@@ -114,6 +126,12 @@ export function createApplication(options:ApplicationOptions) {
     res.json({status:job?.state==='pending' ? 'deleting' : job?.state==='complete' ? 'complete' : 'unavailable'});
   });
   app.use('/api',authenticate(store,options.publicUrl));
+  app.use('/api/reddit',limit('reddit',60,60000,true),redditRouter(store));
+  app.use('/api/marketing',limit('marketing-billing',60,60000,true));
+  app.use('/api',marketingBillingRouter(store,options.marketing));
+  app.use('/api',onboardingRouter(store));
+  app.use('/api',leadsRouter(store,options.leads));
+  app.use('/api',marketRouter(store,options.market));
   app.get('/api/auth/me',(req,res)=>res.json({user:authenticated(req).user}));
   app.post('/api/account/delete',limit('account-delete',5,15*60000,true),async(req,res)=>{
     const input=appleCredentials.extend({authorizationCode:z.string().min(1).max(4096)}).parse(req.body);
@@ -257,7 +275,8 @@ export function createApplication(options:ApplicationOptions) {
   app.use((_req,res)=>res.status(404).json({error:'Not found.'}));
   app.use((error:unknown,_req:Request,res:Response,_next:NextFunction)=>{
     if(error instanceof z.ZodError) return res.status(400).json({error:error.issues.map(issue=>`${issue.path.join('.') || 'Request'}: ${issue.message}`).slice(0,3).join(' ')});
-    if(error instanceof ServiceError || error instanceof PairingError) return res.status(error.status).json({error:error.message});
+    if(error instanceof ServiceError) return res.status(error.status).json({error:error.message,...(error.code?{code:error.code}:{})});
+    if(error instanceof PairingError) return res.status(error.status).json({error:error.message});
     if(error instanceof AppleVerificationError) return res.status(error.code==='verifier_unavailable' ? 503 : 400).json({error:error.message});
     if(error instanceof SyntaxError && 'body' in error) return res.status(400).json({error:'Invalid JSON request.'});
     if(error && typeof error==='object' && 'type' in error && error.type==='entity.too.large') return res.status(413).json({error:'Request is too large.'});

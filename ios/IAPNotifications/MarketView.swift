@@ -10,6 +10,7 @@ private enum MarketInk {
 
 struct MarketView: View {
     @EnvironmentObject private var model: AppModel
+    @EnvironmentObject private var billing: MarketingStore
     @StateObject private var store = MarketStore()
     @Environment(\.openURL) private var openURL
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -25,11 +26,12 @@ struct MarketView: View {
     @ScaledMetric(relativeTo: .body) private var quoteSize: CGFloat = 17
     @ScaledMetric(relativeTo: .body) private var attributionSize: CGFloat = 13
     @ScaledMetric(relativeTo: .body) private var actionFontSize: CGFloat = 16
+    private var marketingAllowed: Bool { model.isPreviewMode || !billing.isEnabled || billing.canAccess(appID: store.selectedMarketAppID ?? "") }
 
     private var contextKey: String {
         [model.user?.id ?? "signed-out", String(model.isPreviewMode),
          model.apps.map(\.id).sorted().joined(separator: ","),
-         store.selectedMarketAppID ?? ""].joined(separator: "|")
+         store.selectedMarketAppID ?? "", String(marketingAllowed)].joined(separator: "|")
     }
 
     private var peopleTaskKey: String {
@@ -57,16 +59,15 @@ struct MarketView: View {
                 VStack(spacing: 0) {
                     MarketHeader(isSample: store.isSample)
                     appPicker
-                    segmentControl
-                        .padding(.top, 12)
-                    mainContent
-                        .padding(.top, 4)
-                        .padding(.bottom, 18)
+                    if marketingAllowed {
+                        segmentControl.padding(.top, 12)
+                        mainContent.padding(.top, 4).padding(.bottom, 18)
+                    } else { MarketingCoverageNotice() }
                 }
             }
             .background(QuestStyle.navy)
             .scrollIndicators(.hidden)
-            .refreshable { await refreshMarket() }
+            .refreshable { if marketingAllowed { await refreshMarket() } }
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(for: MarketPeopleRoute.self) { route in
                 if let problem = store.overview?.problems.first(where: { $0.id == route.problemID }) {
@@ -87,15 +88,15 @@ struct MarketView: View {
         .task(id: contextKey) {
             store.configure(accountID: model.user?.id, apps: model.apps,
                             preferredAppID: model.selectedLeadAppID, preview: model.isPreviewMode)
-            guard store.selectedMarketAppID != nil else { return }
+            guard marketingAllowed, store.selectedMarketAppID != nil else { return }
             await store.loadOverview { appID in try await model.marketOverview(appID: appID) }
         }
         .task(id: peopleTaskKey) {
-            guard store.selectedSegment == .people, store.overview != nil else { return }
+            guard marketingAllowed, store.selectedSegment == .people, store.overview != nil else { return }
             await loadPeople()
         }
         .task(id: scanTaskKey) {
-            guard store.overview?.scan?.status.isActive == true else { return }
+            guard marketingAllowed, store.overview?.scan?.status.isActive == true else { return }
             await store.pollScan(
                 fetch: { appID, scanID in try await model.marketScan(appID: appID, scanID: scanID) },
                 refresh: { appID in try await model.marketOverview(appID: appID) }

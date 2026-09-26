@@ -3,12 +3,14 @@ import UIKit
 
 struct LeadsView: View {
     @EnvironmentObject private var model: AppModel
+    @EnvironmentObject private var billing: MarketingStore
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var setupApp: ConnectedApp?
     @State private var showingQuestTrial = false
     @State private var journalPath: [LeadJournalSession] = []
+    private var marketingAllowed: Bool { model.isPreviewMode || !billing.isEnabled || billing.canAccess(appID: model.selectedLeadAppID ?? "") }
     #if DEBUG
     @State private var didOpenPreviewJournal = false
     #endif
@@ -20,9 +22,11 @@ struct LeadsView: View {
                     compactHeader
 
                     appPicker
-                    scanProgress
-                    board.padding(.top, 14)
-                    if let locked = model.lockedQuests {
+                    if marketingAllowed {
+                        scanProgress
+                        board.padding(.top, 14)
+                    } else { MarketingCoverageNotice() }
+                    if let locked = model.lockedQuests, marketingAllowed {
                         Button { showingQuestTrial = true } label: {
                             HStack {
                                 Label(locked.title, systemImage: "lock.fill")
@@ -38,12 +42,12 @@ struct LeadsView: View {
             .background(QuestStyle.navy)
             .foregroundStyle(.white)
             .tint(QuestStyle.gold)
-            .refreshable { await model.refreshLeadBoard() }
+            .refreshable { if marketingAllowed { await model.refreshLeadBoard() } }
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 undoBanner
             }
-            .task(id: "\(model.selectedLeadAppID ?? ""): \(model.selectedTab): \(scenePhase)") {
-                guard scenePhase == .active, model.selectedTab == "leads", model.selectedLeadAppID != nil else { return }
+            .task(id: "\(model.selectedLeadAppID ?? ""): \(model.selectedTab): \(scenePhase): \(marketingAllowed)") {
+                guard marketingAllowed, scenePhase == .active, model.selectedTab == "leads", model.selectedLeadAppID != nil else { return }
                 await model.refreshLeadBoard()
             }
             .task(id: "\(model.selectedLeadAppID ?? ""): \(model.selectedTab): \(scenePhase): \(model.leadProfile?.revision ?? 0): \(needsProgressPolling)") {

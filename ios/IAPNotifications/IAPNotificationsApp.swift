@@ -2,12 +2,16 @@ import SwiftUI
 import UIKit
 import UserNotifications
 import AuthenticationServices
+import StoreKit
 
 @main
 struct IAPNotificationsApp: App {
     @UIApplicationDelegateAdaptor(PushDelegate.self) private var pushDelegate
     @StateObject private var model: AppModel = {
         #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--marketing-paywall-preview") {
+            return AppModel(loadStoredState: false)
+        }
         if ProcessInfo.processInfo.arguments.contains("--quest-market-preview") {
             return AppModel(loadStoredState: false)
         }
@@ -18,15 +22,26 @@ struct IAPNotificationsApp: App {
         return AppModel()
     }()
     @Environment(\.scenePhase) private var scenePhase
+    @StateObject private var marketing = MarketingStore()
 
     var body: some Scene {
         WindowGroup {
             RootView()
                 .environmentObject(model)
+                .environmentObject(marketing)
                 .tint(Color(.systemBlue))
+                .task(id: "\(model.user?.id ?? "")|\(model.isPreviewMode)|\(model.serverSettings.url)") {
+                    marketing.configure(client: model.marketingClient, userID: model.user?.id, preview: model.isPreviewMode)
+                    await marketing.load()
+                }
                 .task {
                     pushDelegate.model = model
                     #if DEBUG
+                    if ProcessInfo.processInfo.arguments.contains("--marketing-paywall-preview") {
+                        model.enterPreview()
+                        model.selectedTab = "marketing-preview"
+                        return
+                    }
                     if let argument = ProcessInfo.processInfo.arguments.first(where: { $0.hasPrefix("--onboarding-preview=") }),
                        let stage = OnboardingStage(rawValue: String(argument.dropFirst("--onboarding-preview=".count))) {
                         await model.enterOnboardingPreview(stage: stage)
@@ -51,7 +66,7 @@ struct IAPNotificationsApp: App {
                     if userID != nil { Task { await pushDelegate.openPendingNotificationIfNeeded() } }
                 }
                 .onChange(of: scenePhase) { _, phase in
-                    if phase == .active { Task { await model.foreground() } }
+                    if phase == .active { Task { await model.foreground(); await marketing.load() } }
                 }
                 .onOpenURL { url in
                     Task { await model.inspectPairingLink(url.absoluteString) }
@@ -123,6 +138,7 @@ struct RootView: View {
     @AppStorage(DisplayTimeZone.storageKey) private var displayTimeZone: DisplayTimeZone = .local
     var questReveal: QuestReveal? = nil
     @EnvironmentObject private var model: AppModel
+    @EnvironmentObject private var billing: MarketingStore
     @State private var storeSetupApp: ConnectedApp?
     @Environment(\.scenePhase) private var scenePhase
 
@@ -134,6 +150,8 @@ struct RootView: View {
                 AuthenticationView()
             } else if model.isAuthenticating {
                 ProgressView("Opening your journal…")
+            } else if model.isPreviewMode && model.selectedTab == "marketing-preview" {
+                MarketingPaywallView(onClose: { model.selectedTab = "activity" })
             } else if model.shouldShowOnboarding {
                 QuestOnboardingView()
             } else {
@@ -148,10 +166,10 @@ struct RootView: View {
                     }
                         .tabItem { Label("Activity", systemImage: "list.bullet") }
                         .tag("activity")
-                    LeadsView()
+                    MarketingAccessView { LeadsView() }
                         .tabItem { Label("Leads", systemImage: "pin.fill") }
                         .tag("leads")
-                    MarketView()
+                    MarketingAccessView { MarketView() }
                         .tabItem { Label("Market", systemImage: "chart.bar.xaxis") }
                         .tag("market")
                     AppsView()
@@ -712,11 +730,13 @@ struct EventDetailView: View {
 
 struct SettingsView: View {
     @EnvironmentObject private var model: AppModel
+    @EnvironmentObject private var billing: MarketingStore
     @Environment(\.openURL) private var openURL
     @State private var confirmingLogout = false
     @State private var showingDeletion = false
     @State private var retryingOnboarding = false
     @State private var onboardingRetryError: String?
+    @State private var showingMarketing = false
 
     var body: some View {
         NavigationStack {
@@ -866,6 +886,12 @@ struct SettingsView: View {
                     footer: { Text("Replay setup with your current account.") }
                 }
                 Section {
+                    Button { showingMarketing = true } label: {
+                        Label(billing.hasActiveSubscription ? "Manage Marketing" : "Explore Marketing", systemImage: "sparkles")
+                    }.accessibilityIdentifier("settings.marketing")
+                    Text("Sales analytics and sales push notifications are free.").font(.caption)
+                } header: { QuestSettingsHeading(title: "Marketing") }
+                Section {
                     Link("Privacy policy", destination: model.privacyURL)
                     Link("Help and support", destination: model.supportURL)
                 } header: { QuestSettingsHeading(title: "About Questline") }
@@ -881,6 +907,7 @@ struct SettingsView: View {
             .toolbarBackground(QuestStyle.navy, for: .tabBar)
             .toolbarBackground(.visible, for: .tabBar)
             .refreshable { await model.loadSettings() }
+            .fullScreenCover(isPresented: $showingMarketing) { MarketingPaywallView() }
             .task(id: model.selectedTab) {
                 if model.selectedTab == "settings" { await model.checkTestFlightInstallation() }
             }
@@ -925,6 +952,7 @@ private struct DeleteAccountView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
     @State private var attempt: (nonce: String, state: String)?
+    @State private var managingSubscription = false
 
     var body: some View {
         NavigationStack {
@@ -937,6 +965,8 @@ private struct DeleteAccountView: View {
                         .foregroundStyle(.secondary)
                 }
                 Section("Before you delete") {
+                    Text("Deleting your Questline account does not cancel your Marketing subscription. You can manage or cancel it in the App Store.")
+                    Button("Manage Marketing subscription") { managingSubscription = true }
                     Text("If Apple sends notifications to a Questline URL, change it back to your own server in App Store Connect first. For RevenueCat, remove its forwarding link to Questline. Deleting this account stops forwarding.")
                     Link("Connection and deletion help", destination: model.supportURL)
                 }
@@ -987,6 +1017,7 @@ private struct DeleteAccountView: View {
                 Button("Cancel") { dismiss() }.disabled(model.isDeletingAccount)
             } }
             .interactiveDismissDisabled(model.isDeletingAccount)
+            .manageSubscriptionsSheet(isPresented: $managingSubscription)
         }
     }
 }

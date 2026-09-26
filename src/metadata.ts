@@ -54,3 +54,21 @@ export async function searchApps(term: string) {
       appStoreUrl:`https://apps.apple.com/us/app/id${appleId}`}];
   }).slice(0,10);
 }
+
+/** Fixed-host App Store description lookup for server-side lead setup. */
+export async function lookupAppDescription(appleId:string,country='us',request:typeof fetch=fetch) {
+  if(!/^[1-9]\d{0,14}$/.test(appleId)||!/^[a-z]{2}$/i.test(country)) throw new Error('A connected app needs a valid Apple ID and storefront.');
+  const storefront=country.toLowerCase();
+  const url=new URL('https://itunes.apple.com/lookup');
+  url.search=new URLSearchParams({id:appleId,entity:'software',country:storefront}).toString();
+  const response=await request(url,{signal:AbortSignal.timeout(8000),redirect:'error',headers:{Accept:'application/json'}});
+  if(!response.ok) throw new Error('Apple lookup is unavailable.');
+  const body=await response.text();if(body.length>1024*1024) throw new Error('Apple lookup returned too much data.');
+  const data=JSON.parse(body) as {results?:Array<Record<string,unknown>>};
+  const app=data.results?.find(row=>String(row.trackId)===appleId&&typeof row.bundleId==='string');
+  if(!app||typeof app.description!=='string') return null;
+  const description=app.description.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g,' ').replace(/\s+/g,' ').trim().slice(0,12000);
+  if(!description) return null;
+  return {appleId,country:storefront,description,appName:typeof app.trackName==='string'?app.trackName:'',bundleId:String(app.bundleId),fetchedAt:new Date().toISOString(),
+    appStoreUrl:`https://apps.apple.com/${storefront}/app/id${appleId}`};
+}

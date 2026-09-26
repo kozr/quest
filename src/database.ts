@@ -4,6 +4,7 @@ import type { FirebaseIdentity } from './firebase.js';
 import { ServiceError } from './firebase.js';
 import type { ActivityEvent, ConnectedApp, Preferences, RegisteredDevice } from './types.js';
 import type {ForwardingJob,ForwardingTarget} from './forwarding.js';
+import type {LeadNotification} from './leads-notifications.js';
 
 export interface AppRow {
   id:string; user_id:string; name:string; bundle_id:string; apple_id:string; source:'apple'|'revenuecat';
@@ -18,7 +19,7 @@ export interface EventRow extends ActivityEvent { user_id:string; economic_key:s
 export interface SessionRow { token_hash:string; user_id:string; auth_time:number; provider:'apple.com'; created_at:string; expires_at:string; expireAt:Timestamp }
 export interface Job {
   id:string; user_id:string; event_id:string|null; app_id:string|null; device_id:string; device_name:string;
-  session_hash:string; device_generation:number; kind:'event'|'test'; state:'pending'|'processing'|'sent'|'failed'|'cancelled';
+  session_hash:string; device_generation:number; kind:'event'|'test'|'lead'; lead?:LeadNotification; state:'pending'|'processing'|'sent'|'failed'|'cancelled';
   attempts:number; last_error:string|null; next_attempt_at:number; lease_until:number|null; lease_id:string|null;
   created_at:string; updated_at:string;
 }

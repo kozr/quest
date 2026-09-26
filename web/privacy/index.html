@@ -10,13 +10,14 @@
   <header class="site-header"><a class="service-name" href="/">Questline</a><nav aria-label="Help"><a href="/support/">Help and support</a></nav></header>
   <main class="reading-page">
     <h1>Privacy policy</h1>
-    <p class="help">Effective September 10, 2026</p>
+    <p class="help">Effective September 26, 2026</p>
     <p>Questline is operated by Nicholas Wong. It helps app developers view App Store Server Notifications, receive iPhone alerts, and forward notifications to an existing server. This policy covers the Questline iPhone app and its web service.</p>
     <h2>Information we process</h2>
     <ul>
       <li><strong>Account information:</strong> your Apple sign-in identifier, service account identifier, and email address, including an Apple private relay address if you choose Hide My Email. We do not receive your Apple Account password.</li>
       <li><strong>Connected apps:</strong> app names, bundle and App Store identifiers, artwork URLs, notification endpoint secrets, connection dates, and any forwarding destinations you configure.</li>
       <li><strong>Purchase activity:</strong> notification type, transaction and product identifiers, available price and currency, Production or Sandbox environment, and event timestamps. These records describe transactions in the apps you connect, not purchases of Questline.</li>
+      <li><strong>Questline Marketing subscriptions:</strong> when you subscribe, Apple processes payment. We use a random account token, Apple transaction and product identifiers, subscription dates and status, and your selected apps to verify your purchase and provide the correct marketing access. We do not receive your payment card details.</li>
       <li><strong>Phone delivery:</strong> your APNs device token, device label, notification preferences, and delivery attempts and outcomes.</li>
       <li><strong>Service security:</strong> session records, short-lived sign-in challenges, hashed replay and rate-limit records, and operational logs. Hosting providers may process IP addresses, request URLs, browser/device information, and request times.</li>
       <li><strong>Support:</strong> information you choose to send when requesting help. Do not send passwords, signing keys, device tokens, or complete notification endpoint URLs.</li>
@@ -32,6 +33,7 @@
     <p>We may also disclose information when required by law or necessary to protect the service and its users. Access to stored service data is restricted to authorized operation and support.</p>
     <h2>Retention and deletion</h2>
     <p>Account information, preferences, device records, and normalized activity are kept while your account exists. Removing a connected app starts deletion of its activity and delivery records; an inactive connection record may remain until you delete your account.</p>
+    <p>Marketing subscription records are kept while your account exists. Account deletion removes the subscription account token and transaction details. A hash of the original transaction identifier remains without an account link to prevent the deleted account’s purchase from being reassigned. Deleting your Questline account does not cancel Apple billing; manage or cancel your Marketing subscription in App Store settings.</p>
     <p>Forwarding stores the signed payload and destination temporarily for delivery and retries. They are cleared when delivery succeeds, is cancelled, or permanently fails. Retries normally end within 24 hours; a seven-day expiry provides a fallback for forwarding records. Database expiry runs asynchronously and may remove records after their expiry time.</p>
     <p>Service sessions expire after 30 days. Computer sign-in challenges expire after two minutes, and replay-protection hashes expire after 24 hours. Rate-limit records expire when their short enforcement window ends. Hosting providers retain operational and security logs according to their configured retention policies.</p>
     <p>To delete your account, open <strong>Settings → Delete account</strong> in the iPhone app and confirm with Apple. Once accepted, the account is disconnected immediately and background cleanup removes its data, normally within 24 hours. Reopen the app to check completion. A minimal deletion receipt remains for up to seven days after cleanup, plus asynchronous expiry time. Short-lived security records and provider logs expire separately. Information that must be retained by law may be kept for that purpose.</p>

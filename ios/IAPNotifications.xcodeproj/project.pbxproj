@@ -40,6 +40,9 @@ A00000000000000000000012 = {isa = PBXBuildFile; fileRef = B000000000000000000000
 0BD100000000000000000001 /* Onboarding.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0BD200000000000000000001; };
 0BD100000000000000000002 /* OnboardingViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0BD200000000000000000002; };
 0BD100000000000000000003 /* OnboardingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0BD200000000000000000003; };
+AA7100000000000000000001 /* MarketingStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA7200000000000000000001; };
+AA7100000000000000000002 /* MarketingPaywallView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA7200000000000000000002; };
+AA7100000000000000000003 /* MarketingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA7200000000000000000003; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -92,6 +95,9 @@ B00000000000000000000018 = {isa = PBXFileReference; lastKnownFileType = file; pa
 0BD200000000000000000001 /* Onboarding.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Onboarding.swift; sourceTree = "<group>"; };
 0BD200000000000000000002 /* OnboardingViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingViews.swift; sourceTree = "<group>"; };
 0BD200000000000000000003 /* OnboardingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingTests.swift; sourceTree = "<group>"; };
+AA7200000000000000000001 /* MarketingStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketingStore.swift; sourceTree = "<group>"; };
+AA7200000000000000000002 /* MarketingPaywallView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketingPaywallView.swift; sourceTree = "<group>"; };
+AA7200000000000000000003 /* MarketingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketingTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -133,6 +139,8 @@ B00000000000000000000018 = {isa = PBXFileReference; lastKnownFileType = file; pa
 				B00000000000000000000001 /* IAPNotificationsApp.swift */,
 0BD200000000000000000002 /* OnboardingViews.swift */,
 0BD200000000000000000001 /* Onboarding.swift */,
+AA7200000000000000000002 /* MarketingPaywallView.swift */,
+AA7200000000000000000001 /* MarketingStore.swift */,
 				EAD200000000000000000001 /* Leads.swift */,
 				F0F200000000000000000001 /* Market.swift */,
 				F0F200000000000000000002 /* MarketExamples.swift */,
@@ -166,6 +174,7 @@ B00000000000000000000018 = {isa = PBXFileReference; lastKnownFileType = file; pa
 			children = (
 				B00000000000000000000005 /* ClientTests.swift */,
 0BD200000000000000000003 /* OnboardingTests.swift */,
+AA7200000000000000000003 /* MarketingTests.swift */,
 				EAD200000000000000000004 /* LeadsTests.swift */,
 					B0B0B0000000000000000002 /* TrialsTests.swift */,
 					F0F200000000000000000006 /* MarketTests.swift */,
@@ -298,6 +307,8 @@ B00000000000000000000018 = {isa = PBXFileReference; lastKnownFileType = file; pa
 				A00000000000000000000001 /* IAPNotificationsApp.swift in Sources */,
 0BD100000000000000000002 /* OnboardingViews.swift in Sources */,
 0BD100000000000000000001 /* Onboarding.swift in Sources */,
+AA7100000000000000000002 /* MarketingPaywallView.swift in Sources */,
+AA7100000000000000000001 /* MarketingStore.swift in Sources */,
 				EAD100000000000000000001 /* Leads.swift in Sources */,
 				F0F100000000000000000001 /* Market.swift in Sources */,
 				F0F100000000000000000002 /* MarketExamples.swift in Sources */,
@@ -327,6 +338,7 @@ B00000000000000000000018 = {isa = PBXFileReference; lastKnownFileType = file; pa
 			files = (
 				A00000000000000000000005 /* ClientTests.swift in Sources */,
 0BD100000000000000000003 /* OnboardingTests.swift in Sources */,
+AA7100000000000000000003 /* MarketingTests.swift in Sources */,
 				EAD100000000000000000004 /* LeadsTests.swift in Sources */,
 					A0A0A0000000000000000002 /* TrialsTests.swift in Sources */,
 					F0F100000000000000000006 /* MarketTests.swift in Sources */,

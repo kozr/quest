@@ -215,14 +215,20 @@ private struct QuestCommunity: View {
 
 struct QuestOnboardingView: View {
     @EnvironmentObject private var model: AppModel
+    @EnvironmentObject private var billing: MarketingStore
     private var stage: OnboardingStage { model.onboarding?.stage ?? .app }
     var body: some View {
         Group {
             switch stage {
             case .app: FindQuestAppPage()
-            case .quest: LoadQuestPage()
+            case .quest:
+                if billing.subscription == nil && !model.isPreviewMode { MarketingConnectionView() }
+                else if billing.isEnabled && !billing.canAccess(appID: model.selectedLeadAppID ?? "") { MoreQuestsPage(startResearch: true) }
+                else { LoadQuestPage() }
             case .first:
-                if let lead = model.leadItems.first,
+                if billing.subscription == nil && !model.isPreviewMode { MarketingConnectionView() }
+                else if billing.isEnabled && !billing.canAccess(appID: model.selectedLeadAppID ?? "") { MoreQuestsPage(startResearch: true) }
+                else if let lead = model.leadItems.first,
                    let app = model.apps.first(where: { $0.id == model.selectedLeadAppID }) {
                     FirstQuestPage(session: model.journal(for: lead, appName: app.name), app: app)
                 } else { FindingFirstQuestPage() }
@@ -233,7 +239,7 @@ struct QuestOnboardingView: View {
         }
         .id(stage)
         .task(id: "\(model.selectedLeadAppID ?? "")|\(stage.rawValue)") {
-            guard [.first, .trial].contains(stage) else { return }
+            guard stage == .first, model.isPreviewMode || billing.subscription != nil && (!billing.isEnabled || billing.canAccess(appID: model.selectedLeadAppID ?? "")) else { return }
             while !Task.isCancelled {
                 await model.refreshLeadBoard(background: true)
                 do { try await Task.sleep(for: .seconds(6)) } catch { return }
@@ -485,6 +491,7 @@ private struct FindingFirstQuestPage: View {
 
 private struct FirstQuestPage: View {
     @EnvironmentObject private var model: AppModel
+    @EnvironmentObject private var billing: MarketingStore
     @Environment(\.openURL) private var openURL
     @ObservedObject var session: LeadJournalSession
     let app: ConnectedApp
@@ -517,7 +524,7 @@ private struct FirstQuestPage: View {
             QuestPageError(message: session.error ?? error)
             if session.error != nil { Button("Retry replies") { Task { await model.prepareJournal(session) } }.frame(minHeight: 44) }
         } footer: {
-            QuestJournalFooter(caption: "This quest stays free.") {
+            QuestJournalFooter(caption: billing.isEnabled ? "Review your reply before posting." : "This quest stays free.") {
                 if session.onboardingSelection.copiedID != nil {
                     QuestPageButton(title: "Open post", symbol: "arrow.up.right", action: openPost)
                         .accessibilityIdentifier("onboarding.openPost")
@@ -526,9 +533,9 @@ private struct FirstQuestPage: View {
                 }
             } secondary: {
                 HStack {
-                    Label(model.lockedQuests?.title ?? "More quests", systemImage: "lock.fill").font(.subheadline.weight(.semibold))
+                    Label(billing.hasActiveSubscription ? "Your marketing is ready" : (model.lockedQuests?.title ?? "More quests"), systemImage: billing.hasActiveSubscription ? "checkmark" : "lock.fill").font(.subheadline.weight(.semibold))
                     Spacer(minLength: 4)
-                    Button("Explore ›") { move(.trial) }.font(.subheadline.weight(.semibold)).frame(minHeight: 44)
+                    Button(billing.hasActiveSubscription ? "Continue ›" : "Explore ›") { move(billing.hasActiveSubscription ? .notifications : .trial) }.font(.subheadline.weight(.semibold)).frame(minHeight: 44)
                         .accessibilityIdentifier("onboarding.explore")
                 }
             }
@@ -594,65 +601,21 @@ struct MoreQuestsPage: View {
     @EnvironmentObject private var model: AppModel
     @Environment(\.dismiss) private var dismiss
     var standalone = false
-    @State private var busy = false
+    var startResearch = false
     @State private var error: String?
-    private let benefits: [(String, String)] = [
-        ("safari", "Find buying signals"), ("bubble.left", "Catch active conversations"),
-        ("pencil.tip", "Get tailored replies"), ("person.crop.circle.badge.checkmark", "Discover qualified leads")
-    ]
     var body: some View {
-        QuestJournalPage(backTitle: "Your first quest", back: { if standalone { dismiss() } else { move(.first) } }, spacing: 12) {
-            QuestPageTitle(eyebrow: model.isPreviewMode ? "More quests · Sample" : "More quests", title: model.lockedQuests?.title ?? "More quests")
-            ForEach(model.lockedQuests?.previews ?? []) { preview in
-                VStack(alignment: .leading, spacing: 10) {
-                    QuestCommunity(name: preview.community, locked: true)
-                    // Locked content never leaves the server; these are decorative redacted lines.
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Looking for an app like yours").font(.subheadline.weight(.semibold))
-                        Text("A fresh question that fits your app…").font(.footnote)
-                    }.foregroundStyle(QuestPageInk.secondary.opacity(0.7)).blur(radius: 3.5)
-                        .accessibilityHidden(true).allowsHitTesting(false).padding(.leading, 46)
-                }
-                QuestPageRule()
-            }
-            VStack(alignment: .leading, spacing: 10) {
-                ForEach(benefits, id: \.1) { symbol, title in
-                    HStack(spacing: 18) {
-                        Group {
-                            if title == "Get tailored replies" { Image("JournalQuill").resizable().scaledToFit().frame(width: 28, height: 28) }
-                            else { Image(systemName: symbol).font(.system(size: 26, weight: .light)) }
-                        }.frame(width: 32, height: 28).foregroundStyle(QuestPageInk.gold).accessibilityHidden(true)
-                        Text(title).font(.subheadline.weight(.medium)).fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-            }
-            QuestPageError(message: error)
-            if model.onboarding?.trialAvailable == false {
-                Text(model.onboarding?.hasActiveTrial == true ? "Your trial is active." : "Your trial has ended. Your first quest stays free.")
-                    .font(.subheadline).foregroundStyle(QuestPageInk.secondary)
-            }
-        } footer: {
-            QuestJournalFooter(caption: model.onboarding?.trialAvailable != false ? "No payment details. No automatic charge." : nil) {
-                if model.onboarding?.trialAvailable != false {
-                    QuestPageButton(title: "Try 14 days free", busy: busy) {
-                        busy = true; error = nil
-                        Task {
-                            do { try await model.startQuestTrial(); if standalone { dismiss() } }
-                            catch { self.error = error.localizedDescription }
-                            busy = false
-                        }
-                    }.accessibilityIdentifier("onboarding.startTrial")
-                } else {
-                    QuestPageButton(title: "Continue", symbol: "arrow.right") { if standalone { dismiss() } else { move(.notifications) } }
-                }
-            } secondary: {
-                Button { if standalone { dismiss() } else { move(.notifications) } } label: {
-                    Text("Keep my free quest").underline().font(.subheadline.weight(.medium)).frame(maxWidth: .infinity, minHeight: 44)
-                }.buttonStyle(.plain).accessibilityIdentifier("onboarding.keepFree")
-            }
+        MarketingPaywallView(onClose: { finish(research: false) }, onSubscribed: { finish(research: startResearch) })
+            .alert("Couldn’t continue", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
+                Button("OK") { error = nil }
+            } message: { Text(error ?? "Please try again.") }
+    }
+    private func finish(research: Bool) {
+        if standalone { dismiss(); return }
+        Task {
+            do { try await model.moveOnboarding(to: research ? .quest : .notifications) }
+            catch { self.error = error.localizedDescription }
         }
     }
-    private func move(_ stage: OnboardingStage) { Task { do { try await model.moveOnboarding(to: stage) } catch { self.error = error.localizedDescription } } }
 }
 
 private struct QuestTrialEntryPage: View {
@@ -724,6 +687,7 @@ private struct QuestPushPermissionPage: View {
 
 struct SalesConnectionPage: View {
     @EnvironmentObject private var model: AppModel
+    @EnvironmentObject private var billing: MarketingStore
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
     @Environment(\.scenePhase) private var scenePhase
@@ -979,7 +943,10 @@ struct SalesConnectionPage: View {
         if standalone { dismiss(); return }
         busy = true
         Task {
-            do { try await model.finishOnboarding() }
+            do {
+                try await model.finishOnboarding()
+                if billing.isEnabled && !billing.hasActiveSubscription { model.selectedTab = "activity" }
+            }
             catch { self.error = error.localizedDescription }
             busy = false
         }

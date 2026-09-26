@@ -5,7 +5,7 @@ import type { Configuration } from './config.js';
 import type { User } from './types.js';
 import { createHash } from 'node:crypto';
 
-export class ServiceError extends Error { constructor(public status:number,message:string) {super(message);} }
+export class ServiceError extends Error { constructor(public status:number,message:string,public code?:string) {super(message);} }
 export interface Identity { user:User; authTime:number }
 export interface FirebaseServices { app:App; db:Firestore; identity:FirebaseIdentity }
 /** Exchange native Apple credentials using Firebase's OAuth credential protocol.

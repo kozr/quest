@@ -1,6 +1,7 @@
 import {randomUUID} from 'node:crypto';
 import {Store,shouldNotify,type DeviceRow,type EventRow,type Job} from './database.js';
 import {pushPayload,type PushTransport,type PushResult} from './apns.js';
+import {leadReadyPayload} from './leads-notifications.js';
 
 export class RetryDelivery extends Error {}
 export class DeliveryWorker {
@@ -39,8 +40,10 @@ export class DeliveryWorker {
     const event=row && app ? this.store.eventResponse(row) : null;
     const preferences=await this.store.preferences(device.user_id);
     if(job.event_id && (!event || !shouldNotify(event,preferences))) {await this.finish(job,'cancelled','App removed or notification preferences changed.');return;}
+    const payload=job.kind==='lead'?await leadReadyPayload(this.store,job,now):pushPayload(event,preferences,app?.icon_url);
+    if(!payload) {await this.finish(job,'cancelled','Lead is no longer available.');return;}
     let result:PushResult;
-    try {result=await this.transport.send(device,pushPayload(event,preferences,app?.icon_url),job.id);}
+    try {result=await this.transport.send(device,payload,job.id);}
     catch {result={ok:false,retryable:true,error:'Push transport unavailable.'};}
     if(result.ok) await this.finish(job,'sent',null);
     else if(result.invalidDevice) {

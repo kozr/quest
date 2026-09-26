@@ -184,6 +184,7 @@ final class AppModel: ObservableObject {
 
     var privacyURL: URL { URL(string: "https://quest-liart-iota.vercel.app/privacy/")! }
     var supportURL: URL { URL(string: "https://quest-liart-iota.vercel.app/support/")! }
+    var marketingClient: APIClient? { user != nil && !isPreviewMode ? try? client() : nil }
 
     var pushEnvironment: String {
         #if DEBUG
