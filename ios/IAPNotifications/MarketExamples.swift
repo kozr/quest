@@ -1,6 +1,11 @@
 import Foundation
 
 enum MarketExamples {
+    // Fictional demo summaries only; never used as a fallback for live research.
+    static let landscape: [MarketResearch.Finding] = [
+        .init(title: "Collection apps", summary: "Sample landscape: dedicated trackers organize owned figures and wishlists. Compare catalog coverage, pricing, and sharing tools when reviewing real alternatives.", sources: []),
+        .init(title: "Notes and spreadsheets", summary: "Sample landscape: a collector keeps separate lists for owned figures, wishlists, and trades. A visual checklist could make this workflow easier to maintain.", sources: [])
+    ]
     static let problemTrackingID = "sample-problem-keeping-track-of-missing-figures"
     static let problemSubscriptionsID = "sample-problem-subscription-frustration"
     static let problemSeriesID = "sample-problem-missing-series"

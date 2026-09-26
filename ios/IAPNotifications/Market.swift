@@ -35,6 +35,7 @@ enum MarketScanStatus: String, Codable, CaseIterable {
 
 enum MarketSegment: String, CaseIterable, Identifiable {
     case problems = "Problems"
+    case landscape = "Landscape"
     case people = "People"
     var id: String { rawValue }
 }
@@ -159,6 +160,8 @@ struct MarketResearch: Codable, Equatable {
         let sources: [Source]
     }
     let findings: [Finding]
+    var landscape: [Finding]? = nil
+    var peopleCoverage: String? = nil
 }
 
 struct MarketOverview: Codable, Equatable {
@@ -214,9 +217,23 @@ struct MarketResearchProspect: Codable, Equatable {
     let fitReason: String
     let matchedCapabilityIds: [String]
     let evidence: [Evidence]
+    var matchType: String? = nil
+    var needStatus: String? = nil
     var profileURL: URL? { Self.publicURL(profileUrl) }
     var platformLabel: String { provider == "youtube" ? "YouTube" : provider == "x" ? "X" : "Reddit" }
-    var relationshipLabel: String { relationship == "creator_partner" ? "Creator partner" : "Potential user" }
+    var relationshipLabel: String {
+        if matchType == "exact" { return "Same problem" }
+        if matchType == "similar" { return "Similar problem" }
+        return relationship == "creator_partner" ? "Creator partner" : "Potential user"
+    }
+    var needStatusLabel: String? {
+        switch needStatus {
+        case "unresolved_at_posting": return "Unresolved when posted · current need unknown"
+        case "subsequently_resolved": return "Later found a solution"
+        case "unclear": return "Current need unclear"
+        default: return nil
+        }
+    }
     static func publicURL(_ raw: String) -> URL? {
         guard let parts = URLComponents(string: raw), parts.scheme == "https",
               let host = parts.host?.lowercased(),

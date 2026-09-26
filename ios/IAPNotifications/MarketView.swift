@@ -17,6 +17,7 @@ struct MarketView: View {
     @State private var showingSampleSource = false
     @State private var showingUnavailableSource = false
     @ScaledMetric(relativeTo: .body) private var segmentFontSize: CGFloat = 15
+    @ScaledMetric(relativeTo: .body) private var appNameSize: CGFloat = 16
     @ScaledMetric(relativeTo: .body) private var eyebrowSize: CGFloat = 11
     @ScaledMetric(relativeTo: .largeTitle) private var problemTitleSize: CGFloat = 32
     @ScaledMetric(relativeTo: .body) private var countSize: CGFloat = 15
@@ -52,33 +53,26 @@ struct MarketView: View {
 
     var body: some View {
         NavigationStack(path: $navigationPath) {
-            GeometryReader { geometry in
-                ScrollView {
-                    VStack(spacing: 0) {
-                        appPicker
-                        segmentControl
-                            .padding(.top, QuestPageLayout.sectionSpacing)
-                        mainContent
-                            .padding(.horizontal, QuestPageLayout.margin - 3)
-                            .padding(.top, QuestPageLayout.sectionSpacing)
-                            .padding(.bottom, 18)
-                    }
-                    .frame(width: geometry.size.width)
+            ScrollView {
+                VStack(spacing: 0) {
+                    MarketHeader(isSample: store.isSample)
+                    appPicker
+                    segmentControl
+                        .padding(.top, 12)
+                    mainContent
+                        .padding(.top, 4)
+                        .padding(.bottom, 18)
                 }
-                .safeAreaInset(edge: .top, spacing: 0) {
-                    QuestMainPageHeader(title: "Market", systemImage: "chart.bar.xaxis",
-                                        subtitle: store.isSample ? "Demo · Sample data" : nil) { EmptyView() }
-                }
-                .background(QuestStyle.navy)
-                .scrollIndicators(.hidden)
-                .refreshable { await refreshMarket() }
-                .toolbar(.hidden, for: .navigationBar)
-                .navigationDestination(for: MarketPeopleRoute.self) { route in
-                    if let problem = store.overview?.problems.first(where: { $0.id == route.problemID }) {
-                        MarketPeopleView(store: store, problem: problem)
-                    } else {
-                        MarketUnavailablePeopleView()
-                    }
+            }
+            .background(QuestStyle.navy)
+            .scrollIndicators(.hidden)
+            .refreshable { await refreshMarket() }
+            .toolbar(.hidden, for: .navigationBar)
+            .navigationDestination(for: MarketPeopleRoute.self) { route in
+                if let problem = store.overview?.problems.first(where: { $0.id == route.problemID }) {
+                    MarketPeopleView(store: store, problem: problem)
+                } else {
+                    MarketUnavailablePeopleView()
                 }
             }
         }
@@ -137,7 +131,23 @@ struct MarketView: View {
                         .accessibilityIdentifier("marketAppOption-\(option.id)")
                     }
                 } label: {
-                    QuestAppPickerLabel(app: app)
+                    HStack(spacing: 13) {
+                        MarketAppArtwork(app: app)
+                        Text(app.name)
+                            .font(.system(size: appNameSize, weight: .medium, design: .default))
+                            .foregroundStyle(.white)
+                            .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
+                            .multilineTextAlignment(.leading)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundStyle(QuestStyle.muted)
+                    }
+                    .padding(.horizontal, 11)
+                    .frame(maxWidth: .infinity, minHeight: 46)
+                    .background(QuestStyle.navy.opacity(0.94), in: RoundedRectangle(cornerRadius: 13))
+                    .overlay(RoundedRectangle(cornerRadius: 13)
+                        .stroke(Color(red: 0.13, green: 0.34, blue: 0.51), lineWidth: 1))
                 }
                 .accessibilityLabel("Selected app, \(app.name)")
                 .accessibilityHint("Choose which app’s market insights to view.")
@@ -151,7 +161,7 @@ struct MarketView: View {
                 .frame(maxWidth: .infinity, minHeight: 46, alignment: .leading)
             }
         }
-        .padding(.horizontal, QuestPageLayout.margin)
+        .padding(.horizontal, 17)
     }
 
     private var segmentControl: some View {
@@ -192,7 +202,7 @@ struct MarketView: View {
                 .stroke(Color(red: 0.13, green: 0.34, blue: 0.51), lineWidth: 1)
                 .frame(height: segmentVisualHeight)
         }
-        .padding(.horizontal, QuestPageLayout.margin)
+        .padding(.horizontal, 17)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Market view")
         .accessibilityIdentifier("marketSegments")
@@ -279,6 +289,9 @@ struct MarketView: View {
                     }
                     .accessibilityIdentifier("marketEmptyState")
                 }
+            } else if store.selectedSegment == .landscape {
+                MarketPaperBoard { landscapeBoard(overview: overview) }
+                    .accessibilityIdentifier("marketLandscapeBoard")
             } else {
                 MarketPeopleList(store: store, problem: nil, people: store.peoplePage?.people ?? [],
                                  isLoading: store.isLoadingPeople, error: store.peopleError,
@@ -288,6 +301,45 @@ struct MarketView: View {
                     .accessibilityIdentifier("marketPeopleList")
             }
         }
+    }
+
+    private func landscapeBoard(overview: MarketOverview) -> some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Text("What already exists")
+                .font(.system(size: problemTitleSize, weight: .bold, design: .serif))
+                .foregroundStyle(MarketInk.primary)
+                .accessibilityAddTraits(.isHeader)
+            Text("Competitors, alternatives, and the workarounds people use.")
+                .font(.subheadline).foregroundStyle(MarketInk.secondary)
+            if let findings = store.isSample ? MarketExamples.landscape : overview.research?.landscape, !findings.isEmpty {
+                ForEach(Array(findings.enumerated()), id: \.offset) { _, finding in
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text(finding.title).font(.title3.weight(.semibold))
+                        Text(finding.summary).font(.body)
+                        ForEach(Array(finding.sources.enumerated()), id: \.offset) { _, source in
+                            if let url = source.publicURL {
+                                Link(destination: url) {
+                                    Label(source.title, systemImage: "arrow.up.right.square")
+                                        .font(.subheadline).multilineTextAlignment(.leading)
+                                        .frame(minHeight: 44, alignment: .leading)
+                                }
+                            }
+                        }
+                    }
+                    .foregroundStyle(MarketInk.primary)
+                    Divider().overlay(MarketInk.rule)
+                }
+            } else {
+                Text(overview.research?.landscape == nil
+                     ? "Run a new Market search to explore the landscape for this app."
+                     : "This search did not find enough supported landscape information. Try another search or refine your app profile.")
+                    .foregroundStyle(MarketInk.primary)
+            }
+            scanControls(overview: overview)
+        }
+        .padding(.horizontal, 38)
+        .padding(.top, 31)
+        .padding(.bottom, 17)
     }
 
     private var statusTitle: String {
@@ -333,9 +385,9 @@ struct MarketView: View {
             }
             scanControls(overview: overview)
         }
-        .padding(.horizontal, 29)
-        .padding(.top, 26)
-        .padding(.bottom, 26)
+        .padding(.horizontal, 38)
+        .padding(.top, 31)
+        .padding(.bottom, 17)
     }
 
     private func problemBoard(overview: MarketOverview, featured: MarketProblem) -> some View {
@@ -345,8 +397,7 @@ struct MarketView: View {
                     .font(.system(size: eyebrowSize, weight: .semibold, design: .serif))
                     .tracking(1.7)
                     .foregroundStyle(MarketInk.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .layoutPriority(1)
+                    .fixedSize()
                 Rectangle().fill(MarketInk.rule.opacity(0.72)).frame(height: 1)
             }
             .padding(.bottom, 11)
@@ -448,9 +499,9 @@ struct MarketView: View {
                     .padding(.top, 10)
             }
         }
-        .padding(.horizontal, 29)
-        .padding(.top, 26)
-        .padding(.bottom, 26)
+        .padding(.horizontal, 38)
+        .padding(.top, 31)
+        .padding(.bottom, 17)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
@@ -571,14 +622,107 @@ struct MarketView: View {
     }
 }
 
+private struct MarketHeader: View {
+    let isSample: Bool
+    @ScaledMetric(relativeTo: .body) private var badgeSize: CGFloat = 13
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            QuestMainPageTitle(title: "Market insights", systemImage: "chart.bar.xaxis")
+            if isSample {
+                Label("Demo · Sample data", systemImage: "sparkles")
+                    .font(.system(size: badgeSize, weight: .medium))
+                    .foregroundStyle(QuestStyle.gold)
+                    .padding(.top, 8)
+                    .accessibilityIdentifier("marketDemoBadge")
+            }
+        }
+        .padding(.horizontal, 26)
+        .padding(.top, 45)
+        .padding(.bottom, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .fixedSize(horizontal: false, vertical: true)
+        .background {
+            GeometryReader { geometry in
+                Image("QuestLandscape").resizable().scaledToFill()
+                    .frame(width: geometry.size.width, height: geometry.size.height + 76, alignment: .top)
+                    .clipped()
+                    .overlay {
+                        LinearGradient(stops: [
+                            .init(color: QuestStyle.navy.opacity(0.02), location: 0),
+                            .init(color: QuestStyle.navy.opacity(0.02), location: 0.23),
+                            .init(color: QuestStyle.navy.opacity(0.40), location: 0.58),
+                            .init(color: QuestStyle.navy.opacity(0.94), location: 0.82),
+                            .init(color: QuestStyle.navy, location: 0.90),
+                            .init(color: QuestStyle.navy, location: 1)
+                        ], startPoint: .top, endPoint: .bottom)
+                    }
+                    .offset(y: -50)
+            }
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+        }
+        .frame(minHeight: 145, alignment: .topLeading)
+    }
+}
+
+private struct MarketAppArtwork: View {
+    let app: ConnectedApp
+    @ScaledMetric(relativeTo: .body) private var size: CGFloat = 36
+
+    var body: some View {
+        Group {
+            if let asset = app.bundledIconName {
+                Image(asset).resizable().scaledToFill()
+            } else {
+                AsyncImage(url: app.iconUrl.flatMap(URL.init(string:))) { image in
+                    image.resizable().scaledToFill()
+                } placeholder: {
+                    Image(systemName: "app.fill").resizable().scaledToFit().foregroundStyle(QuestStyle.gold)
+                }
+            }
+        }
+        .frame(width: min(size, 48), height: min(size, 48))
+        .clipShape(RoundedRectangle(cornerRadius: 5))
+        .accessibilityHidden(true)
+    }
+}
+
 struct MarketPaperBoard<Content: View>: View {
     @ViewBuilder var content: Content
 
     var body: some View {
         content
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background { QuestBoardBackground() }
+            .background { MarketBoardDecoration() }
             .padding(.horizontal, 3)
+    }
+}
+
+private struct MarketBoardDecoration: View {
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack {
+                Image("LeadsWoodBoard")
+                    .resizable(capInsets: EdgeInsets(top: 20, leading: 20, bottom: 20, trailing: 20), resizingMode: .stretch)
+                    .frame(width: geometry.size.width, height: geometry.size.height)
+                let paperWidth = max(0, geometry.size.width - 25)
+                let paperHeight = max(0, geometry.size.height - 20)
+                let paperShape = RoundedRectangle(cornerRadius: 11, style: .continuous)
+                paperShape.fill(Color(red: 0.96, green: 0.90, blue: 0.81))
+                    .frame(width: paperWidth, height: paperHeight)
+                Image("LeadsParchment")
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: paperWidth, height: paperHeight)
+                    .clipped()
+                    .colorMultiply(Color(red: 0.996, green: 0.987, blue: 0.98))
+                    .clipShape(paperShape)
+                paperShape.stroke(Color(red: 0.68, green: 0.52, blue: 0.30).opacity(0.42), lineWidth: 0.8)
+                    .frame(width: paperWidth, height: paperHeight)
+            }
+            .accessibilityHidden(true)
+        }
     }
 }
 
@@ -660,8 +804,8 @@ struct MarketBoardMessage<Actions: View>: View {
             actions
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 29)
-        .padding(.top, 26)
+        .padding(.horizontal, 38)
+        .padding(.top, 30)
         .padding(.bottom, 26)
     }
 }

@@ -13,6 +13,22 @@ struct AppsView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
+                    QuestScenicHeader(title: "Apps", systemImage: "square.grid.2x2") {
+                        if !model.isPreviewMode {
+                            Button { choosingSetup = true } label: {
+                                Label("Add app", systemImage: "plus")
+                                    .foregroundStyle(QuestStyle.gold)
+                                    .font(.subheadline.weight(.semibold))
+                                    .padding(.horizontal, 12).frame(minHeight: 44)
+                                    .background(QuestStyle.navy.opacity(0.9), in: RoundedRectangle(cornerRadius: 10))
+                                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(QuestStyle.gold.opacity(0.8)))
+                            }.accessibilityIdentifier("addApp")
+                        }
+                    }
+                    if model.isPreviewMode {
+                        Text("Demo mode · Sample apps")
+                            .font(.caption).foregroundStyle(QuestStyle.muted)
+                    }
                     if let error = error ?? model.appsError {
                         VStack(alignment: .leading, spacing: 8) {
                             SetupError(message: error)
@@ -57,23 +73,7 @@ struct AppsView: View {
                             }
                         }
                     }
-                }.padding(.horizontal, QuestPageLayout.margin).padding(.bottom, 24)
-            }
-            .safeAreaInset(edge: .top, spacing: 0) {
-                    QuestMainPageHeader(title: "Apps", systemImage: "square.grid.2x2",
-                                        subtitle: model.isPreviewMode ? "Demo · Sample apps" : nil) {
-                        if !model.isPreviewMode {
-                            Button { choosingSetup = true } label: {
-                                Label("Add app", systemImage: "plus")
-                                    .labelStyle(.iconOnly)
-                                    .foregroundStyle(QuestStyle.gold)
-                                    .font(.subheadline.weight(.semibold))
-                                    .padding(.horizontal, 12).frame(minHeight: 44)
-                                    .background(QuestStyle.navy.opacity(0.9), in: RoundedRectangle(cornerRadius: 10))
-                                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(QuestStyle.gold.opacity(0.8)))
-                            }.accessibilityIdentifier("addApp")
-                        }
-                    }
+                }.padding(.horizontal, 24).padding(.bottom, 24)
             }
             .background(QuestStyle.navy.ignoresSafeArea())
             .foregroundStyle(.white).tint(QuestStyle.gold)

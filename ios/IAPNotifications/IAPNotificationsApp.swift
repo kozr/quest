@@ -727,6 +727,8 @@ struct SettingsView: View {
                         DemoNotice()
                         Button("Exit demo") { Task { await model.logout() } }
                             .accessibilityIdentifier("exitDemo")
+                    } header: {
+                        scenicHeader
                     } footer: {
                         Text("Preferences reset when you exit. No notifications are sent.")
                     }
@@ -777,7 +779,10 @@ struct SettingsView: View {
                     if let message = model.pushMessage { Text(message).font(.caption).foregroundStyle(QuestStyle.muted) }
                     if let error = model.pushError { ErrorMessage(message: error) }
                 } header: {
-                    QuestSettingsHeading(title: "Notifications")
+                    VStack(spacing: 24) {
+                        scenicHeader
+                        QuestSettingsHeading(title: "Notifications")
+                    }
                 }
                 }
                 Section {
@@ -866,10 +871,6 @@ struct SettingsView: View {
                 } header: { QuestSettingsHeading(title: "About Questline") }
                 }.listRowBackground(Color.white.opacity(0.045))
             }
-            .safeAreaInset(edge: .top, spacing: 0) {
-                QuestMainPageHeader(title: "Settings", systemImage: "gearshape") { EmptyView() }
-            }
-            .contentMargins(.horizontal, QuestPageLayout.margin, for: .scrollContent)
             .scrollContentBackground(.hidden)
             .contentMargins(.top, 0, for: .scrollContent)
             .background(QuestStyle.navy.ignoresSafeArea())
@@ -890,6 +891,12 @@ struct SettingsView: View {
                 Text("Notifications stop on this phone. Your account and apps stay saved.")
             }
         }
+    }
+
+    private var scenicHeader: some View {
+        QuestScenicHeader(title: "Settings", systemImage: "gearshape") { EmptyView() }
+            .textCase(nil)
+            .padding(.horizontal, -12)
     }
 
     private func preference(_ keyPath: WritableKeyPath<AlertPreferences, Bool>) -> Binding<Bool> {

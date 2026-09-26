@@ -170,15 +170,15 @@ struct MarketPeopleList: View {
                 }
 
                 if let page = store.peoplePage, page.coverage == .partial {
-                    Text(people.contains(where: { $0.researchProspect != nil }) ? "Partial coverage · public sources may include older posts and videos" : "Partial coverage · evidence collected from \(page.windowStart.map(MarketDate.label) ?? "the last 30 days")")
+                    Text(store.overview?.research?.peopleCoverage ?? (people.contains(where: { $0.researchProspect != nil }) ? "Partial coverage · public sources may include older conversations" : "Partial coverage · evidence collected from \(page.windowStart.map(MarketDate.label) ?? "the last 30 days")"))
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(MarketPeopleInk.secondary)
                         .padding(.top, 13)
                 }
             }
-            .padding(.horizontal, 29)
-            .padding(.top, 26)
-            .padding(.bottom, 26)
+            .padding(.horizontal, 38)
+            .padding(.top, 28)
+            .padding(.bottom, 22)
         }
     }
 }
@@ -219,6 +219,9 @@ private struct MarketPersonEvidenceCard: View {
                 Text(prospect.problem)
                     .font(.footnote)
                     .foregroundStyle(MarketPeopleInk.secondary)
+                if let status = prospect.needStatusLabel {
+                    Text(status).font(.caption).foregroundStyle(MarketPeopleInk.secondary)
+                }
                 if let profileURL = prospect.profileURL {
                     Link("View \(prospect.provider == "youtube" ? "channel" : "profile") · \(prospect.publicHandle)", destination: profileURL)
                         .font(.footnote.weight(.semibold))
@@ -227,7 +230,7 @@ private struct MarketPersonEvidenceCard: View {
                 }
                 ForEach(Array(prospect.evidence.enumerated()), id: \.offset) { _, evidence in
                     VStack(alignment: .leading, spacing: 7) {
-                        Text(evidence.verification == "video_metadata" ? "Video title · channel verified" : "Public post excerpt · author verified")
+                        Text(evidence.verification == "web_search" ? "Found in web search · not independently verified" : evidence.verification == "video_metadata" ? "Video title · channel verified" : "Public post excerpt · author verified")
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(MarketPeopleInk.secondary)
                         Text(evidence.excerpt)
@@ -240,7 +243,7 @@ private struct MarketPersonEvidenceCard: View {
                             Text("Publication date unavailable").font(.caption).foregroundStyle(MarketPeopleInk.secondary)
                         }
                         if let sourceURL = evidence.publicURL {
-                            Link(prospect.provider == "youtube" ? "Watch original video" : "Open original post", destination: sourceURL)
+                            Link(prospect.provider == "youtube" ? "Watch original video" : "Open original conversation", destination: sourceURL)
                                 .font(.footnote.weight(.semibold))
                                 .foregroundStyle(MarketPeopleInk.fit)
                                 .frame(minHeight: 44, alignment: .leading)

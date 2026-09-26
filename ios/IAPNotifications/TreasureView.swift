@@ -10,14 +10,12 @@ enum QuestStyle {
 struct QuestMainPageTitle: View {
     let title: String
     let systemImage: String
-    @ScaledMetric(relativeTo: .title3) private var iconWidth: CGFloat = 24
 
     var body: some View {
         HStack(spacing: 9) {
             Image(systemName: systemImage)
                 .foregroundStyle(QuestStyle.gold)
                 .font(.title3)
-                .frame(width: iconWidth)
                 .accessibilityHidden(true)
             Text(title)
                 .font(.system(.largeTitle, design: .rounded, weight: .bold))
@@ -25,100 +23,6 @@ struct QuestMainPageTitle: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
         }
-    }
-}
-
-/// Shared geometry for the utility tabs. Activity retains its immersive layout.
-enum QuestPageLayout {
-    static let margin: CGFloat = 16
-    static let sectionSpacing: CGFloat = 16
-}
-
-struct QuestMainPageHeader<Actions: View>: View {
-    let title: String
-    let systemImage: String
-    var subtitle: String? = nil
-    @ViewBuilder var actions: Actions
-    @ScaledMetric(relativeTo: .largeTitle) private var titleHeight: CGFloat = 44
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .top, spacing: 12) {
-                QuestMainPageTitle(title: title, systemImage: systemImage)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                actions
-            }
-            // Keep the title row aligned with the 44-point page actions.
-            .frame(minHeight: titleHeight, alignment: .topLeading)
-            Text(subtitle ?? " ")
-                .font(.caption.weight(.medium))
-                .foregroundStyle(QuestStyle.gold)
-                .accessibilityHidden(subtitle == nil)
-        }
-        .padding(QuestPageLayout.margin)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background {
-            GeometryReader { geometry in
-                Image("QuestLandscape").resizable().scaledToFill()
-                    .frame(width: geometry.size.width, height: geometry.size.height + 60, alignment: .top)
-                    .clipped()
-                    .overlay(LinearGradient(colors: [QuestStyle.navy.opacity(0.3), QuestStyle.navy],
-                                            startPoint: .top, endPoint: .bottom))
-                    .offset(y: -60)
-            }
-            .allowsHitTesting(false).accessibilityHidden(true)
-        }
-        .background(QuestStyle.navy)
-    }
-}
-
-/// One stretchable wooden frame, parchment, and brass bookmark for both boards.
-struct QuestBoardBackground: View {
-    var body: some View {
-        GeometryReader { geometry in
-            Image("LeadsSharedBoard")
-                .resizable(capInsets: EdgeInsets(top: 70, leading: 20, bottom: 24, trailing: 48),
-                           resizingMode: .stretch)
-                .frame(width: geometry.size.width, height: geometry.size.height)
-        }
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
-    }
-}
-
-struct QuestAppPickerLabel: View {
-    let app: ConnectedApp
-    @ScaledMetric(relativeTo: .subheadline) private var rowHeight: CGFloat = 48
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Group {
-                if let asset = app.bundledIconName {
-                    Image(asset).resizable().scaledToFill()
-                } else {
-                    AsyncImage(url: app.iconUrl.flatMap(URL.init(string:))) { image in
-                        image.resizable().scaledToFill()
-                    } placeholder: {
-                        Image(systemName: "app.fill").foregroundStyle(QuestStyle.gold)
-                    }
-                }
-            }
-            .frame(width: 32, height: 32)
-            .clipShape(RoundedRectangle(cornerRadius: 7)).accessibilityHidden(true)
-            Text(app.name)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.white)
-                .fixedSize(horizontal: false, vertical: true)
-                .multilineTextAlignment(.leading)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            Image(systemName: "chevron.down")
-                .font(.subheadline.weight(.bold)).foregroundStyle(QuestStyle.muted)
-        }
-        .padding(.horizontal, 12).padding(.vertical, 8)
-        .frame(maxWidth: .infinity, minHeight: rowHeight)
-        .background(QuestStyle.navy, in: RoundedRectangle(cornerRadius: 14))
-        .overlay(RoundedRectangle(cornerRadius: 14)
-            .stroke(Color(red: 0.19, green: 0.38, blue: 0.55), lineWidth: 1))
     }
 }
 

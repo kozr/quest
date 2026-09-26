@@ -7,6 +7,26 @@ final class MarketTests: XCTestCase {
     private let firstAppID = "market-app-one"
     private let secondAppID = "market-app-two"
 
+    func testLandscapeDecodesAlongsideUnchangedProblemsAndSupportsOlderSnapshots() throws {
+        let legacy = Data(#"{"findings":[{"title":"Existing problem","summary":"Keep this finding","sources":[]}]}"#.utf8)
+        let previous = try JSONDecoder().decode(MarketResearch.self, from: legacy)
+        XCTAssertNil(previous.landscape)
+        let current = Data(#"{"findings":[{"title":"Existing problem","summary":"Keep this finding","sources":[]}],"landscape":[{"title":"Alternative","summary":"A sourced comparison","sources":[]}],"peopleCoverage":"One thread inspected"}"#.utf8)
+        let research = try JSONDecoder().decode(MarketResearch.self, from: current)
+        XCTAssertEqual(research.findings, previous.findings)
+        XCTAssertEqual(research.landscape?.first?.title, "Alternative")
+        XCTAssertEqual(research.peopleCoverage, "One thread inspected")
+        XCTAssertEqual(MarketSegment.allCases, [.problems, .landscape, .people])
+    }
+
+    func testPeopleProblemMatchAndResolutionDecodeWithoutCapabilityClaims() throws {
+        let data = Data(#"{"id":"person","provider":"reddit","publicHandle":"collector","displayName":"collector","profileUrl":"https://www.reddit.com/user/collector/","relationship":"potential_user","status":"needs_review","problem":"Missing figures","fitReason":"Similar problem; support is unconfirmed","matchedCapabilityIds":[],"evidence":[],"matchType":"similar","needStatus":"subsequently_resolved"}"#.utf8)
+        let person = try JSONDecoder().decode(MarketResearchProspect.self, from: data)
+        XCTAssertEqual(person.relationshipLabel, "Similar problem")
+        XCTAssertEqual(person.needStatusLabel, "Later found a solution")
+        XCTAssertTrue(person.matchedCapabilityIds.isEmpty)
+    }
+
     func testSampleProblemAndPeopleCountsShareTheSameEvidence() {
         let overview = MarketExamples.overview()
         let allPeople = MarketExamples.people(for: overview)

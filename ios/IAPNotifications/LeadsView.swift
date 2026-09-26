@@ -6,7 +6,6 @@ struct LeadsView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @ScaledMetric(relativeTo: .body) private var sectionRowHeight: CGFloat = 44
     @State private var setupApp: ConnectedApp?
     @State private var showingQuestTrial = false
     @State private var journalPath: [LeadJournalSession] = []
@@ -17,11 +16,12 @@ struct LeadsView: View {
     var body: some View {
         NavigationStack(path: $journalPath) {
             ScrollView {
-                VStack(alignment: .leading, spacing: QuestPageLayout.sectionSpacing) {
+                VStack(alignment: .leading, spacing: 10) {
+                    compactHeader
+
                     appPicker
-                    boardHeading
                     scanProgress
-                    board
+                    board.padding(.top, 14)
                     if let locked = model.lockedQuests {
                         Button { showingQuestTrial = true } label: {
                             HStack {
@@ -35,7 +35,6 @@ struct LeadsView: View {
                 .padding(.horizontal, 16)
                 .padding(.bottom, 24)
             }
-            .safeAreaInset(edge: .top, spacing: 0) { compactHeader }
             .background(QuestStyle.navy)
             .foregroundStyle(.white)
             .tint(QuestStyle.gold)
@@ -109,20 +108,45 @@ struct LeadsView: View {
     }
 
     private var compactHeader: some View {
-        QuestMainPageHeader(title: "Leads", systemImage: "pin.fill",
-                            subtitle: model.isPreviewMode ? "Demo · Sample leads" : nil) {
-            Button(action: presentSetup) {
-                Image(systemName: "slider.horizontal.3")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(QuestStyle.gold)
-                    .frame(width: 44, height: 44)
-                    .background(QuestStyle.navy.opacity(0.88), in: RoundedRectangle(cornerRadius: 12))
-                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(QuestStyle.gold.opacity(0.42), lineWidth: 1))
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .top, spacing: 10) {
+                QuestMainPageTitle(title: "High-intent leads", systemImage: "pin.fill")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Button(action: presentSetup) {
+                    Image(systemName: "slider.horizontal.3")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(QuestStyle.gold)
+                        .frame(width: 44, height: 44)
+                        .background(QuestStyle.navy.opacity(0.88), in: RoundedRectangle(cornerRadius: 12))
+                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(QuestStyle.gold.opacity(0.42), lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Set up lead profile")
+                .accessibilityHint("Review what this app does and choose communities to monitor.")
+                .accessibilityIdentifier("leadsProfileSettings")
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Set up lead profile")
-            .accessibilityHint("Review what this app does and choose communities to monitor.")
-            .accessibilityIdentifier("leadsProfileSettings")
+            if model.isPreviewMode {
+                Label("Demo · Sample leads", systemImage: "sparkles")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(QuestStyle.gold)
+                    .accessibilityIdentifier("leadsDemoBadge")
+            }
+        }
+        .padding(.top, 38)
+        .padding(.bottom, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background {
+            GeometryReader { geometry in
+                Image("QuestLandscape").resizable().scaledToFill()
+                    .frame(width: geometry.size.width + 48, height: geometry.size.height + 90, alignment: .top)
+                    .clipped()
+                    .overlay(LinearGradient(stops: [
+                        .init(color: QuestStyle.navy.opacity(0.1), location: 0),
+                        .init(color: QuestStyle.navy.opacity(0.3), location: 0.45),
+                        .init(color: QuestStyle.navy, location: 1)
+                    ], startPoint: .top, endPoint: .bottom))
+                    .offset(x: -24, y: -60)
+            }.allowsHitTesting(false).accessibilityHidden(true)
         }
     }
 
@@ -234,7 +258,22 @@ struct LeadsView: View {
                         .accessibilityIdentifier("leadAppOption-\(option.id)")
                     }
                 } label: {
-                    QuestAppPickerLabel(app: app)
+                    HStack(spacing: 12) {
+                        LeadAppArtwork(app: app, size: 28)
+                        Text(app.name)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.white)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.leading)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        Image(systemName: "chevron.down")
+                            .font(.subheadline.weight(.bold))
+                            .foregroundStyle(QuestStyle.muted)
+                    }
+                    .padding(.horizontal, 10).padding(.vertical, 7)
+                    .frame(maxWidth: .infinity, minHeight: 46)
+                    .background(QuestStyle.navy.opacity(0.94), in: RoundedRectangle(cornerRadius: 14))
+                    .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color(red: 0.19, green: 0.38, blue: 0.55), lineWidth: 1))
                 }
                 .accessibilityLabel("Selected app, \(app.name)")
                 .accessibilityHint("Choose which connected app this board is for.")
@@ -250,22 +289,28 @@ struct LeadsView: View {
         }
     }
 
-    private var boardHeading: some View {
-        HStack(spacing: 10) {
-            Text("QUEST BOARD")
-                .font(.subheadline.weight(.semibold))
-                .accessibilityAddTraits(.isHeader)
-            Rectangle().fill(QuestStyle.muted.opacity(0.25)).frame(height: 1)
-            Image("JournalQuill").renderingMode(.template).resizable().scaledToFit()
-                .frame(width: 20, height: 24).accessibilityHidden(true)
-        }
-        .foregroundStyle(QuestStyle.muted)
-        .frame(minHeight: sectionRowHeight)
-    }
-
     @ViewBuilder
     private var board: some View {
         VStack(spacing: 8) {
+            HStack(spacing: 12) {
+                Text("QUEST BOARD")
+                    .font(.system(.caption, design: .serif).weight(.semibold))
+                    .tracking(2.5)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .layoutPriority(1)
+                    .accessibilityAddTraits(.isHeader)
+                if !dynamicTypeSize.isAccessibilitySize {
+                    Rectangle().fill(LeadInk.rule.opacity(0.35)).frame(height: 0.5)
+                    Image("JournalQuill")
+                        .renderingMode(.template).resizable().scaledToFit()
+                        .frame(width: 20, height: 24)
+                        .accessibilityHidden(true)
+                }
+            }
+            .foregroundStyle(LeadInk.secondary)
+            .padding(.horizontal, 18)
+            .padding(.top, 10)
+            .padding(.trailing, 14)
 
             if let mutationError = model.leadMutationError {
                 HStack(alignment: .top, spacing: 10) {
@@ -424,7 +469,15 @@ struct LeadsView: View {
         .padding(.vertical, 16)
         .frame(maxWidth: .infinity)
         .frame(minHeight: visibleProgress?.shouldPoll == true ? 440 : nil, alignment: .top)
-        .background { QuestBoardBackground() }
+        .background {
+            GeometryReader { proxy in
+                Image("LeadsSharedBoard")
+                    .resizable(capInsets: EdgeInsets(top: 70, leading: 20, bottom: 24, trailing: 48),
+                               resizingMode: .stretch)
+                    .frame(width: proxy.size.width, height: proxy.size.height)
+                    .accessibilityHidden(true)
+            }
+        }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("leadsWoodBoard")
     }
