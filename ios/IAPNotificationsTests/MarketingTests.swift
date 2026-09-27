@@ -34,6 +34,20 @@ final class MarketingTests: XCTestCase {
         }
     }
 
+    func testAnnualSavingsComparesAnnualPriceWithTwelveMonthlyPayments() {
+        XCTAssertEqual(
+            MarketingPlan.annualSavings(monthlyPrice: Decimal(string: "29.99")!, annualPrice: Decimal(string: "299.00")!),
+            Decimal(string: "60.88")
+        )
+        XCTAssertEqual(
+            MarketingPlan.annualSavings(monthlyPrice: Decimal(string: "84.99")!, annualPrice: Decimal(string: "849.99")!),
+            Decimal(string: "169.89")
+        )
+        XCTAssertNil(MarketingPlan.annualSavings(monthlyPrice: 0, annualPrice: 0))
+        XCTAssertNil(MarketingPlan.annualSavings(monthlyPrice: 10, annualPrice: 120))
+        XCTAssertNil(MarketingPlan.annualSavings(monthlyPrice: 10, annualPrice: 121))
+    }
+
     func testExpirationIsMillisecondsAndAccessStopsAtExactExpiry() throws {
         let expiry = now.addingTimeInterval(60)
         let subscription = status(expiresAt: expiry.timeIntervalSince1970 * 1_000)

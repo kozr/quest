@@ -40,6 +40,12 @@ struct MarketingPlan: Hashable, Identifiable {
         !appIDs.isEmpty && appIDs.count <= coverage.appLimit &&
         Set(appIDs).count == appIDs.count && appIDs.allSatisfy { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     }
+
+    static func annualSavings(monthlyPrice: Decimal, annualPrice: Decimal) -> Decimal? {
+        let monthlyTotal = monthlyPrice * 12
+        let savings = monthlyTotal - annualPrice
+        return monthlyTotal > 0 && savings > 0 ? savings : nil
+    }
 }
 
 /// Only the authenticated server's verified entitlement can grant marketing access.
@@ -185,12 +191,30 @@ final class MarketingStore: ObservableObject {
             switch (plan.coverage, plan.period) {
             case (.one, .monthly): return "$29.99"
             case (.one, .annual): return "$299.00"
-            case (.three, .monthly): return "$74.99"
-            case (.three, .annual): return "$799.99"
+            case (.three, .monthly): return "$84.99"
+            case (.three, .annual): return "$849.99"
             }
         }
         #endif
         return products[plan.productID]?.displayPrice
+    }
+
+    func annualSavingsAmount(for coverage: MarketingCoverage) -> String? {
+        #if DEBUG
+        if isPreview {
+            let monthlyPrice: Decimal = coverage == .one ? 29.99 : 84.99
+            let annualPrice: Decimal = coverage == .one ? 299.00 : 849.99
+            guard let savings = MarketingPlan.annualSavings(monthlyPrice: monthlyPrice, annualPrice: annualPrice) else { return nil }
+            return Decimal.FormatStyle.Currency(code: "USD", locale: Locale(identifier: "en_US"))
+                .precision(.fractionLength(0)).format(savings)
+        }
+        #endif
+        let monthlyPlan = MarketingPlan(coverage: coverage, period: .monthly)
+        let annualPlan = MarketingPlan(coverage: coverage, period: .annual)
+        guard let monthly = products[monthlyPlan.productID], let annual = products[annualPlan.productID],
+              monthly.priceFormatStyle.currencyCode == annual.priceFormatStyle.currencyCode,
+              let savings = MarketingPlan.annualSavings(monthlyPrice: monthly.price, annualPrice: annual.price) else { return nil }
+        return annual.priceFormatStyle.precision(.fractionLength(0)).format(savings)
     }
 
     func canPurchase(_ plan: MarketingPlan, appIDs: [String]) -> Bool {

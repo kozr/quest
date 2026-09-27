@@ -102,6 +102,7 @@ final class MarketStore: ObservableObject {
     }
 
     func loadOverview(fetch: (String) async throws -> MarketOverview) async {
+        guard !Task.isCancelled else { return }
         guard let appID = selectedMarketAppID else {
             overview = nil
             return
@@ -117,7 +118,7 @@ final class MarketStore: ObservableObject {
         defer { if overviewRequestID == requestID { isLoadingOverview = false } }
         do {
             let result = preview ? MarketExamples.overview() : try await fetch(appID)
-            guard overviewRequestID == requestID, accountID == account,
+            guard !Task.isCancelled, overviewRequestID == requestID, accountID == account,
                   selectedMarketAppID == appID, isPreviewMode == preview else { return }
             guard result.appId == appID,
                   result.isSample == preview,
@@ -147,10 +148,10 @@ final class MarketStore: ObservableObject {
                !result.problems.contains(where: { $0.id == activeProblemFilterID }) {
                 activeProblemFilterID = nil
             }
-        } catch is CancellationError {
-            return
         } catch {
-            guard overviewRequestID == requestID, accountID == account,
+            guard !Task.isCancelled, !(error is CancellationError),
+                  (error as? URLError)?.code != .cancelled else { return }
+            guard !Task.isCancelled, overviewRequestID == requestID, accountID == account,
                   selectedMarketAppID == appID, isPreviewMode == preview else { return }
             let clientError = error as? ClientError
             loadErrorCode = clientError?.isNotFound == true
@@ -214,9 +215,9 @@ final class MarketStore: ObservableObject {
                 peoplePage = result
             }
             loadedPeopleCursor = result.nextCursor
-        } catch is CancellationError {
-            return
         } catch {
+            guard !Task.isCancelled, !(error is CancellationError),
+                  (error as? URLError)?.code != .cancelled else { return }
             guard peopleRequestID == requestID, accountID == account,
                   selectedMarketAppID == appID, activeProblemFilterID == filterID,
                   self.profileRevision == profileRevision, self.overview?.snapshotId == snapshotId,
@@ -294,9 +295,9 @@ final class MarketStore: ObservableObject {
                 }
                 await loadOverview(fetch: refresh)
                 return
-            } catch is CancellationError {
-                return
             } catch {
+                guard !Task.isCancelled, !(error is CancellationError),
+                      (error as? URLError)?.code != .cancelled else { return }
                 guard scanRequestID == requestID, accountID == account,
                       selectedMarketAppID == appID, profileRevision == revision else { return }
                 scanError = error.localizedDescription

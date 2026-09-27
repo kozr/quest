@@ -12,6 +12,7 @@ struct MarketingPaywallView: View {
     @State private var selectedApps: Set<String> = []
     @State private var choosingApps = false
     @State private var managingSubscription = false
+    @State private var pullDown: CGFloat = 0
     @ScaledMetric(relativeTo: .largeTitle) private var titleSize = 32
     var onClose: (() -> Void)? = nil
     var onSubscribed: (() -> Void)? = nil
@@ -24,7 +25,7 @@ struct MarketingPaywallView: View {
     var body: some View {
         GeometryReader { geometry in
             VStack(spacing: 0) {
-                header(topInset: geometry.safeAreaInsets.top)
+                header(topInset: geometry.safeAreaInsets.top).zIndex(1)
                 Group {
                     if typeSize.isAccessibilitySize {
                         scrollingPage
@@ -77,7 +78,10 @@ struct MarketingPaywallView: View {
                         .padding(.horizontal, 24).padding(.bottom, 24)
                         .frame(maxWidth: 620).frame(maxWidth: .infinity)
                 }
+                .background(scrollPosition)
             }
+            .coordinateSpace(name: "paywall.scroll")
+            .modifier(PaywallPullDownTracking(pullDown: $pullDown))
             .scrollBounceBehavior(.basedOnSize)
             .scrollIndicatorsFlash(onAppear: true)
             .accessibilityIdentifier("paywall.benefits")
@@ -87,7 +91,7 @@ struct MarketingPaywallView: View {
             VStack(spacing: 12) {
                 purchaseSelection
                 if !billing.hasActiveSubscription {
-                    HStack(spacing: 8) {
+                    LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible())], spacing: 8) {
                         planRow(.annual, title: "Annual", cadence: "year", compact: true)
                         planRow(.monthly, title: "Monthly", cadence: "month", compact: true)
                     }.disabled(billing.isBusy)
@@ -120,7 +124,10 @@ struct MarketingPaywallView: View {
                 .padding(.horizontal, 24).padding(.bottom, 24)
                 .frame(maxWidth: 620).frame(maxWidth: .infinity)
             }
+            .background(scrollPosition)
         }
+        .coordinateSpace(name: "paywall.scroll")
+            .modifier(PaywallPullDownTracking(pullDown: $pullDown))
         .task(id: choosingApps) {
             if choosingApps {
                 await Task.yield()
@@ -136,6 +143,16 @@ struct MarketingPaywallView: View {
                     .background { Image("MarketParchmentTexture").resizable().ignoresSafeArea(edges: .bottom).accessibilityHidden(true) }
                     .overlay(alignment: .top) { Divider().overlay(QuestPageInk.rule) }
             }
+        }
+    }
+
+    @ViewBuilder private var scrollPosition: some View {
+        if #available(iOS 18.0, *) {
+            Color.clear
+        } else {
+            Color.clear.onGeometryChange(for: CGFloat.self) { geometry in
+                max(0, geometry.frame(in: .named("paywall.scroll")).minY)
+            } action: { pullDown = $0 }
         }
     }
 
@@ -166,11 +183,11 @@ struct MarketingPaywallView: View {
     private func header(topInset: CGFloat) -> some View {
         VStack(spacing: 0) {
             GeometryReader { geometry in
-                // One fixed image spans the status bar and header, so scrolling cannot split the artwork.
+                // Extend the same image to meet the moving navy strip throughout the pull-down bounce.
                 Image("QuestLandscape").resizable()
                     .frame(width: geometry.size.width, height: geometry.size.width * 1844 / 853)
                     .offset(y: -geometry.size.width * 0.36 + topInset)
-                    .frame(height: 56 + topInset, alignment: .top).clipped()
+                    .frame(height: 56 + topInset + pullDown, alignment: .top).clipped()
                     .offset(y: -topInset)
             }.frame(height: 56).accessibilityHidden(true)
             HStack(spacing: 10) {
@@ -187,6 +204,7 @@ struct MarketingPaywallView: View {
             }
             .padding(.leading, 24).padding(.trailing, 12)
             .foregroundStyle(QuestPageInk.lightGold).background(QuestPageInk.navy)
+            .offset(y: pullDown)
         }
     }
 
@@ -302,24 +320,31 @@ struct MarketingPaywallView: View {
     private func planRow(_ value: MarketingPeriod, title: String, cadence: String, compact: Bool = false) -> some View {
         let option = MarketingPlan(coverage: coverage, period: value)
         let price = billing.displayPrice(for: option)
+        let savings = value == .annual ? billing.annualSavingsAmount(for: coverage) : nil
         return Button { period = value } label: {
             Group {
                 if compact {
                     VStack(alignment: .leading, spacing: 5) {
-                        HStack(spacing: 8) {
+                        HStack(spacing: 3) {
                             Image(systemName: period == value ? "largecircle.fill.circle" : "circle")
+                                .font(.caption)
                                 .foregroundStyle(period == value ? QuestPageInk.gold : QuestPageInk.secondary)
-                            Text(title).font(.headline)
+                            Text(title).font(.system(size: 14, weight: .semibold))
+                                .lineLimit(1).fixedSize(horizontal: true, vertical: false)
+                            if let savings { savingsChip(savings, compact: true) }
                         }
                         Text(price.map { "\($0) / \(cadence)" } ?? (billing.isLoading ? "Loading price…" : "Price unavailable"))
-                            .font(.footnote.weight(.semibold)).fixedSize(horizontal: false, vertical: true)
+                            .font(.footnote.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.8)
                     }
                 } else {
                     HStack(spacing: 12) {
                         Image(systemName: period == value ? "largecircle.fill.circle" : "circle")
                             .font(.title2).foregroundStyle(period == value ? QuestPageInk.gold : QuestPageInk.secondary)
                         VStack(alignment: .leading, spacing: 3) {
-                            Text(title).font(.headline)
+                            HStack(spacing: 8) {
+                                Text(title).font(.headline)
+                                if let savings { savingsChip(savings) }
+                            }
                             Text(price.map { "\($0) / \(cadence)" } ?? (billing.isLoading ? "Loading price…" : "Price unavailable"))
                                 .font(.body.weight(.semibold)).fixedSize(horizontal: false, vertical: true)
                         }
@@ -328,12 +353,23 @@ struct MarketingPaywallView: View {
                     }
                 }
             }
-            .padding(.horizontal, 14).padding(.vertical, 11)
+            .padding(.horizontal, compact ? 8 : 14).padding(.vertical, 11)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(.white.opacity(period == value ? 0.40 : 0.16), in: RoundedRectangle(cornerRadius: 12))
             .overlay(RoundedRectangle(cornerRadius: 12).stroke(period == value ? QuestPageInk.gold : QuestPageInk.rule.opacity(0.4), lineWidth: period == value ? 1.5 : 1))
         }.buttonStyle(.plain).accessibilityAddTraits(period == value ? .isSelected : [])
             .accessibilityIdentifier("paywall.\(cadence)")
+    }
+
+    private func savingsChip(_ savings: String, compact: Bool = false) -> some View {
+        Text("Save \(savings)")
+            .font(compact ? .system(size: 9, weight: .bold) : .caption2.weight(.bold))
+            .foregroundStyle(QuestPageInk.navy)
+            .lineLimit(1)
+            .minimumScaleFactor(compact ? 0.65 : 0.8)
+            .padding(.horizontal, compact ? 4 : 7).padding(.vertical, 3)
+            .background(QuestPageInk.gold.opacity(0.28), in: Capsule())
+            .accessibilityIdentifier("paywall.annualSavings")
     }
 
     @ViewBuilder private var messages: some View {
@@ -478,5 +514,20 @@ struct MarketingCoverageNotice: View {
                 .font(.headline).frame(minHeight: 44)
         }.padding(24).frame(maxWidth: .infinity).foregroundStyle(QuestStyle.gold)
             .fullScreenCover(isPresented: $showingPaywall) { MarketingPaywallView() }
+    }
+}
+
+private struct PaywallPullDownTracking: ViewModifier {
+    @Binding var pullDown: CGFloat
+    @ViewBuilder func body(content: Content) -> some View {
+        if #available(iOS 18.0, *) {
+            content.onScrollGeometryChange(for: CGFloat.self) { geometry in
+                max(0, -geometry.contentOffset.y - geometry.contentInsets.top)
+            } action: { _, offset in
+                pullDown = offset
+            }
+        } else {
+            content
+        }
     }
 }

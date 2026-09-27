@@ -13,6 +13,7 @@ struct MarketView: View {
     @EnvironmentObject private var billing: MarketingStore
     @StateObject private var store = MarketStore()
     @Environment(\.openURL) private var openURL
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var navigationPath: [MarketPeopleRoute] = []
     @State private var showingSampleSource = false
@@ -21,20 +22,25 @@ struct MarketView: View {
     @ScaledMetric(relativeTo: .subheadline) private var scaledSegmentHeight: CGFloat = 37
     private var marketingAllowed: Bool { model.isPreviewMode || billing.canAccess(appID: store.selectedMarketAppID ?? "") }
 
-    private var contextKey: String {
+    private var configurationKey: String {
         [model.user?.id ?? "signed-out", String(model.isPreviewMode),
-         model.apps.map(\.id).sorted().joined(separator: ","),
-         store.selectedMarketAppID ?? "", String(marketingAllowed)].joined(separator: "|")
+         model.apps.map(\.id).sorted().joined(separator: ",")].joined(separator: "|")
+    }
+
+    private var isActive: Bool { scenePhase == .active && model.selectedTab == "market" }
+    private var contextKey: String {
+        [configurationKey, store.selectedMarketAppID ?? "", String(marketingAllowed),
+         String(isActive)].joined(separator: "|")
     }
 
     private var peopleTaskKey: String {
-        [store.selectedMarketAppID ?? "none", String(store.overview?.profileRevision ?? 0),
+        [contextKey, String(store.overview?.profileRevision ?? 0),
          store.overview?.snapshotId ?? "no-snapshot", store.selectedSegment.rawValue,
          store.activeProblemFilterID ?? "all"].joined(separator: "|")
     }
 
     private var scanTaskKey: String {
-        [store.selectedMarketAppID ?? "none", String(store.overview?.profileRevision ?? 0),
+        [contextKey, String(store.overview?.profileRevision ?? 0),
          store.overview?.scan?.id ?? "no-scan", String(store.scanPollingEpoch)].joined(separator: "|")
     }
 
@@ -103,18 +109,20 @@ struct MarketView: View {
         .toolbarBackground(QuestStyle.navy, for: .tabBar)
         .toolbarBackground(.visible, for: .tabBar)
         .toolbarColorScheme(.dark, for: .tabBar)
-        .task(id: contextKey) {
+        .onChange(of: configurationKey, initial: true) { _, _ in
             store.configure(accountID: model.user?.id, apps: model.apps,
                             preferredAppID: model.selectedLeadAppID, preview: model.isPreviewMode)
-            guard marketingAllowed, store.selectedMarketAppID != nil else { return }
+        }
+        .task(id: contextKey) {
+            guard isActive, marketingAllowed, store.selectedMarketAppID != nil else { return }
             await store.loadOverview { appID in try await model.marketOverview(appID: appID) }
         }
         .task(id: peopleTaskKey) {
-            guard marketingAllowed, store.selectedSegment == .people, store.overview != nil else { return }
+            guard isActive, marketingAllowed, store.selectedSegment == .people, store.overview != nil else { return }
             await loadPeople()
         }
         .task(id: scanTaskKey) {
-            guard marketingAllowed, store.overview?.scan?.status.isActive == true else { return }
+            guard isActive, marketingAllowed, store.overview?.scan?.status.isActive == true else { return }
             await store.pollScan(
                 fetch: { appID, scanID in try await model.marketScan(appID: appID, scanID: scanID) },
                 refresh: { appID in try await model.marketOverview(appID: appID) }

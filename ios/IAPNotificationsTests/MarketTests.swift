@@ -115,6 +115,38 @@ final class MarketTests: XCTestCase {
         XCTAssertNotNil(store.errorMessage)
     }
 
+    func testCancelledRefreshKeepsOverviewWithoutAnErrorAndCanReload() async {
+        let store = MarketStore()
+        store.configure(accountID: "account-one", apps: [app(firstAppID)],
+                        preferredAppID: firstAppID, preview: false)
+        await store.loadOverview { self.liveOverview($0) }
+        let snapshot = store.overview?.snapshotId
+        for error in [CancellationError() as Error, URLError(.cancelled) as Error] {
+            await store.loadOverview { _ in throw error }
+            XCTAssertNotNil(store.overview)
+            XCTAssertEqual(store.overview?.snapshotId, snapshot)
+            XCTAssertNil(store.errorMessage)
+            XCTAssertNil(store.loadErrorCode)
+            XCTAssertFalse(store.isLoadingOverview)
+        }
+        await store.loadOverview { _ in throw URLError(.timedOut) }
+        XCTAssertNotNil(store.errorMessage, "Real network failures must remain visible")
+        await store.loadOverview { self.liveOverview($0) }
+        XCTAssertNil(store.errorMessage)
+        XCTAssertNotNil(store.overview)
+    }
+
+    func testCancelledInitialOverviewCanBeRetried() async {
+        let store = MarketStore()
+        store.configure(accountID: "account-one", apps: [app(firstAppID)],
+                        preferredAppID: firstAppID, preview: false)
+        await store.loadOverview { _ in throw URLError(.cancelled) }
+        XCTAssertNil(store.errorMessage)
+        XCTAssertFalse(store.isLoadingOverview)
+        await store.loadOverview { self.liveOverview($0) }
+        XCTAssertEqual(store.overview?.appId, firstAppID)
+    }
+
     func testAppSwitchWhileOverviewIsInFlightCannotRestoreOldApp() async {
         let store = MarketStore()
         store.configure(accountID: "account-one", apps: [app(firstAppID), app(secondAppID)],

@@ -356,6 +356,44 @@ final class LeadsTests: XCTestCase {
         XCTAssertTrue(LeadsTestURLProtocol.requests.isEmpty)
     }
 
+    func testCancelledBoardRefreshPreservesLoadedLeadsAndAllowsRetry() async throws {
+        installLeadServer(appIDs: [firstAppID])
+        let account = model()
+        await account.loadApps()
+        await account.refreshLeadBoard()
+        let loadedIDs = account.leadItems.map(\.id)
+        XCTAssertFalse(loadedIDs.isEmpty)
+
+        LeadsTestURLProtocol.handler = { _ in throw URLError(.cancelled) }
+        await account.refreshLeadBoard()
+        XCTAssertNil(account.leadBoardError)
+        XCTAssertEqual(account.leadItems.map(\.id), loadedIDs)
+        XCTAssertFalse(account.isLoadingLeadBoard)
+
+        installLeadServer(appIDs: [firstAppID])
+        await account.refreshLeadBoard()
+        XCTAssertNil(account.leadBoardError)
+        XCTAssertEqual(account.leadItems.map(\.id), loadedIDs)
+    }
+
+    func testForegroundRefreshReplacesCancellingRequestWithoutWaitingForCleanup() async throws {
+        installLeadServer(appIDs: [firstAppID])
+        let account = model()
+        await account.loadApps()
+        let waiting = expectation(description: "access request is in flight")
+        LeadsTestURLProtocol.holdNextAccess = { _ in waiting.fulfill() }
+        let interrupted = Task { await account.refreshLeadBoard() }
+        await fulfillment(of: [waiting], timeout: 3)
+        XCTAssertTrue(account.isLoadingLeadBoard)
+        interrupted.cancel()
+        // Re-enter before the cancelled URLSession request has unwound its loading flag.
+        await account.refreshLeadBoard()
+        await interrupted.value
+        XCTAssertNil(account.leadBoardError)
+        XCTAssertEqual(account.leadItems.map(\.appId), [firstAppID])
+        XCTAssertFalse(account.isLoadingLeadBoard)
+    }
+
     func testGenericFeatureNotFoundDoesNotRemoveConnectedApp() async throws {
         installLeadServer(appIDs: [firstAppID])
         LeadsTestURLProtocol.handler = { [self] request in

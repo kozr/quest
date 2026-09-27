@@ -1032,6 +1032,7 @@ final class AppModel: ObservableObject {
     }
 
     func refreshLeadBoard(background: Bool = false) async {
+        guard !Task.isCancelled else { return }
         // A background refresh must not erase the user's in-flight dismiss/undo action.
         if background && (leadUndoAction != nil || leadPendingPostID != nil || isSavingLeadProfile) { return }
         if isPreviewMode {
@@ -1078,7 +1079,8 @@ final class AppModel: ObservableObject {
             leadBoardError = nil
             return
         }
-        guard !isLoadingLeadBoard, leadPendingPostID == nil else { return }
+        // A visible-screen refresh supersedes an interrupted request; background polling waits.
+        guard !Task.isCancelled, (!background || !isLoadingLeadBoard), leadPendingPostID == nil else { return }
 
         let generation = sessionGeneration
         let boardRequest = UUID()
@@ -1146,6 +1148,8 @@ final class AppModel: ObservableObject {
                 limited: page.status.limited ?? response.status.limited,
                 progress: progress)
         } catch {
+            guard !Task.isCancelled, !(error is CancellationError),
+                  (error as? URLError)?.code != .cancelled else { return }
             guard isCurrentLeadBoard(appId: appId, generation: generation, boardRequest: boardRequest),
                   leadProfileRequest == profileRequest, leadFeedRequest == feedRequest else { return }
             if handleUnauthorized(error) { return }
@@ -1465,7 +1469,7 @@ final class AppModel: ObservableObject {
     }
 
     private func isCurrentLeadBoard(appId: String, generation: UUID, boardRequest: UUID) -> Bool {
-        generation == sessionGeneration && leadBoardRequest == boardRequest && selectedLeadAppID == appId &&
+        !Task.isCancelled && generation == sessionGeneration && leadBoardRequest == boardRequest && selectedLeadAppID == appId &&
             apps.contains(where: { $0.id == appId }) && user != nil && !isSigningOut && !isDeletingAccount
     }
 
