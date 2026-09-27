@@ -40,3 +40,7 @@ The corrected privacy policy is published at https://quest-liart-iota.vercel.app
 - Hacker News posting rules (including generated text): https://news.ycombinator.com/newsguidelines.html
 
 Evidence is in test-results/publishing-review/. Initial tests without emulators and an initial Java 17 emulator attempt failed for environment setup; the final isolated Java 21 integration run passed. No full native XCTest suite or physical-device acceptance is claimed.
+
+## Deployment follow-up — September 27
+
+The native changes shipped in uploaded build 1.0.2 (33), now VALID in App Store Connect. The backend allowlists are live in all three execution workers with verified source/configuration and 100% traffic. See ai-privacy-deploy-2026-09-27.md. This resolves deployment gate 5 above; the other review items remain outstanding.
