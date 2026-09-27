@@ -4,4 +4,4 @@ Fixes the paywall artwork separating at the top when scrolling: one continuous f
 
 Both app and notification extension use build 32. No billing logic or product pricing changed. Validation: Debug preview and production Release simulator builds passed; compact and large iPhones reviewed at initial, scrolled, and overscroll positions, including accessibility text. Settings was verified under an inherited light appearance. Evidence: `test-results/paywall-top-fix/`.
 
-Signed archive and upload evidence: `test-results/build32-upload/`. Release status will be recorded after upload verification.
+Signed archive and upload evidence: `test-results/build32-upload/`. Source commit `bc48443772c5cceae807dd24e25d5379a75bee43` is pushed to main. The signed archive passed signature, version, and source verification. Xcode confirmed **Upload succeeded** and **EXPORT SUCCEEDED** on September 26, 2026 at **5:15 PM PDT**. Apple began processing the package. No App Review submission or backend billing change was performed.
