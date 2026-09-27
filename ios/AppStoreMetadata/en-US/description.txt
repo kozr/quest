@@ -1,18 +1,35 @@
-Keep up with in-app purchases across your iOS apps. Questline brings App Store purchase, subscription, and refund updates into one activity feed, with optional notifications on your iPhone.
+You built the app. Find people it could help.
 
-FOLLOW YOUR IAP ACTIVITY
-See purchases of consumables, permanent unlocks, and non-renewing subscriptions, along with auto-renewing subscription purchases, renewals, trials, refunds, billing issues, and expiration updates. Keep Production, Sandbox, and Demo activity separate.
+Tavern helps independent iOS developers find potential users, understand customer problems, and research the market around their apps. Review the evidence, decide where to join the conversation, and keep up with your sales along the way.
 
-CHOOSE YOUR ALERTS
-Control individual alert types and hide amounts from notifications when you prefer more privacy. Open an alert to return to the relevant activity feed.
+FIND RELEVANT CONVERSATIONS
+Confirm what your app does and the problems it solves. Your lead board surfaces public Reddit discussions that may fit, explains the match, and links to the original post. Dismiss results that are not relevant.
 
-KEEP YOUR EXISTING SERVER
-Already receiving App Store Server Notifications elsewhere? Configure an existing destination so Questline can forward Apple's signed notifications to it. If you use RevenueCat, keep RevenueCat as your primary receiver and forward its Apple notifications to Questline.
+TURN A MATCH INTO A THOUGHTFUL REPLY
+Open a quest to review two example replies shaped to the request and Reddit community. Choose an approach, edit it in your own voice, and copy it before opening the discussion. You decide what to post.
 
-SET UP WITHOUT AN SDK
-Sign in with Apple on your iPhone, approve your computer's sign-in by scanning its QR code, and connect your apps in the browser. Questline receives App Store Server Notifications V2; no Questline SDK is required in your own app.
+RESEARCH YOUR MARKET
+Research public discussions across Reddit, X, YouTube, forums, and reviews. Explore three views of your app's market:
+• Problems: discover needs, frustrations, and workarounds, with sources to review.
+• Landscape: research competing products, alternatives, and how people solve the problem today.
+• People: review Reddit authors discussing the same or a similar problem, with context about whether the need was unresolved, later resolved, or unclear.
 
-EXPLORE BEFORE CONNECTING
-Use Explore demo to browse clearly labeled sample activity and try alert preferences without creating an account.
+AI-assisted findings are starting points for your own research. Check the linked sources and dates before drawing conclusions or reaching out. Coverage and results vary; a match does not establish purchase intent.
 
-Questline is a notification companion for app developers. It does not process purchases, manage customer entitlements, or report paid app downloads. Amounts reflect available transaction information, not App Store payouts or net proceeds. Delivery depends on Apple's notifications, network availability, and your device settings.
+FOLLOW SALES AND SUBSCRIPTIONS
+Bring purchases, renewals, refunds, and other subscription updates together. Review sales by app and currency, and choose which events notify you. Hide amounts from notifications when you prefer.
+
+CONNECT WHEN YOU ARE READY
+Sign in with Apple, find your app, and confirm its profile. Sales tracking connects through App Store Server Notifications V2, directly or through RevenueCat's Apple-notification forwarding. No Tavern SDK is needed in your app.
+
+FREE SALES TRACKING. OPTIONAL MARKETING.
+Sales analytics and sales push notifications are free. Marketing subscriptions unlock ongoing lead discovery, suggested replies, and market insights for one app or up to three apps. Choose monthly or annual billing. There is no free trial. Prices and the total amount billed are shown in the app before purchase. Discovery and reply generation are subject to usage limits and source availability.
+
+Payment is charged to your Apple Account at confirmation. Subscriptions renew automatically unless cancelled at least 24 hours before the current period ends. Manage or cancel in your App Store subscription settings. Deleting your Tavern account does not cancel your subscription.
+
+Explore demo without an account to browse clearly labeled sample leads, market insights, and sales.
+
+Tavern is a companion for app developers. It does not process purchases, manage customer entitlements, or track paid app downloads. Sales amounts reflect available transaction information, not App Store payouts or net proceeds. Notifications depend on received events, network availability, and device settings.
+
+Terms of Use (Apple Standard EULA): https://www.apple.com/legal/internet-services/itunes/dev/stdeula/
+Privacy Policy: https://quest-liart-iota.vercel.app/privacy/

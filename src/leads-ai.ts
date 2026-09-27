@@ -54,7 +54,7 @@ export function redditThreadURL(value:string):{url:string;community:string;id:st
 export class OpenAIResponsesLeadAIProvider implements LeadAIProvider {
   constructor(private readonly apiKey:string,private readonly model:string,private readonly request:typeof fetch=fetch) {}
   async draftReplies(post:{title:string;body:string;subreddit:string},profile:LeadProfile,appName:string) {
-    const context=JSON.stringify({post:{...post,body:post.body.slice(0,4000)},appName,
+    const context=JSON.stringify({post:{title:post.title,subreddit:post.subreddit,body:post.body.slice(0,4000)},appName,
       capabilities:profile.capabilities.map(c=>c.text),goals:profile.problems.map(p=>p.text),comments:[],alternativeResources:[]});
     return this.call(LEAD_REPLY_PROMPT,context,'lead_reply_plan',replyPlanJSONSchema,raw=>leadReplyPlanSchema.parse(raw),false,MAX_REPLY_OUTPUT);
   }

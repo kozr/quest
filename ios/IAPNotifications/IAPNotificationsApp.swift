@@ -900,6 +900,7 @@ struct SettingsView: View {
                     Text("Sales analytics and sales push notifications are free.").font(QuestTypography.metadata)
                 } header: { QuestSettingsHeading(title: "Marketing") }
                 Section {
+                    Link("Terms of Use (EULA)", destination: URL(string: "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/")!)
                     Link("Privacy policy", destination: model.privacyURL)
                     Link("Help and support", destination: model.supportURL)
                 } header: { QuestSettingsHeading(title: "About Questline") }

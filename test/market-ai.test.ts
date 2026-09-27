@@ -142,3 +142,21 @@ test('resolved, builder, and satisfied mentions stay in market intelligence with
     assert.equal(row.signalKind,'competitor_complaint');
   }
 });
+
+test('AI payload allowlist excludes account linkage and source author identifiers from full records',async()=>{
+  const {provider,calls}=providerWith(validResponse());
+  const input=providerInput();
+  const result=await provider.analyze(input);
+  const body=JSON.parse(calls[0]!.init!.body as string);
+  const sent=JSON.parse(body.input[1].content);
+  assert.deepEqual(Object.keys(sent.existingProblems[0]).sort(),['id','signalKind','summary','title']);
+  assert.deepEqual(Object.keys(sent.sources[0]).sort(),['community','createdAt','id','kind','text','threadId','title']);
+  assert.equal(sent.sources[0].authorDisplayName,undefined);
+  assert.equal(sent.sources[0].authorKey,undefined);
+  assert.equal(sent.existingProblems[0].user_id,undefined);
+  assert.equal(sent.existingProblems[0].app_id,undefined);
+  assert.equal(sent.profile.user_id,undefined);
+  assert.equal(sent.profile.app_id,undefined);
+  assert.equal(body.store,false);
+  assert.equal(result.inputBytes,estimateMarketInputBytes(input));
+});

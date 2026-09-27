@@ -38,10 +38,10 @@ export class OpenAIResponsesMarketAIProvider implements MarketAIProvider {
   constructor(private readonly apiKey:string,private readonly model:string,private readonly request:typeof fetch=fetch,private readonly splitResearch=false) {}
   research(input:MarketResearchInput) {return researchMarket(this.apiKey,this.model,input,this.request,fetch,this.splitResearch?'high':'max',this.splitResearch);}
   async analyze(input:{appName:string;profile:LeadProfile;existingProblems:Array<Pick<MarketProblemRecord,'id'|'title'|'summary'|'signalKind'>>;
-    sources:Array<Pick<MarketSource,'id'|'kind'|'threadId'|'authorDisplayName'|'title'|'text'|'community'|'createdAt'>>}):Promise<MarketAIResult> {
-    const safeSources=input.sources.slice(0,80).map(source=>({...source,title:source.title?.slice(0,500)??null,text:source.text.slice(0,2500)}));
-    const user=JSON.stringify({appName:input.appName,profile:{problems:input.profile.problems,capabilities:input.profile.capabilities.map(({id,text})=>({id,text})),
-      communities:input.profile.communities,keywords:input.profile.keywords},existingProblems:input.existingProblems.slice(0,50),sources:safeSources});
+    sources:Array<Pick<MarketSource,'id'|'kind'|'threadId'|'title'|'text'|'community'|'createdAt'>>}):Promise<MarketAIResult> {
+    const safeSources=input.sources.slice(0,80).map(source=>({id:source.id,kind:source.kind,threadId:source.threadId,title:source.title?.slice(0,500)??null,text:source.text.slice(0,2500),community:source.community,createdAt:source.createdAt}));
+    const user=JSON.stringify({appName:input.appName,profile:{problems:input.profile.problems.map(({id,text})=>({id,text})),capabilities:input.profile.capabilities.map(({id,text})=>({id,text})),
+      communities:input.profile.communities,keywords:input.profile.keywords},existingProblems:input.existingProblems.slice(0,50).map(({id,title,summary,signalKind})=>({id,title,summary,signalKind})),sources:safeSources});
     const inputBytes=estimateMarketInputBytes({appName:input.appName,profile:input.profile,existingProblems:input.existingProblems,sources:safeSources});
     const response=await this.request('https://api.openai.com/v1/responses',{method:'POST',redirect:'error',signal:AbortSignal.timeout(120000),
       headers:{Authorization:`Bearer ${this.apiKey}`,'Content-Type':'application/json',Accept:'application/json'},
@@ -65,10 +65,10 @@ export class OpenAIResponsesMarketAIProvider implements MarketAIProvider {
 }
 
 export function estimateMarketInputBytes(input:{appName:string;profile:LeadProfile;existingProblems:Array<Pick<MarketProblemRecord,'id'|'title'|'summary'|'signalKind'>>;
-  sources:Array<Pick<MarketSource,'id'|'kind'|'threadId'|'authorDisplayName'|'title'|'text'|'community'|'createdAt'>>}) {
-  const safeSources=input.sources.slice(0,80).map(source=>({...source,title:source.title?.slice(0,500)??null,text:source.text.slice(0,2500)}));
-  const user=JSON.stringify({appName:input.appName,profile:{problems:input.profile.problems,capabilities:input.profile.capabilities.map(({id,text})=>({id,text})),
-    communities:input.profile.communities,keywords:input.profile.keywords},existingProblems:input.existingProblems.slice(0,50),sources:safeSources});
+  sources:Array<Pick<MarketSource,'id'|'kind'|'threadId'|'title'|'text'|'community'|'createdAt'>>}) {
+  const safeSources=input.sources.slice(0,80).map(source=>({id:source.id,kind:source.kind,threadId:source.threadId,title:source.title?.slice(0,500)??null,text:source.text.slice(0,2500),community:source.community,createdAt:source.createdAt}));
+  const user=JSON.stringify({appName:input.appName,profile:{problems:input.profile.problems.map(({id,text})=>({id,text})),capabilities:input.profile.capabilities.map(({id,text})=>({id,text})),
+    communities:input.profile.communities,keywords:input.profile.keywords},existingProblems:input.existingProblems.slice(0,50).map(({id,title,summary,signalKind})=>({id,title,summary,signalKind})),sources:safeSources});
   return Buffer.byteLength(systemPrompt)+Buffer.byteLength(user)+Buffer.byteLength(JSON.stringify(marketJSONSchema))+8192;
 }
 

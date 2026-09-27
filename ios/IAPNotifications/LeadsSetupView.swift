@@ -119,7 +119,7 @@ struct LeadsSetupView: View {
                         .accessibilityIdentifier("leadMonitoringToggle")
 
                         Toggle(isOn: $hasReviewed) {
-                            Text("I reviewed and confirm this app profile")
+                            Text("I confirm this profile and allow sharing it with OpenAI")
                                 .font(.subheadline.weight(.semibold))
                                 .foregroundStyle(.white)
                         }
@@ -161,7 +161,7 @@ struct LeadsSetupView: View {
                     .opacity(canSave ? 1 : 0.52)
                     .accessibilityIdentifier("leadProfileSave")
 
-                    Text("Public Reddit posts are assessed against the profile you confirm. Questline never posts or writes replies.")
+                    Text("OpenAI processes your app profile and public source content to find leads, research your market, and suggest replies. Keep this profile about your app; do not include personal or confidential information. Tavern never posts or contacts people for you.")
                         .font(.footnote)
                         .foregroundStyle(QuestStyle.muted)
                         .fixedSize(horizontal: false, vertical: true)
@@ -270,7 +270,7 @@ struct LeadsSetupView: View {
                     Text("Start from the App Store description")
                         .font(.headline)
                         .foregroundStyle(.white)
-                    Text("Questline drafts suggestions for you to review.")
+                    Text("OpenAI uses your public App Store description to draft suggestions for you to review.")
                         .font(.footnote)
                         .foregroundStyle(QuestStyle.muted)
                 }

@@ -387,13 +387,18 @@ private struct LoadQuestPage: View {
                 Text("Where to look").font(.system(.title2, design: .serif, weight: .bold))
                 ForEach(communityRows, id: \.self) { QuestCommunity(name: $0) }
             }
+            if !loading && !model.isPreviewMode {
+                Text("OpenAI processes this app profile and public source content for leads, market research, and reply suggestions. Keep your profile about your app; do not include personal or confidential information.")
+                    .font(.footnote).foregroundStyle(QuestPageInk.secondary)
+                Link("Privacy policy", destination: model.privacyURL).font(.footnote)
+            }
             QuestPageError(message: error)
             if !loading && model.leadAccess?.enabled == false {
                 Text("Discovery is not available for this account yet. You can still set up sales alerts.").font(.subheadline).foregroundStyle(QuestPageInk.secondary)
             }
         } footer: {
             QuestJournalFooter {
-                QuestPageButton(title: "Continue", symbol: "arrow.right", busy: busy, disabled: loading || !valid || model.leadAccess?.enabled == false) { save() }
+                QuestPageButton(title: model.isPreviewMode ? "Continue" : "Allow AI and continue", symbol: "arrow.right", busy: busy, disabled: loading || !valid || model.leadAccess?.enabled == false) { save() }
             } secondary: {
                 Button("Set up sales alerts instead") { move(.notifications) }.font(.footnote).frame(maxWidth: .infinity, minHeight: 44)
             }
