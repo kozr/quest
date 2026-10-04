@@ -120,7 +120,7 @@ const vercelApp=express();
 let hostedApp;
 vercelApp.use((req,res,next)=>{
   try {hostedApp ||= createTrackerApp({hosted:true}).app;return hostedApp(req,res,next);}
-  catch {res.status(503).json({error:'Configure FIREBASE_PROJECT_ID, FIREBASE_SERVICE_ACCOUNT_JSON, TRACKER_PASSWORD (16+ characters), and TRACKER_SESSION_SECRET (32+ characters) for this Vercel project.'});}
+  catch {res.status(503).json({error:'Configure the Firebase connection, TRACKER_PASSWORD (16+ characters), and TRACKER_SESSION_SECRET (32+ characters) for this Vercel project.'});}
 });
 export default vercelApp;
 

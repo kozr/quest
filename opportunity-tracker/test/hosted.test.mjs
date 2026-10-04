@@ -4,7 +4,7 @@ import { Firestore } from 'firebase-admin/firestore';
 import { randomUUID } from 'node:crypto';
 import { request } from 'node:http';
 import { once } from 'node:events';
-import { configuredFirestore, FirestoreBackend, FirestoreStore } from '../firestore-store.mjs';
+import { configuredFirestore, createVercelAuthClient, FirestoreBackend, FirestoreStore } from '../firestore-store.mjs';
 import { createTrackerApp } from '../server.mjs';
 
 const password='test-only-password-very-long';
@@ -105,4 +105,19 @@ test('Firestore stores snapshots larger than one document and atomically removes
   await b.importData({version:1,products:[],items:[],searches:{}});
   assert.equal((await database.document.collection('stateChunks').get()).size,1);
   assert.deepEqual((await a.snapshot()).items,[]);
+});
+
+test('Vercel federation obtains fresh identity tokens and rejects mismatched project credentials',async()=>{
+  const configuration={projectId:'demo-opportunity-tracker',provider:'projects/123456789/locations/global/workloadIdentityPools/tracker/providers/vercel',serviceAccountEmail:'vercel-tracker@demo-opportunity-tracker.iam.gserviceaccount.com'};
+  let count=0;
+  const auth=createVercelAuthClient({...configuration,tokenSupplier:async()=>`fixture-token-${++count}`});
+  assert.equal(await auth.retrieveSubjectToken(),'fixture-token-1');
+  assert.equal(await auth.retrieveSubjectToken(),'fixture-token-2');
+  assert.throws(()=>createVercelAuthClient({...configuration,provider:'https://untrusted.example/token'}),/GCP_WIF_PROVIDER/);
+  assert.throws(()=>createVercelAuthClient({...configuration,serviceAccountEmail:'other@another-project.iam.gserviceaccount.com'}),/GCP_SERVICE_ACCOUNT_EMAIL/);
+  assert.throws(()=>configuredFirestore({...configuration,databaseId:'../default'}),/FIREBASE_DATABASE_ID/);
+  const db=configuredFirestore({...configuration,databaseId:'opportunity-tracker'});
+  assert.equal(db.projectId,configuration.projectId);
+  assert.equal(db.databaseId,'opportunity-tracker');
+  await db.terminate();
 });

@@ -11,6 +11,8 @@
   },
   "dependencies": {
     "express": "5.2.1",
-    "firebase-admin": "14.3.0"
+    "firebase-admin": "14.3.0",
+    "@vercel/oidc": "4.0.0",
+    "google-auth-library": "11.1.0"
   }
 }

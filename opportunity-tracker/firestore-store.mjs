@@ -1,5 +1,7 @@
 import { applicationDefault, cert, getApps, initializeApp } from 'firebase-admin/app';
-import { getFirestore } from 'firebase-admin/firestore';
+import { Firestore, getFirestore } from 'firebase-admin/firestore';
+import { getVercelOidcToken } from '@vercel/oidc';
+import { ExternalAccountClient } from 'google-auth-library';
 import { randomUUID } from 'node:crypto';
 import { Store } from './store.mjs';
 
@@ -12,9 +14,31 @@ function unavailable() {
   return error;
 }
 
-export function configuredFirestore({projectId = process.env.FIREBASE_PROJECT_ID, serviceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON} = {}) {
+const federatedClients = new Map();
+export function createVercelAuthClient({projectId, provider, serviceAccountEmail, tokenSupplier = getVercelOidcToken}) {
+  if (!/^projects\/\d+\/locations\/global\/workloadIdentityPools\/[a-z0-9-]+\/providers\/[a-z0-9-]+$/.test(provider || '') || !serviceAccountEmail?.endsWith(`@${projectId}.iam.gserviceaccount.com`)) throw new Error('Configure GCP_WIF_PROVIDER and GCP_SERVICE_ACCOUNT_EMAIL for this Firebase project.');
+  return ExternalAccountClient.fromJSON({
+    type: 'external_account',
+    audience: `//iam.googleapis.com/${provider}`,
+    subject_token_type: 'urn:ietf:params:oauth:token-type:jwt',
+    token_url: 'https://sts.googleapis.com/v1/token',
+    service_account_impersonation_url: `https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/${serviceAccountEmail}:generateAccessToken`,
+    scopes: ['https://www.googleapis.com/auth/datastore'],
+    subject_token_supplier: {getSubjectToken: () => tokenSupplier()},
+  });
+}
+export function configuredFirestore({projectId = process.env.FIREBASE_PROJECT_ID, databaseId = process.env.FIREBASE_DATABASE_ID || '(default)', serviceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON, provider = process.env.GCP_WIF_PROVIDER, serviceAccountEmail = process.env.GCP_SERVICE_ACCOUNT_EMAIL} = {}) {
   if (!projectId || !/^[a-z][a-z0-9-]{4,28}[a-z0-9]$/.test(projectId)) throw new Error('FIREBASE_PROJECT_ID is required for hosted storage.');
   if (process.env.VERCEL && (projectId.startsWith('demo-') || process.env.FIRESTORE_EMULATOR_HOST)) throw new Error('Vercel requires a real Firebase project without emulator settings.');
+  if (databaseId !== '(default)' && !/^[a-z][a-z0-9-]{2,61}[a-z0-9]$/.test(databaseId)) throw new Error('Use a valid FIREBASE_DATABASE_ID.');
+  if (provider || serviceAccountEmail) {
+    const key = `${projectId}:${databaseId}:${provider}:${serviceAccountEmail}`;
+    if (!federatedClients.has(key)) {
+      const authClient = createVercelAuthClient({projectId, provider, serviceAccountEmail});
+      federatedClients.set(key, new Firestore({projectId, databaseId, authClient}));
+    }
+    return federatedClients.get(key);
+  }
   let credential;
   if (serviceAccountJson) {
     try {
@@ -28,7 +52,7 @@ export function configuredFirestore({projectId = process.env.FIREBASE_PROJECT_ID
   }
   const name = `opportunity-tracker-${projectId}`;
   const app = getApps().find(value => value.name === name) || initializeApp({projectId, credential}, name);
-  return getFirestore(app);
+  return getFirestore(app, databaseId);
 }
 
 export class FirestoreBackend {
