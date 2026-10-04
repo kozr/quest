@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Track relevant public conversations and mentions for the products you build.">
+  <title>Product tracker</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#inbox">Skip to matches</a>
+  <header>
+    <a class="brand" href="/">Product tracker</a>
+    <div class="backup-actions">
+      <a href="/api/export" download>Export backup</a>
+      <button id="restore-toggle" type="button" aria-expanded="false" aria-controls="restore-form">Restore backup</button>
+      <button id="sign-out" type="button" hidden>Sign out</button>
+    </div>
+  </header>
+  <main>
+    <section id="login-view" aria-labelledby="login-heading" hidden>
+      <h1 id="login-heading">Open your tracker</h1>
+      <form id="login-form">
+        <label for="tracker-password">Password</label>
+        <input id="tracker-password" type="password" autocomplete="current-password" required maxlength="1024">
+        <button id="sign-in" type="submit">Sign in</button>
+      </form>
+    </section>
+    <form id="restore-form" hidden>
+      <label for="backup-file">Tracker JSON backup</label>
+      <input id="backup-file" type="file" accept="application/json,.json" required>
+      <p class="secondary">Restoring replaces the products, matches, and notes currently on this computer.</p>
+      <button type="submit">Restore</button>
+      <button id="restore-cancel" type="button">Cancel</button>
+    </form>
+    <p id="notice" role="status" aria-live="polite" hidden></p>
+    <div id="workspace" class="workspace">
+      <aside aria-labelledby="products-heading">
+        <div class="section-heading">
+          <h2 id="products-heading">Products</h2>
+          <button id="add-product" type="button">Add product</button>
+        </div>
+        <button id="all-products" class="product-choice" type="button" aria-pressed="true">All products</button>
+        <ul id="products"></ul>
+        <p id="products-empty" class="secondary">Add a website or App Store link to start tracking.</p>
+        <form id="product-form" hidden>
+          <h3 id="form-title">Add product</h3>
+          <label for="product-url">Website or App Store link</label>
+          <input id="product-url" name="url" type="text" inputmode="url" autocomplete="url" placeholder="https://yourproduct.com" maxlength="2048" required>
+          <button id="import-details" type="button">Import details from link</button>
+          <p id="import-message" class="secondary" role="status" hidden></p>
+          <label for="product-name">Product name</label>
+          <input id="product-name" name="name" maxlength="120" required>
+          <label for="product-description">What does it help people do?</label>
+          <textarea id="product-description" name="description" rows="3" maxlength="5000" placeholder="Describe the actual features and who they help."></textarea>
+          <label for="product-keywords">Problems or phrases to look for</label>
+          <textarea id="product-keywords" name="keywords" rows="3" placeholder="One per line, for example:&#10;meal planning&#10;recipe organizer" required></textarea>
+          <p class="field-help">Use specific problems your product solves. These phrases drive opportunity searches.</p>
+          <label for="product-aliases">Names to watch for mentions</label>
+          <textarea id="product-aliases" name="aliases" rows="2" placeholder="Product name, alternate spelling (one per line)"></textarea>
+          <p class="field-help">Your website domain is also checked. Use distinctive names to avoid unrelated mentions.</p>
+          <details>
+            <summary>Exclude phrases</summary>
+            <label for="product-exclusions">Ignore matches containing these phrases</label>
+            <textarea id="product-exclusions" name="exclusions" rows="2" placeholder="One per line"></textarea>
+          </details>
+          <div class="form-actions">
+            <button id="save-product" type="submit">Save and find matches</button>
+            <button id="cancel-product" type="button">Cancel</button>
+          </div>
+          <button id="delete-product" class="delete" type="button" hidden>Delete product</button>
+        </form>
+      </aside>
+      <section id="inbox" aria-labelledby="inbox-heading" tabindex="-1">
+        <div class="section-heading">
+          <div>
+            <h1 id="inbox-heading">Matches</h1>
+            <p id="product-summary" class="secondary">Opportunities and mentions for your products.</p>
+          </div>
+          <button id="find-matches" type="button" disabled>Find matches</button>
+        </div>
+        <div class="filters">
+          <div class="statuses" role="group" aria-label="Review status">
+            <button type="button" data-status="new" aria-pressed="true">New <span id="count-new">0</span></button>
+            <button type="button" data-status="saved" aria-pressed="false">Saved <span id="count-saved">0</span></button>
+            <button type="button" data-status="dismissed" aria-pressed="false">Dismissed <span id="count-dismissed">0</span></button>
+          </div>
+          <div class="filter-fields">
+            <label>Match type
+              <select id="kind-filter"><option value="all">All types</option><option value="opportunity">Opportunities</option><option value="mention">Mentions</option></select>
+            </label>
+            <label>Filter matches
+              <input id="text-filter" type="search" placeholder="Title, source, or text">
+            </label>
+          </div>
+        </div>
+        <p id="search-progress" role="status" aria-live="polite" hidden></p>
+        <details id="coverage">
+          <summary id="coverage-summary">Search coverage</summary>
+          <div id="source-status"></div>
+          <p class="secondary">Searches cover public results returned by each source. Opportunity matches use your phrases and signs of a request or difficulty; review the original conversation before acting.</p>
+        </details>
+        <div id="matches" aria-live="polite"></div>
+        <div id="empty-state" class="empty-state">
+          <h2 id="empty-heading">Track something you built</h2>
+          <p id="empty-message">Add its website or App Store link, then tell the tracker which problems it solves.</p>
+          <button id="empty-add" type="button">Add product</button>
+        </div>
+      </section>
+    </div>
+  </main>
+  <footer id="storage-status">Products, matches, and notes are saved on this computer. Searches run when you choose Find matches.</footer>
+</body>
+</html>

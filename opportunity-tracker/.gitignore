@@ -1,0 +1,6 @@
+.local/
+.env
+test-results/
+.impeccable/review/
+node_modules/
+.vercel/
