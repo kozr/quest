@@ -5,7 +5,7 @@ import { dirname, join, resolve } from 'node:path';
 import { Store } from './store.mjs';
 import { importMetadata, publicUrl } from './metadata.mjs';
 import { discover } from './discovery.mjs';
-import { PostgresBackend, PostgresStore } from './postgres-store.mjs';
+import { configuredFirestore, FirestoreBackend, FirestoreStore } from './firestore-store.mjs';
 import { createAuth } from './auth.mjs';
 
 const directory = dirname(fileURLToPath(import.meta.url));
@@ -23,9 +23,9 @@ export function validateProduct(value) {
   return { name: value.name.trim(), description: value.description.trim(), url, type: new URL(url).hostname === 'apps.apple.com' ? 'app_store' : 'website', keywords, aliases: list(value.aliases || [value.name]), exclusions: list(value.exclusions || []) };
 }
 
-export function createTrackerApp({ dataDirectory = process.env.TRACKER_DATA_DIR || join(directory, '.local'), discoverFn = discover, metadataFn = importMetadata, store: providedStore, hosted = false, password = process.env.TRACKER_PASSWORD, sessionSecret = process.env.TRACKER_SESSION_SECRET, databaseUrl = process.env.DATABASE_URL || process.env.POSTGRES_URL, workspace = process.env.TRACKER_WORKSPACE || (process.env.VERCEL_ENV === 'preview' ? 'preview' : 'personal') } = {}) {
+export function createTrackerApp({ dataDirectory = process.env.TRACKER_DATA_DIR || join(directory, '.local'), discoverFn = discover, metadataFn = importMetadata, store: providedStore, hosted = false, password = process.env.TRACKER_PASSWORD, sessionSecret = process.env.TRACKER_SESSION_SECRET, firebaseProjectId = process.env.FIREBASE_PROJECT_ID, firebaseServiceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON, workspace = process.env.TRACKER_WORKSPACE || (process.env.VERCEL_ENV === 'preview' ? 'preview' : 'personal') } = {}) {
   const auth = hosted ? createAuth({password,secret:sessionSecret}) : null;
-  const store = providedStore || (hosted ? new PostgresStore(new PostgresBackend(databaseUrl,workspace)) : new Store(dataDirectory));
+  const store = providedStore || (hosted ? new FirestoreStore(new FirestoreBackend(configuredFirestore({projectId:firebaseProjectId,serviceAccountJson:firebaseServiceAccountJson}),workspace)) : new Store(dataDirectory));
   const app = express();
   const token = randomBytes(24).toString('hex');
   const busy = new Set();
@@ -120,7 +120,7 @@ const vercelApp=express();
 let hostedApp;
 vercelApp.use((req,res,next)=>{
   try {hostedApp ||= createTrackerApp({hosted:true}).app;return hostedApp(req,res,next);}
-  catch {res.status(503).json({error:'Configure DATABASE_URL, TRACKER_PASSWORD (16+ characters), and TRACKER_SESSION_SECRET (32+ characters) for this Vercel project.'});}
+  catch {res.status(503).json({error:'Configure FIREBASE_PROJECT_ID, FIREBASE_SERVICE_ACCOUNT_JSON, TRACKER_PASSWORD (16+ characters), and TRACKER_SESSION_SECRET (32+ characters) for this Vercel project.'});}
 });
 export default vercelApp;
 
