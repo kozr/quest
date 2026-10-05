@@ -18,12 +18,12 @@ const iso = now => new Date(now).toISOString();
 
 export function qualificationSettings(env = process.env, now = Date.now()) {
   const enabled = env.TRACKER_AI_ENABLED === 'true';
-  const mode = ['test','ongoing'].includes(env.TRACKER_AI_MODE) ? env.TRACKER_AI_MODE : 'ongoing';
+  const mode = env.TRACKER_AI_MODE === undefined ? 'ongoing' : ['test','ongoing'].includes(env.TRACKER_AI_MODE) ? env.TRACKER_AI_MODE : null;
   const dollars = Number(env.TRACKER_AI_DAILY_BUDGET_USD || 0), maxCalls = Number(env.TRACKER_AI_DAILY_MAX_CALLS || 2000);
   const until = Date.parse(env.TRACKER_AI_BUDGET_UNTIL || '');
   // The owner's approved tracker allowance is $2 per Pacific day. A larger
   // environment value cannot raise it. Homiegraph has no access to this ledger.
-  const budgetReady = Number.isFinite(dollars) && dollars > 0 && dollars <= 2 && Number.isSafeInteger(maxCalls) && maxCalls > 0 && maxCalls <= 2000 && (!env.TRACKER_AI_BUDGET_UNTIL || Number.isFinite(until) && until > now);
+  const budgetReady = mode && Number.isFinite(dollars) && dollars > 0 && dollars <= 2 && Number.isSafeInteger(maxCalls) && maxCalls > 0 && maxCalls <= 2000 && (!env.TRACKER_AI_BUDGET_UNTIL || Number.isFinite(until) && until > now);
   const configured = Boolean(env.TRACKER_OPENAI_API_KEY) && budgetReady;
   return {enabled, configured, active:enabled && configured, mode, model:QUALIFICATION_MODEL,
     budgetMicroUsd: Math.floor(dollars * 1e6), maxCalls, until: Number.isFinite(until) ? until : Infinity,
@@ -123,12 +123,12 @@ export function stageQualifications(data, product, rows, searchedAt, trigger) {
     data.qualificationMigrations[product.id]={at:searchedAt,redditBefore:previousCheck(prior,'reddit'),linkedinBaseline:Boolean(previousCheck(prior,'linkedin'))};
   }
   const migration=data.qualificationMigrations[product.id], profile=profileSnapshot(product);
-  let pending=0, skipped=0;
+  let pending=0, skipped=0, historyFull=false;
   for(const value of rows.slice(0,300)) {
     const identity=canonicalPost(value); if(!identity || identity.platform==='reddit' && !product.communities?.includes(identity.subreddit) || identity.platform==='linkedin' && !product.linkedin)continue;
     const key=qualificationKey(product.id,identity.identity);
     if(data.qualifications[key]) {skipped++;continue;}
-    if(Object.keys(data.qualifications).length>=10000) throw Error('The qualification history has reached its limit. No additional AI requests were started.');
+    if(Object.keys(data.qualifications).length>=10000) {historyFull=true;skipped++;continue;}
     const published=Date.parse(value.publishedAt||''), cutoff=Date.parse(migration.redditBefore||'');
     const historical=identity.platform==='reddit' && Number.isFinite(cutoff) && (!Number.isFinite(published)||published<=cutoff) || identity.platform==='linkedin' && migration.linkedinBaseline;
     const row={...value,url:identity.url,title:text(value.title,1000),snippet:text(value.snippet,3000)};
@@ -138,7 +138,7 @@ export function stageQualifications(data, product, rows, searchedAt, trigger) {
     if(status==='pending')pending++;else skipped++;
   }
   if(rows.some(row=>canonicalPost(row)?.platform==='linkedin')) migration.linkedinBaseline=false;
-  return {pending,skipped};
+  return {pending,skipped,...(historyFull?{historyFull}: {})};
 }
 function retireRunning(data, job, now) {
   if(job.status!=='running' || job.leaseUntil>now)return;
@@ -204,9 +204,9 @@ export function createQualificationProvider({env=process.env,fetchImpl=fetch}={}
 export async function processQualification(store,settings,provider,{productId,now=Date.now()}={}) {
   if(!settings.active || !provider)return {status:'disabled'};
   const job=await store.claimQualification(settings,now,productId);if(!job)return {status:'idle'};
-  let outcome;
-  try {const result=await provider.qualify(job);outcome={assessment:resolveQualification(result.value,job),costMicroUsd:result.costMicroUsd,requestId:result.requestId};if(!Number.isSafeInteger(outcome.costMicroUsd)||outcome.costMicroUsd<0)throw Error('invalid_usage');}
-  catch {outcome={};}
+  let outcome,result;
+  try {result=await provider.qualify(job);outcome={assessment:resolveQualification(result.value,job),costMicroUsd:result.costMicroUsd,requestId:result.requestId};if(!Number.isSafeInteger(outcome.costMicroUsd)||outcome.costMicroUsd<0)throw Error('invalid_usage');}
+  catch {outcome={...(Number.isSafeInteger(result?.costMicroUsd)&&result.costMicroUsd>=0?{costMicroUsd:Math.max(job.reservationMicroUsd,result.costMicroUsd)}:{}),...(typeof result?.requestId==='string'?{requestId:text(result.requestId,120)}:{})};}
   return await store.finishQualification(job.key,job.token,outcome,Date.now()) || {status:'uncertain'};
 }
 

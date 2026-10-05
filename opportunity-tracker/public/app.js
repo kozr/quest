@@ -79,6 +79,7 @@ function renderCoverage() {
   $('coverage-summary').textContent=latest?`Search coverage · last checked ${new Date(latest).toLocaleString()}`:'Search coverage';
   for(const {product,search} of searches) {
     if(!selected) $('source-status').append(node('h3',product.name));
+    if(search.qualification?.historyFull) $('source-status').append(node('p','AI processing history is full. New posts cannot enter AI review; source collection and existing matches remain available.',{class:'secondary'}));
     for(const source of search.sources||[]) {
       const row=node('div',null,{class:'source-record'});
       const label=source.status==='ok'?`Checked${Number.isFinite(source.count)?` · ${source.count} matches`:''}`:source.status==='unconfigured'?'Not configured':'Could not check';

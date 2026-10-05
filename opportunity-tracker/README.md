@@ -136,9 +136,10 @@ Website imports validate public addresses, pin DNS results, revalidate redirects
 ```sh
 npm test --prefix opportunity-tracker
 node opportunity-tracker/test/browser-check.mjs
+node opportunity-tracker/test/browser-qualification-check.mjs
 ```
 
-Tests use temporary stores, the local Firestore emulator, and scripted discovery results; no paid requests or real outreach are involved. Hosted integration tests execute actual Firebase Admin transactions and cover concurrent mutations, instance-independent sessions, shared search locks, snapshots larger than one document, and credential-safe failures. To include the Firestore integration tests, start the repository’s Firestore emulator and run `FIRESTORE_EMULATOR_HOST=127.0.0.1:8088 npm test --prefix opportunity-tracker`. Without the emulator, those four integration tests are explicitly skipped. They use the demo project `demo-opportunity-tracker` and unique fixture workspaces, never a cloud database. The browser check uses the repository's installed Playwright and Chrome when available. Separate public network smoke checks verify actual source/metadata responses.
+Tests use temporary stores, the local Firestore emulator, and scripted discovery results; no paid requests or real outreach are involved. Hosted integration tests execute actual Firebase Admin transactions and cover concurrent mutations, instance-independent sessions, shared search locks, snapshots larger than one document, and credential-safe failures. To include the Firestore integration tests, start the repository’s Firestore emulator and run `FIRESTORE_EMULATOR_HOST=127.0.0.1:8088 npm test --prefix opportunity-tracker`. Without the emulator, database integration tests are explicitly skipped. They use the demo project `demo-opportunity-tracker` and unique fixture workspaces, never a cloud database. Browser checks use the repository's installed Playwright and Chrome when available. Separate public network smoke checks verify actual source/metadata responses.
 
 
 ## Product setup and continuous Reddit checks

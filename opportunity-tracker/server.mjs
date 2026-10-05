@@ -188,8 +188,9 @@ export function createTrackerApp({ dataDirectory = process.env.TRACKER_DATA_DIR 
     if(new Set(items.map(i=>i.id)).size!==items.length) throw new Error('The backup has duplicate matches.');
     // Qualification evidence comes from validated receipts, not arbitrary
     // imported item metadata. Human status and notes retain backup semantics.
+    const receipts=new Map(Object.values(history.qualifications||{}).filter(job=>job.status==='qualified').map(job=>[`${job.productId}:${job.url}`,job]));
     for(const item of items) {
-      const receipt=Object.values(history.qualifications||{}).find(job=>job.productId===item.productId&&job.url===item.url&&job.status==='qualified');
+      const receipt=receipts.get(`${item.productId}:${item.url}`);
       if(receipt?.assessment)item.qualification={model:receipt.model,promptVersion:receipt.promptVersion,...receipt.assessment};
     }
     await store.importData({version:1,products,items,searches:{},...history});res.json({ok:true});

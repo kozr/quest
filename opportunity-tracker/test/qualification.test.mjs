@@ -121,14 +121,26 @@ test('$2 daily aggregate cap reserves before dispatch, persists across products 
 });
 test('disabled, missing-key, unapproved/expired budget, per-day call cap and test worker mode start zero requests',async t=>{
   const {store,p}=await fixture(t);stage(store,p,[row()]);let calls=0;const provider={qualify:async()=>{calls++;return {value:rejected,costMicroUsd:100};}};
-  for(const settings of [qualificationSettings({}),qualificationSettings({...env,TRACKER_OPENAI_API_KEY:''}),qualificationSettings({...env,TRACKER_AI_DAILY_BUDGET_USD:'3'}),qualificationSettings({...env,TRACKER_AI_BUDGET_UNTIL:'2020-01-01'})])assert.equal((await processQualification(store,settings,provider)).status,'disabled');
+  for(const settings of [qualificationSettings({}),qualificationSettings({...env,TRACKER_OPENAI_API_KEY:''}),qualificationSettings({...env,TRACKER_AI_DAILY_BUDGET_USD:'3'}),qualificationSettings({...env,TRACKER_AI_MODE:'misspelled'}),qualificationSettings({...env,TRACKER_AI_BUDGET_UNTIL:'2020-01-01'})])assert.equal((await processQualification(store,settings,provider)).status,'disabled');
   assert.equal((await processQualification(store,qualificationSettings({...env,TRACKER_AI_MODE:'test'}),provider)).status,'idle');assert.equal(calls,0);
   const settings=qualificationSettings({...env,TRACKER_AI_DAILY_MAX_CALLS:'1'});assert.equal((await processQualification(store,settings,provider,{productId:p.id})).status,'rejected');stage(store,p,[row('bc234')]);assert.equal((await processQualification(store,settings,provider,{productId:p.id})).status,'idle');assert.equal(calls,1);
+});
+test('a full durable history stops new AI jobs while retaining free collection receipts and mentions',async t=>{
+  const {store,p}=await fixture(t),data=store.snapshot();
+  data.qualifications=Object.fromEntries(Array.from({length:10000},(_,index)=>{const identity=`reddit:a${index}`,key=qualificationKey(p.id,identity);return [key,{key,productId:p.id,identity,status:'legacy_processed'}];}));store.commit(data);
+  stage(store,p,[row('new123')],{items:[{source:'Hacker News',kind:'mention',url:'https://news.ycombinator.com/item?id=123',title:'Figure Shelf fixture'}]});
+  assert.equal(store.snapshot().searches[p.id].qualification.historyFull,true);assert.equal(store.snapshot().items.length,1);assert.equal(Object.keys(store.snapshot().qualifications).length,10000);assert.equal(store.claimQualification(qualificationSettings(env),Date.now()),null);
 });
 test('reported cost beyond the reserved maximum permanently stops paid dispatch',async t=>{
   const {store,p}=await fixture(t);stage(store,p,[row(),row('bc234')]);const job=store.claimQualification(qualificationSettings(env),Date.now());
   store.finishQualification(job.key,job.token,{assessment:resolveQualification(rejected,job),costMicroUsd:job.reservationMicroUsd+1},Date.now());
   assert.equal(store.snapshot().aiBudget.overrun,true);assert.equal(store.claimQualification(qualificationSettings(env),Date.now()+86400000),null);
+});
+test('invalid assessment retains the safe response ID and cannot hide a known charge overrun',async t=>{
+  const {store,p}=await fixture(t);stage(store,p,[row(),row('bc234')]);const reserve=reservationMicroUsd(Object.values(store.snapshot().qualifications)[0]);
+  assert.equal((await processQualification(store,qualificationSettings(env),mock({...rejected,decision:'invalid'},reserve+1))).status,'uncertain');
+  const receipt=Object.values(store.snapshot().qualifications).find(job=>job.status==='uncertain');assert.equal(receipt.requestId,'fixture-response');assert.equal(receipt.chargedMicroUsd,reserve+1);assert.equal(store.snapshot().aiBudget.overrun,true);
+  assert.equal(store.claimQualification(qualificationSettings(env),Date.now()),null);
 });
 test('restoring an older backup cannot erase rejection, uncertain holds or daily spend; pending imports never replay',async t=>{
   const {store,p}=await fixture(t);const old=store.snapshot();stage(store,p,[row(),row('bc234')]);await processQualification(store,qualificationSettings(env),mock(rejected));
