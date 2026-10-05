@@ -11,6 +11,7 @@ import {discover} from '../discovery.mjs';
 import {createTrackerApp, validateProduct} from '../server.mjs';
 import {dueProducts, MONITOR_INTERVAL_MS} from '../monitor.mjs';
 import {CollectionError} from '../reddit/http.mjs';
+import {createServer} from 'node:http';
 
 const id = '7507254982996332545';
 const permalink = `/posts/demo-person_product-tracking-share-${id}-AbCd`;
@@ -86,6 +87,27 @@ test('MCP tool errors and malformed replies fail closed; failures are not cached
   }});
   for (let i = 0; i < 2; i++) await assert.rejects(collector.search({query: 'fixture'}), /session_required/);
   assert.equal(starts, 2);
+});
+
+test('real HTTP transport preserves MCP loopback authority on a private connection', async t => {
+  const calls = [];
+  const server = createServer(async (req, res) => {
+    calls.push({method: req.method, host: req.headers.host});
+    if (req.method === 'DELETE') {res.writeHead(204); return res.end();}
+    const chunks = []; for await (const chunk of req) chunks.push(chunk);
+    const body = JSON.parse(Buffer.concat(chunks));
+    if (!body.id) {res.writeHead(202); return res.end();}
+    res.writeHead(200, {'Content-Type': 'text/event-stream', 'Mcp-Session-Id': 'test-session'});
+    const result = body.method === 'initialize' ? {protocolVersion: '2025-03-26'} : {structuredContent: fixture()};
+    res.end(`event: message\ndata: ${JSON.stringify({jsonrpc: '2.0', id: body.id, result})}\n\n`);
+  }).listen(0, '127.0.0.1');
+  await once(server, 'listening'); t.after(() => new Promise(resolve => server.close(resolve)));
+  const port = server.address().port;
+  const collector = new LinkedInCollector({endpoint: `http://localhost:${port}/mcp`});
+  const result = await collector.search({query: 'fixture', signal: AbortSignal.timeout(2000)});
+  assert.equal(result.rows.length, 1);
+  assert(calls.every(call => call.host === `127.0.0.1:${port}`));
+  assert.equal(calls.length, 4);
 });
 
 test('gateway enforces existing bearer auth, bounded inputs, one LinkedIn call at a time, safe failures, and Redlib compatibility', async t => {

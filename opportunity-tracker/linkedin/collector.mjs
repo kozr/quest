@@ -1,4 +1,22 @@
 import {CollectionError, readText} from '../reddit/http.mjs';
+import {request as httpRequest} from 'node:http';
+import {Readable} from 'node:stream';
+
+// Fetch rewrites Host on this Node runtime. A bounded HTTP request preserves
+// the upstream authority, supports cancellation, and never follows redirects.
+function privateMCPFetch(url, {method, headers, body, signal}) {
+  return new Promise((resolve, reject) => {
+    const request = httpRequest(url, {method, headers, signal}, response => {
+      const responseHeaders = new Headers();
+      for (const [name, value] of Object.entries(response.headers)) if (value !== undefined) responseHeaders.set(name, Array.isArray(value) ? value.join(', ') : value);
+      const noBody = [204, 205, 304].includes(response.statusCode);
+      if (noBody) response.resume();
+      resolve(new Response(noBody ? null : Readable.toWeb(response), {status: response.statusCode, headers: responseHeaders}));
+    });
+    request.on('error', reject);
+    request.end(body);
+  });
+}
 
 const clean = value => typeof value === 'string' ? value.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '').replace(/\s+/g, ' ').trim() : '';
 function referenceURL(value) {
@@ -76,7 +94,7 @@ function rpcMessage(text, id, contentType) {
 }
 
 export class LinkedInCollector {
-  constructor({endpoint = process.env.LINKEDIN_MCP_URL, fetchImpl = fetch, now = Date.now} = {}) {
+  constructor({endpoint = process.env.LINKEDIN_MCP_URL, fetchImpl = privateMCPFetch, now = Date.now} = {}) {
     if (!endpoint) throw new Error('Configure the private LINKEDIN_MCP_URL on OVH.');
     const url = new URL(endpoint);
     if (url.protocol !== 'http:' || !['127.0.0.1', 'localhost', 'mcp', 'querylane-linkedin-mcp-mcp-1'].includes(url.hostname) || url.pathname !== '/mcp' || url.username || url.password || url.search || url.hash) throw new Error('Use the existing private LinkedIn MCP endpoint.');
