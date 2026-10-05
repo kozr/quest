@@ -37,8 +37,18 @@ section { min-width: 0; }
 .product-choice { text-align: left; width: 100%; overflow-wrap: anywhere; }
 .product-info { display: flex; align-items: center; justify-content: space-between; gap: .5rem; font-size: .875rem; margin-top: .4rem; }
 .product-info button { min-height: 2rem; padding: .1rem .4rem; font-size: .875rem; }
-#product-form { border-top: 1px solid #aaa; padding-top: 1rem; margin-top: 1.25rem; }
-form > label { display: block; margin-top: .8rem; margin-bottom: .25rem; font-size: .875rem; font-weight: 600; }
+#product-form { border-top: 1px solid #aaa; border-bottom: 1px solid #ccc; padding: 1.25rem 0; margin-bottom: 1.5rem; max-width: 900px; }
+form > label, fieldset label, .setup-fields label { display: block; margin-top: .8rem; margin-bottom: .25rem; font-size: .875rem; font-weight: 600; }
+fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+legend { font-weight: 600; padding: 0; margin-bottom: .5rem; }
+#setup-details { max-width: 620px; }
+.setup-fields { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 2rem; }
+.checkbox-label { display: flex; gap: .6rem; align-items: flex-start; }
+.checkbox-label input { width: auto; margin-top: .3rem; flex: 0 0 auto; }
+#community-checks { padding-left: 1.25rem; font-size: .875rem; }
+#community-checks li { margin: .4rem 0; }
+.form-error { color: #8d2020; margin-top: .8rem; }
+#setup-summary p { overflow-wrap: anywhere; }
 #import-details { margin-top: .5rem; font-size: .875rem; }
 #import-message { margin: .5rem 0; }
 .form-actions { margin-top: 1rem; }
@@ -86,6 +96,6 @@ footer { border-top: 1px solid #ccc; padding: 1rem 1.5rem; color: #595959; font-
   #products { display: grid; grid-template-columns: repeat(auto-fit,minmax(180px,1fr)); gap: .4rem 1rem; }
   #all-products { width: auto; }
   .backup-actions { flex-wrap: wrap; }
-  #product-form { max-width: 600px; }
+  .setup-fields { grid-template-columns: 1fr; gap: 1rem; }
 }
 @media (prefers-reduced-motion: no-preference) { button { transition: background-color 100ms ease-out; } }

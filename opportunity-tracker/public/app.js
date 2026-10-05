@@ -4,6 +4,12 @@ let selected = null;
 let status = 'new';
 let editing = null;
 let searching = false;
+let setupStep = 1;
+let setupBusy = false;
+let setupGeneration = 0;
+let setupController;
+let generatedSignature;
+let communityChecks = [];
 
 function node(tag, text, attributes = {}) {
   const element = document.createElement(tag);
@@ -36,7 +42,7 @@ async function reload() {
   $('sign-out').hidden=state.storage!=='cloud';
   $('restore-toggle').hidden=false;
   document.querySelector('a[download]').hidden=false;
-  $('storage-status').textContent=state.storage==='cloud'?'Products, matches, and notes are saved in your private cloud tracker. Searches run when you choose Find matches.':'Products, matches, and notes are saved on this computer. Searches run when you choose Find matches.';
+  $('storage-status').textContent=(state.storage==='cloud'?'Products, matches, and notes are saved in your private cloud tracker.':'Products, matches, and notes are saved on this computer.')+' Enabled watchlists are checked every 30 minutes. Find matches runs a broader search when you choose.';
   if(selected&&!state.products.some(p=>p.id===selected)) selected=null;
   render();
 }
@@ -132,21 +138,108 @@ function render() {
   const product=state.products.find(p=>p.id===selected);
   $('inbox-heading').textContent=product?product.name:'Matches';
   $('product-summary').textContent=product?product.description||`Watching: ${product.keywords.join(', ')}`:'Opportunities and mentions for your products.';
+  $('tracking-summary').hidden=!product;
+  if(product) {
+    const last=state.searches[product.id]?.searchedAt;
+    const mode=product.monitoring?(state.monitoring?.available?'Automatic checks every 30 minutes':'Automatic checks unavailable'):'Automatic checks paused';
+    const count=product.communities?.length||0;
+    $('tracking-summary').textContent=`${mode} · ${count} ${count===1?'subreddit':'subreddits'} · ${last?`Last checked ${new Date(last).toLocaleString()}`:'No check yet'}`;
+  }
   $('find-matches').disabled=searching||state.products.length===0;
 }
+
+function setupError(message='') { $('setup-error').textContent=message;$('setup-error').hidden=!message; }
+function signature() {return JSON.stringify(['url','name','description'].map(key=>$(`product-${key}`).value));}
+function currentDetails() {return Object.fromEntries(['url','name','description'].map(key=>[key,$(`product-${key}`).value]));}
+function watchlist() {return [...new Set(lines($('product-communities').value).map(name=>name.replace(/^r\//i,'').toLowerCase()))];}
+function checkNames() {
+  const names=watchlist();
+  if(names.length>10||names.some(name=>! /^[a-z0-9_]{2,21}$/.test(name))) throw new Error('Use up to 10 subreddit names, without links or spaces.');
+  return names;
+}
+function renderCommunityChecks() {
+  $('community-checks').replaceChildren();
+  for(const name of watchlist()) {
+    const check=communityChecks.find(row=>row.name===name);
+    const row=node('li');row.append(link(`r/${name}`,`https://www.reddit.com/r/${encodeURIComponent(name)}/`));
+    row.append(document.createTextNode(` — ${check?.message||'Not checked yet.'}`));
+    $('community-checks').append(row);
+  }
+}
+function setSetupBusy(value) {
+  setupBusy=value;
+  ['details','profile','monitoring'].forEach((name,index)=>{$(`setup-${name}`).disabled=value||setupStep!==index+1;});
+  for(const id of ['setup-back','setup-next','save-product']) $(id).disabled=value;
+  $('product-form').setAttribute('aria-busy',String(value));
+}
+function showStep(value, focus=true) {
+  setupStep=value;setupError();
+  const labels=['Product details','Review tracking','Start tracking'];
+  ['details','profile','monitoring'].forEach((name,index)=>{$(`setup-${name}`).hidden=value!==index+1;});
+  $('setup-progress').textContent=`${labels[value-1]} · step ${value} of 3`;
+  $('setup-back').hidden=value===1;
+  $('setup-next').hidden=value===3;
+  $('setup-next').textContent=value===1?'Review tracking':'Continue';
+  $('save-product').hidden=value!==3;
+  if(value===3) {
+    const names=watchlist();
+    const available=Boolean(state.monitoring?.available)&&names.length>0;
+    $('product-monitoring').disabled=!available;
+    if(!available) $('product-monitoring').checked=false;
+    $('monitoring-help').textContent=!state.monitoring?.available?'Automatic checks are not configured on this server. You can save and use Find matches.':!names.length?'Add subreddits in the previous step to enable automatic checks. You can also save and search manually.':'Checks run every 30 minutes, even when this page is closed. Selected thread comments are revisited; coverage is partial.';
+    $('setup-summary').replaceChildren(node('h3',$('product-name').value),node('p',`Watchlist: ${names.length?names.map(name=>`r/${name}`).join(', '):'No communities selected'}`),node('p',`Search phrases: ${lines($('product-keywords').value).join(', ')}`));
+  }
+  setSetupBusy(setupBusy);
+  if(focus) document.querySelector(`#setup-${['details','profile','monitoring'][value-1]} legend`).focus();
+}
+async function generateProfile(replace=true) {
+  if(setupBusy) return false;
+  const generation=setupGeneration,source=signature();
+  setupController=new AbortController();setSetupBusy(true);setupError();
+  $('profile-message').textContent='Preparing suggestions and checking the communities…';
+  try {
+    const profile=await api('/profile',{method:'POST',body:JSON.stringify(currentDetails()),signal:setupController.signal});
+    if(generation!==setupGeneration||source!==signature()) return false;
+    for(const key of ['capabilities','needs','keywords','communities']) if(replace||!$(`product-${key}`).value.trim()) $(`product-${key}`).value=profile[key].join('\n');
+    communityChecks=profile.checks||[];renderCommunityChecks();
+    generatedSignature=source;$('profile-message').textContent=profile.message+(replace?'':' Your existing entries have been kept.');
+    return true;
+  } catch(error) {
+    if(generation===setupGeneration&&error.name!=='AbortError') {setupError(error.message);$('profile-message').textContent='Suggestions could not be prepared. You can enter the tracking profile yourself.';}
+    return false;
+  } finally {if(generation===setupGeneration) setSetupBusy(false);}
+}
+async function nextStep() {
+  if(setupBusy) return;
+  setupError();
+  if(setupStep===1) {
+    const generation=setupGeneration;
+    if(!['url','name','description'].every(key=>$(`product-${key}`).reportValidity())) return;
+    if(generatedSignature!==signature()) await generateProfile(!editing);
+    if(generation===setupGeneration&&!$('product-form').hidden) showStep(2);
+  } else if(setupStep===2) {
+    if(!$('product-keywords').reportValidity()) return;
+    try {checkNames();showStep(3);} catch(error){setupError(error.message);$('product-communities').focus();}
+  }
+}
 function openForm(product=null) {
+  setupController?.abort();setupGeneration++;setupBusy=false;
   editing=product?.id||null;
   $('product-form').reset();
   $('form-title').textContent=product?'Edit product':'Add product';
-  $('save-product').textContent=product?'Save changes':'Save and find matches';
+  $('save-product').textContent=product?'Save changes':'Start tracking';
   $('delete-product').hidden=!product;
-  if(product) for(const key of ['url','name','description','keywords','aliases','exclusions']) $(`product-${key}`).value=Array.isArray(product[key])?product[key].join('\n'):product[key]||'';
+  if(product) for(const key of ['url','name','description','capabilities','needs','communities','keywords','aliases','exclusions']) $(`product-${key}`).value=Array.isArray(product[key])?product[key].join('\n'):product[key]||'';
+  $('product-monitoring').checked=product?Boolean(product.monitoring):Boolean(state.monitoring?.available);
+  generatedSignature=product?.capabilities?.length?signature():null;communityChecks=[];renderCommunityChecks();
+  $('profile-message').textContent=product?'Review your saved needs, phrases, and watchlist. Refresh suggestions if the product has changed.':'Suggestions will be prepared from your product details.';
   $('product-form').hidden=false;
+  showStep(1,false);
   $('import-message').hidden=true;
   $('product-url').focus();
   $('product-form').scrollIntoView({block:'nearest'});
 }
-function closeForm() { $('product-form').hidden=true;editing=null;$('add-product').focus(); }
+function closeForm() {setupController?.abort();setupGeneration++;setupBusy=false;$('product-form').hidden=true;editing=null;$('add-product').focus();}
 async function findMatches(productIds) {
   if(searching) return;
   const ids=productIds||state.products.filter(p=>!selected||p.id===selected).map(p=>p.id);
@@ -171,34 +264,56 @@ async function findMatches(productIds) {
 $('add-product').addEventListener('click',()=>openForm());
 $('empty-add').addEventListener('click',()=>openForm());
 $('cancel-product').addEventListener('click',closeForm);
+$('setup-next').addEventListener('click',nextStep);
+$('setup-back').addEventListener('click',()=>showStep(setupStep-1));
+$('suggest-profile').addEventListener('click',()=>generateProfile());
+$('product-communities').addEventListener('input',()=>{communityChecks=[];renderCommunityChecks();});
+$('check-communities').addEventListener('click',async()=>{
+  if(setupBusy) return;
+  const generation=setupGeneration;
+  setupController=new AbortController();
+  try {
+    const names=checkNames();setSetupBusy(true);setupError();
+    $('community-message').hidden=false;$('community-message').textContent='Checking public subreddit feeds…';
+    const result=await api('/communities/check',{method:'POST',body:JSON.stringify({communities:names}),signal:setupController.signal});
+    if(generation!==setupGeneration) return;
+    communityChecks=result.checks;renderCommunityChecks();$('community-message').textContent='Checks finished. Communities that could not be checked remain unverified.';
+  } catch(error) {if(generation===setupGeneration&&error.name!=='AbortError') setupError(error.message);}
+  finally {if(generation===setupGeneration) setSetupBusy(false);}
+});
 $('all-products').addEventListener('click',()=>{selected=null;render();});
 $('kind-filter').addEventListener('change',renderMatches);
 $('text-filter').addEventListener('input',renderMatches);
 document.querySelectorAll('[data-status]').forEach(button=>button.addEventListener('click',()=>{status=button.dataset.status;renderMatches();}));
 $('find-matches').addEventListener('click',()=>findMatches());
 $('import-details').addEventListener('click',async()=>{
-  const button=$('import-details');button.disabled=true;button.textContent='Importing…';$('import-message').hidden=true;
+  const generation=setupGeneration;setupController=new AbortController();
+  const button=$('import-details');setSetupBusy(true);button.textContent='Importing…';$('import-message').hidden=true;
   try {
-    const product=await api('/metadata',{method:'POST',body:JSON.stringify({url:$('product-url').value})});
+    const product=await api('/metadata',{method:'POST',body:JSON.stringify({url:$('product-url').value}),signal:setupController.signal});
+    if(generation!==setupGeneration) return;
     $('product-url').value=product.url;$('product-name').value=product.name;$('product-description').value=product.description;
     if(!$('product-aliases').value) $('product-aliases').value=product.name;
-    $('import-message').textContent='Details imported. Check them and add the problems you want to watch for.';
-    $('product-keywords').focus();
-  } catch(error) { $('import-message').textContent=`${error.message} You can fill in the name and description yourself.`; }
-  finally { button.disabled=false;button.textContent='Import details from link';$('import-message').hidden=false; }
+    generatedSignature=null;$('import-message').textContent='Details imported. Check them, then choose Review tracking for suggestions.';
+    $('product-name').focus();
+  } catch(error) {if(generation===setupGeneration&&error.name!=='AbortError') $('import-message').textContent=`${error.message} You can fill in the name and description yourself.`;}
+  finally {if(generation===setupGeneration) {setSetupBusy(false);button.textContent='Import details from link';$('import-message').hidden=false;}}
 });
 $('product-form').addEventListener('submit',async event=>{
   event.preventDefault();
+  if(setupStep!==3) return nextStep();
+  if(setupBusy) return;
   const priorId=editing;const button=$('save-product');button.disabled=true;
   const product={};
   for(const key of ['url','name','description']) product[key]=$(`product-${key}`).value;
-  for(const key of ['keywords','aliases','exclusions']) product[key]=lines($(`product-${key}`).value);
+  for(const key of ['keywords','aliases','exclusions','capabilities','needs']) product[key]=lines($(`product-${key}`).value);
+  product.communities=watchlist();product.monitoring=$('product-monitoring').checked;
   if(!product.aliases.length) product.aliases=[product.name];
   try {
     const result=await api(priorId?`/products/${priorId}`:'/products',{method:priorId?'PUT':'POST',body:JSON.stringify(product)});
     selected=result.product.id;status='new';closeForm();await reload();notice('Product saved.');
     if(!priorId) await findMatches([result.product.id]);
-  } catch(error) { notice(error.message,true); }
+  } catch(error) { setupError(error.message); }
   finally { button.disabled=false; }
 });
 $('delete-product').addEventListener('click',async()=>{
@@ -214,6 +329,7 @@ $('restore-form').addEventListener('submit',async event=>{
   try { if(file.size>2_000_000) throw new Error('The backup is too large.');const data=JSON.parse(await file.text());await api('/import',{method:'POST',body:JSON.stringify(data)});selected=null;restoreVisibility(false);await reload();notice('Backup restored.'); } catch(error) { notice(error.message,true); }
 });
 function showLogin() {
+  setupController?.abort();setupGeneration++;$('product-form').hidden=true;
   state={products:[],items:[],searches:{},busy:[]};selected=null;
   $('workspace').hidden=true;$('login-view').hidden=false;$('sign-out').hidden=true;
   $('restore-toggle').hidden=true;document.querySelector('a[download]').hidden=true;
@@ -236,3 +352,6 @@ async function start() {
   } else await reload();
 }
 start().catch(error=>{notice(`Could not load the tracker: ${error.message} Refresh to try again.`,true);$('empty-heading').textContent='Tracker unavailable';$('empty-message').textContent='Check the tracker configuration, then refresh this page.';});
+setInterval(()=>{
+  if(document.visibilityState==='visible'&&state.token&&!searching&&$('product-form').hidden&&!document.activeElement?.matches('input, textarea, select')&&!document.querySelector('.match details[open]')) reload().catch(()=>{});
+},60000);

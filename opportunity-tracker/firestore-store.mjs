@@ -142,6 +142,7 @@ export class FirestoreStore {
   }
   deleteProduct(id) { return this.record('deleteProduct',id); }
   recordSearch(id,result) { return this.record('recordSearch',id,result); }
+  markMonitorAttempt(id) { return this.record('markMonitorAttempt',id); }
   updateItem(id,update) { return this.record('updateItem',id,update); }
   importData(value) {
     return this.mutate(data=>{

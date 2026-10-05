@@ -1,5 +1,5 @@
 import express from 'express';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 import { Store } from './store.mjs';
@@ -7,6 +7,9 @@ import { importMetadata, publicUrl } from './metadata.mjs';
 import { discover } from './discovery.mjs';
 import { configuredFirestore, FirestoreBackend, FirestoreStore } from './firestore-store.mjs';
 import { createAuth } from './auth.mjs';
+import {suggestProfile, checkCommunities, validateProfile, profileInput} from './profile.mjs';
+import {createRedditAdapter} from './reddit/adapters.mjs';
+import {dueProducts, startLocalMonitoring} from './monitor.mjs';
 
 const directory = dirname(fileURLToPath(import.meta.url));
 const list = (value, max = 12) => {
@@ -20,10 +23,10 @@ export function validateProduct(value) {
   const url = publicUrl(value.url).href;
   const keywords = list(value.keywords);
   if (!keywords.length) throw new Error('Add at least one phrase describing a problem your product solves.');
-  return { name: value.name.trim(), description: value.description.trim(), url, type: new URL(url).hostname === 'apps.apple.com' ? 'app_store' : 'website', keywords, aliases: list(value.aliases || [value.name]), exclusions: list(value.exclusions || []) };
+  return { name: value.name.trim(), description: value.description.trim(), url, type: new URL(url).hostname === 'apps.apple.com' ? 'app_store' : 'website', keywords, aliases: list(value.aliases || [value.name]), exclusions: list(value.exclusions || []), ...validateProfile(value) };
 }
 
-export function createTrackerApp({ dataDirectory = process.env.TRACKER_DATA_DIR || join(directory, '.local'), discoverFn = discover, metadataFn = importMetadata, store: providedStore, hosted = false, password = process.env.TRACKER_PASSWORD, sessionSecret = process.env.TRACKER_SESSION_SECRET, firebaseProjectId = process.env.FIREBASE_PROJECT_ID, firebaseServiceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON, workspace = process.env.TRACKER_WORKSPACE || (process.env.VERCEL_ENV === 'preview' ? 'preview' : 'personal') } = {}) {
+export function createTrackerApp({ dataDirectory = process.env.TRACKER_DATA_DIR || join(directory, '.local'), discoverFn = discover, metadataFn = importMetadata, profileFn = suggestProfile, redditAdapter, monitorToken = process.env.TRACKER_MONITOR_TOKEN, store: providedStore, hosted = false, password = process.env.TRACKER_PASSWORD, sessionSecret = process.env.TRACKER_SESSION_SECRET, firebaseProjectId = process.env.FIREBASE_PROJECT_ID, firebaseServiceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON, workspace = process.env.TRACKER_WORKSPACE || (process.env.VERCEL_ENV === 'preview' ? 'preview' : 'personal') } = {}) {
   const auth = hosted ? createAuth({password,secret:sessionSecret}) : null;
   const store = providedStore || (hosted ? new FirestoreStore(new FirestoreBackend(configuredFirestore({projectId:firebaseProjectId,serviceAccountJson:firebaseServiceAccountJson}),workspace)) : new Store(dataDirectory));
   const app = express();
@@ -32,6 +35,25 @@ export function createTrackerApp({ dataDirectory = process.env.TRACKER_DATA_DIR 
   const loginAttempts = [];
   const allowedHosts = new Set(['127.0.0.1', 'localhost', '[::1]']);
   const busyIds = async () => store.activeSearches ? await store.activeSearches() : [...busy];
+  const monitoringAvailable = !hosted || typeof monitorToken === 'string' && monitorToken.length >= 32;
+  async function runSearch(id, scheduled = false) {
+    const snapshot = await store.snapshot();
+    const product = snapshot.products.find(row => row.id === id);
+    if (!product) {const error = new Error('Product not found.'); error.status = 404; throw error;}
+    if (scheduled && !dueProducts(snapshot).some(row => row.id === id)) return null;
+    let lease;
+    if (store.claimSearch) lease = await store.claimSearch(id);
+    else if (!busy.has(id)) {busy.add(id); lease = true;}
+    if (!lease) {const error = new Error('A search is already running for this product.');error.status = 409;throw error;}
+    try {
+      if (scheduled && !await store.markMonitorAttempt(id)) return null;
+      const recentThreads = snapshot.items.filter(row => row.productId === id && row.source?.startsWith('Reddit') && Date.parse(row.lastSeenAt || row.foundAt) > Date.now() - 7 * 86400000).slice(0, 4).map(row => row.url);
+      const result = await discoverFn(structuredClone(product), {watchOnly: scheduled, recentThreads});
+      await store.recordSearch(id, {...result, trigger: scheduled ? 'scheduled' : 'manual'});
+      const data = await store.snapshot();
+      return {search: data.searches[id], items: data.items.filter(row => row.productId === id)};
+    } finally {if (store.releaseSearch) await store.releaseSearch(id, lease);else busy.delete(id);}
+  }
   app.disable('x-powered-by');
   if(hosted) app.set('trust proxy',1);
   app.use((req,res,next) => {
@@ -39,6 +61,12 @@ export function createTrackerApp({ dataDirectory = process.env.TRACKER_DATA_DIR 
     res.set({ 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer', 'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'" });
     if(req.path.startsWith('/api/')) {
       res.set('Cache-Control','no-store');
+      if (req.path === '/api/monitor' || req.path.startsWith('/api/monitor/')) {
+        const expected = Buffer.from(typeof monitorToken === 'string' && monitorToken.length >= 32 ? `Bearer ${monitorToken}` : '');
+        const provided = Buffer.from(req.get('authorization') || '');
+        if (!expected.length || provided.length !== expected.length || !timingSafeEqual(provided, expected)) return res.status(401).json({error: 'unauthorized'});
+        return next();
+      }
       if(req.method!=='GET' && req.get('origin') && req.get('origin')!==`${req.protocol}://${req.get('host')}`) return res.status(403).json({error:'This request came from another website.'});
       if(req.path==='/api/auth' || req.path==='/api/login') return next();
       if(auth&&!auth.authenticated(req)) return res.status(401).json({error:'Sign in to open your tracker.'});
@@ -56,33 +84,42 @@ export function createTrackerApp({ dataDirectory = process.env.TRACKER_DATA_DIR 
     auth.login(res); res.json({ok:true});
   });
   app.post('/api/logout',(_req,res)=>{auth?.logout(res);res.json({ok:true});});
-  app.get('/api/state',async(req,res)=>res.json({...await store.snapshot(),token:auth?auth.csrf(req):token,busy:await busyIds(),storage:hosted?'cloud':'local'}));
+  app.get('/api/state',async(req,res)=>res.json({...await store.snapshot(),token:auth?auth.csrf(req):token,busy:await busyIds(),storage:hosted?'cloud':'local',monitoring:{available:monitoringAvailable,intervalMinutes:30}}));
+  app.get('/api/monitor', async(_req, res) => res.json({ids: dueProducts(await store.snapshot()).map(product => product.id)}));
+  app.post('/api/monitor/:id', async(req, res) => {
+    const result = await runSearch(req.params.id, true);
+    if (!result) return res.status(204).end();
+    res.json({ok:true, found:result.search?.found || 0});
+  });
   app.post('/api/metadata',async(req,res)=>{if(typeof req.body.url!=='string') throw new Error('Enter a URL.');res.json(await metadataFn(req.body.url));});
+  app.post('/api/profile', async(req,res) => {
+    const product = profileInput(req.body);
+    const profile = await profileFn(product);
+    let adapter = redditAdapter;
+    try {adapter ||= createRedditAdapter();} catch { /* Leave suggestions explicitly unverified. */ }
+    const checks = await checkCommunities(profile.communities, {adapter});
+    res.json({...profile, checks});
+  });
+  app.post('/api/communities/check', async(req,res) => {
+    let adapter = redditAdapter;
+    try {adapter ||= createRedditAdapter();} catch { /* Leave unavailable checks visible. */ }
+    res.json({checks: await checkCommunities(req.body.communities, {adapter})});
+  });
   app.post('/api/products',async(req,res)=>{
     if((await store.snapshot()).products.length>=100) throw new Error('The tracker supports up to 100 products.');
-    res.status(201).json({product:await store.saveProduct(validateProduct(req.body))});
+    const product=validateProduct(req.body);
+    if(product.monitoring && !monitoringAvailable) throw new Error('Automatic checks are not configured yet. Turn them off to save this product.');
+    res.status(201).json({product:await store.saveProduct(product)});
   });
   app.put('/api/products/:id',async(req,res)=>{
-    const product=await store.saveProduct(validateProduct(req.body),req.params.id);
+    const input=validateProduct(req.body);
+    if(input.monitoring && !monitoringAvailable) throw new Error('Automatic checks are not configured yet. Turn them off to save this product.');
+    const product=await store.saveProduct(input,req.params.id);
     if(!product) return res.status(404).json({error:'Product not found.'}); res.json({product});
   });
   app.delete('/api/products/:id',async(req,res)=>{await store.deleteProduct(req.params.id);res.json({ok:true});});
   app.post('/api/products/:id/search',async(req,res)=>{
-    const product=(await store.snapshot()).products.find(p=>p.id===req.params.id);
-    if(!product) return res.status(404).json({error:'Product not found.'});
-    let lease;
-    if(store.claimSearch) lease=await store.claimSearch(product.id);
-    else if(!busy.has(product.id)) {busy.add(product.id);lease=true;}
-    if(!lease) return res.status(409).json({error:'A search is already running for this product.'});
-    try {
-      const result=await discoverFn(structuredClone(product));
-      await store.recordSearch(product.id,result);
-      const data=await store.snapshot();
-      res.json({search:data.searches[product.id],items:data.items.filter(i=>i.productId===product.id)});
-    } finally {
-      if(store.releaseSearch) await store.releaseSearch(product.id,lease);
-      else busy.delete(product.id);
-    }
+    res.json(await runSearch(req.params.id));
   });
   app.patch('/api/items/:id',async(req,res)=>{
     const update={};
@@ -120,7 +157,7 @@ export function createTrackerApp({ dataDirectory = process.env.TRACKER_DATA_DIR 
   });
   app.use(express.static(join(directory,'public')));
   app.use((err,_req,res,_next)=>res.status(err.status||400).json({error:err.type==='entity.too.large'?'The backup is too large.':err.message||'The request failed. Try again.'}));
-  return {app,store};
+  return {app,store,runSearch};
 }
 
 // Vercel imports the default Express export. Configuration is evaluated on the
@@ -136,5 +173,7 @@ export default vercelApp;
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const port=Number(process.env.TRACKER_PORT||4322);
   if(!Number.isInteger(port)||port<1024||port>65535) throw new Error('Use a TRACKER_PORT between 1024 and 65535.');
-  createTrackerApp().app.listen(port,'127.0.0.1',()=>console.log(`Product tracker: http://127.0.0.1:${port}`));
+  const tracker=createTrackerApp();
+  tracker.app.listen(port,'127.0.0.1',()=>console.log(`Product tracker: http://127.0.0.1:${port}`));
+  startLocalMonitoring({...tracker,onError:()=>console.error('Local monitoring could not complete a check; retrying later.')});
 }

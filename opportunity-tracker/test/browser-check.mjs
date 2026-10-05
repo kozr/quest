@@ -11,7 +11,7 @@ const dataDirectory=await mkdtemp(join(tmpdir(),'product-tracker-browser-'));
 const screenshots=join(directory,'.impeccable','review');
 await mkdir(screenshots,{recursive:true});
 let calls=0;
-const {app,store}=createTrackerApp({dataDirectory,metadataFn:async url=>({url,name:'Pilot',description:'A habit tracker for daily routines.',type:'website'}),discoverFn:async product=>{
+const {app,store}=createTrackerApp({dataDirectory,metadataFn:async url=>({url,name:'Pilot',description:'A habit tracker for daily routines.',type:'website'}),profileFn:async()=>({capabilities:['A habit tracker for daily routines.'],needs:['Keep track of daily habits.'],keywords:['habit tracking','daily routine'],communities:['habits'],message:'Scripted profile suggestions for browser testing.'}),redditAdapter:{list:async()=>({rows:[{}]})},discoverFn:async product=>{
   calls++;
   const at=new Date().toISOString();
   return {searchedAt:at,sources:[{name:'Hacker News',status:'ok',count:2,message:'Scripted test fixture, not live discovery.',queries:[{label:'Search habit tracking',url:'https://hn.algolia.com/?q=habit%20tracking'}]},{name:'Reddit',status:'error',message:'Scripted blocked-source fixture.',queries:[{label:'Search Reddit',url:'https://www.reddit.com/search/?q=habit%20tracking'}]}],items:[
@@ -34,11 +34,25 @@ try {
   await page.locator('#product-url').fill('https://pilot.dev');
   await page.getByRole('button',{name:'Import details from link'}).click();
   await page.getByText('Details imported. Check them').waitFor();
+  await page.getByRole('button',{name:'Review tracking',exact:true}).click();
+  await page.getByText('Scripted profile suggestions for browser testing.').waitFor();
+  assert.equal(await page.locator('#product-capabilities').inputValue(),'A habit tracker for daily routines.');
+  assert.equal(await page.locator('#product-communities').inputValue(),'habits');
+  await page.getByText('Recent public posts retrieved.',{exact:false}).waitFor();
   await page.locator('#product-keywords').fill('habit tracking\ndaily routine');
-  await page.getByRole('button',{name:'Save and find matches'}).click();
+  await page.locator('#product-communities').fill('https://reddit.com/r/habits');
+  await page.getByRole('button',{name:'Continue',exact:true}).click();
+  await page.getByText('Use up to 10 subreddit names, without links or spaces.').waitFor();
+  await page.locator('#product-communities').fill('r/Habits');
+  await page.getByRole('button',{name:'Continue',exact:true}).click();
+  assert.equal(await page.locator('#product-monitoring').isChecked(),true);
+  await page.getByRole('button',{name:'Start tracking',exact:true}).click();
   await page.getByText('Search finished. Review the matches').waitFor();
   assert.equal(await page.locator('.match').count(),2);
   assert.equal(calls,1);
+  assert.deepEqual(store.data.products[0].communities,['habits']);
+  assert.equal(store.data.products[0].monitoring,true);
+  assert.deepEqual(store.data.products[0].needs,['Keep track of daily habits.']);
   await page.locator('#kind-filter').selectOption('opportunity');
   assert.equal(await page.locator('.match').count(),1);
   await page.locator('.match').getByRole('button',{name:'Save',exact:true}).click();
@@ -71,9 +85,14 @@ try {
   await page.locator('#kind-filter').selectOption('all');
   await page.getByRole('button',{name:'Edit Pilot',exact:true}).click();
   await page.locator('#product-description').fill('A simple habit tracker that helps people maintain daily routines.');
+  await page.getByRole('button',{name:'Review tracking',exact:true}).click();
+  await page.locator('#setup-profile').waitFor({state:'visible'});
+  await page.getByRole('button',{name:'Continue',exact:true}).click();
+  await page.locator('#product-monitoring').uncheck();
   await page.getByRole('button',{name:'Save changes',exact:true}).click();
   await page.getByText('Product saved.',{exact:true}).waitFor();
   assert.equal(calls,2,'Editing a product does not silently trigger discovery');
+  assert.equal(store.data.products[0].monitoring,false,'Pausing monitoring persists');
   await page.locator('#coverage').evaluate(e=>e.open=false);
   await page.evaluate(()=>{document.activeElement?.blur();window.scrollTo(0,0);});
   await page.screenshot({path:join(screenshots,'desktop.png'),fullPage:true});
@@ -84,9 +103,14 @@ try {
   await page.screenshot({path:join(screenshots,'mobile.png'),fullPage:true});
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),true,'No horizontal overflow on mobile');
   await page.getByRole('button',{name:'Edit Pilot',exact:true}).click();
+  await page.getByRole('button',{name:'Review tracking',exact:true}).click();
+  await page.locator('#setup-profile').waitFor({state:'visible'});
   await page.evaluate(()=>{document.activeElement?.blur();window.scrollTo(0,0);});
   await page.screenshot({path:join(screenshots,'mobile-form.png'),fullPage:true});
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),true,'No horizontal overflow in the mobile form');
+  await page.setViewportSize({width:1440,height:1000});
+  await page.screenshot({path:join(screenshots,'desktop-form.png'),fullPage:true});
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),true,'No horizontal overflow in the desktop form');
   assert.deepEqual(errors,[]);
   console.log(JSON.stringify({passed:true,browser:'Chrome',screenshots,covers:['website import','add and search','opportunity/mention filters','save/dismiss/restore','notes and page reload','repeat searches','edit without searching','desktop/mobile overflow','no browser errors']}));
 } finally {

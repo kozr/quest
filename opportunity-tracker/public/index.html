@@ -35,6 +35,76 @@
       <button id="restore-cancel" type="button">Cancel</button>
     </form>
     <p id="notice" role="status" aria-live="polite" hidden></p>
+    <form id="product-form" aria-labelledby="form-title" hidden>
+      <div class="section-heading">
+        <h2 id="form-title">Add product</h2>
+        <p id="setup-progress" class="secondary" aria-live="polite">Product details · step 1 of 3</p>
+      </div>
+      <fieldset id="setup-details">
+        <legend tabindex="-1">Product details</legend>
+        <label for="product-url">Website or App Store link</label>
+        <input id="product-url" name="url" type="text" inputmode="url" autocomplete="url" placeholder="https://yourproduct.com" maxlength="2048" required>
+        <button id="import-details" type="button">Import details from link</button>
+        <p id="import-message" class="secondary" role="status" hidden></p>
+        <label for="product-name">Product name</label>
+        <input id="product-name" name="name" maxlength="120" required>
+        <label for="product-description">What does it help people do?</label>
+        <textarea id="product-description" name="description" rows="4" maxlength="5000" placeholder="Describe the actual features and who they help." required></textarea>
+        <p class="field-help">Import the details or enter them yourself. We use this description to suggest what and where to track.</p>
+      </fieldset>
+      <fieldset id="setup-profile" hidden disabled>
+        <legend tabindex="-1">Review tracking</legend>
+        <p id="profile-message" class="secondary" role="status">Review the suggestions before saving.</p>
+        <button id="suggest-profile" type="button">Refresh suggestions</button>
+        <div class="setup-fields">
+          <div>
+            <label for="product-capabilities">What the product can do</label>
+            <textarea id="product-capabilities" rows="4" placeholder="One confirmed feature per line" maxlength="2600"></textarea>
+            <p class="field-help">Keep only features the product actually provides.</p>
+            <label for="product-needs">Needs to look for</label>
+            <textarea id="product-needs" rows="4" placeholder="One task, question, or difficulty per line" maxlength="2000"></textarea>
+            <p class="field-help">Look for help the product can provide. Someone does not need to ask for an app.</p>
+            <label for="product-keywords">Search phrases</label>
+            <textarea id="product-keywords" name="keywords" rows="3" placeholder="One phrase per line" maxlength="2000" required></textarea>
+            <p class="field-help">Phrases collect candidates; a request or difficulty is needed for an opportunity match.</p>
+          </div>
+          <div>
+            <label for="product-communities">Subreddits to watch</label>
+            <textarea id="product-communities" rows="5" placeholder="One name per line, for example:&#10;Smiskis&#10;SonnyAngel" maxlength="230" aria-describedby="communities-help"></textarea>
+            <p id="communities-help" class="field-help">Up to 10 communities. Add or remove names to focus the watchlist.</p>
+            <button id="check-communities" type="button">Check subreddits</button>
+            <p id="community-message" class="secondary" role="status" hidden></p>
+            <ul id="community-checks" aria-label="Subreddit checks"></ul>
+            <label for="product-aliases">Names to watch for mentions</label>
+            <textarea id="product-aliases" name="aliases" rows="2" placeholder="Product name, alternate spelling (one per line)" maxlength="2000"></textarea>
+            <p class="field-help">Your website domain is also checked. Use distinctive names.</p>
+            <details>
+              <summary>Exclude phrases</summary>
+              <label for="product-exclusions">Ignore matches containing these phrases</label>
+              <textarea id="product-exclusions" name="exclusions" rows="2" placeholder="One per line" maxlength="2000"></textarea>
+            </details>
+          </div>
+        </div>
+      </fieldset>
+      <fieldset id="setup-monitoring" hidden disabled>
+        <legend tabindex="-1">Start tracking</legend>
+        <div id="setup-summary"></div>
+        <label class="checkbox-label" for="product-monitoring">
+          <input id="product-monitoring" type="checkbox">
+          Check the subreddit watchlist automatically
+        </label>
+        <p id="monitoring-help" class="field-help">Checks run every 30 minutes, even when this page is closed. Selected thread comments are also revisited; coverage is partial.</p>
+        <p class="secondary">Find matches also searches your phrases and product mentions more broadly. You can pause automatic checks by editing the product.</p>
+      </fieldset>
+      <p id="setup-error" class="form-error" role="alert" hidden></p>
+      <div class="form-actions">
+        <button id="setup-back" type="button" hidden>Back</button>
+        <button id="setup-next" type="button">Review tracking</button>
+        <button id="save-product" type="submit" hidden>Start tracking</button>
+        <button id="cancel-product" type="button">Cancel</button>
+      </div>
+      <button id="delete-product" class="delete" type="button" hidden>Delete product</button>
+    </form>
     <div id="workspace" class="workspace">
       <aside aria-labelledby="products-heading">
         <div class="section-heading">
@@ -44,39 +114,14 @@
         <button id="all-products" class="product-choice" type="button" aria-pressed="true">All products</button>
         <ul id="products"></ul>
         <p id="products-empty" class="secondary">Add a website or App Store link to start tracking.</p>
-        <form id="product-form" hidden>
-          <h3 id="form-title">Add product</h3>
-          <label for="product-url">Website or App Store link</label>
-          <input id="product-url" name="url" type="text" inputmode="url" autocomplete="url" placeholder="https://yourproduct.com" maxlength="2048" required>
-          <button id="import-details" type="button">Import details from link</button>
-          <p id="import-message" class="secondary" role="status" hidden></p>
-          <label for="product-name">Product name</label>
-          <input id="product-name" name="name" maxlength="120" required>
-          <label for="product-description">What does it help people do?</label>
-          <textarea id="product-description" name="description" rows="3" maxlength="5000" placeholder="Describe the actual features and who they help."></textarea>
-          <label for="product-keywords">Problems or phrases to look for</label>
-          <textarea id="product-keywords" name="keywords" rows="3" placeholder="One per line, for example:&#10;meal planning&#10;recipe organizer" required></textarea>
-          <p class="field-help">Use specific problems your product solves. These phrases drive opportunity searches.</p>
-          <label for="product-aliases">Names to watch for mentions</label>
-          <textarea id="product-aliases" name="aliases" rows="2" placeholder="Product name, alternate spelling (one per line)"></textarea>
-          <p class="field-help">Your website domain is also checked. Use distinctive names to avoid unrelated mentions.</p>
-          <details>
-            <summary>Exclude phrases</summary>
-            <label for="product-exclusions">Ignore matches containing these phrases</label>
-            <textarea id="product-exclusions" name="exclusions" rows="2" placeholder="One per line"></textarea>
-          </details>
-          <div class="form-actions">
-            <button id="save-product" type="submit">Save and find matches</button>
-            <button id="cancel-product" type="button">Cancel</button>
-          </div>
-          <button id="delete-product" class="delete" type="button" hidden>Delete product</button>
-        </form>
+
       </aside>
       <section id="inbox" aria-labelledby="inbox-heading" tabindex="-1">
         <div class="section-heading">
           <div>
             <h1 id="inbox-heading">Matches</h1>
             <p id="product-summary" class="secondary">Opportunities and mentions for your products.</p>
+            <p id="tracking-summary" class="secondary" hidden></p>
           </div>
           <button id="find-matches" type="button" disabled>Find matches</button>
         </div>

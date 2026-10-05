@@ -6,15 +6,13 @@ import {setTimeout as pause} from 'node:timers/promises';
  * RedditAdapter contract:
  * search({query, signal, limit}) -> {rows, coverage}
  * Rows use the tracker schema plus sourceId, postId, parentId and collectedAt.
- * Redlib also implements list() and thread() for future polling collectors.
+ * Redlib also implements list() and thread() for watchlist collectors.
  * Provider errors must remain errors; no silent provider fallback or synthetic rows.
  */
 export class PublicRedditAdapter {
   id = 'public-json';
   constructor({fetchImpl = fetch} = {}) { this.fetchImpl = fetchImpl; }
-  async search({query, signal, limit = 30}) {
-    const endpoint = new URL('https://www.reddit.com/search.json');
-    endpoint.search = new URLSearchParams({q: query, sort: 'new', t: 'all', limit: String(limit), raw_json: '1', type: 'link'}).toString();
+  async listing(endpoint, signal, limit) {
     const response = await this.fetchImpl(endpoint, {signal, redirect: 'error', headers: {Accept: 'application/json', 'User-Agent': 'OpportunityTracker/1.0 (personal read-only research)'}});
     const body = JSON.parse(await readText(response, 1_048_576));
     if (!Array.isArray(body.data?.children)) throw new CollectionError('unexpected_response');
@@ -27,6 +25,15 @@ export class PublicRedditAdapter {
         ...(row.id ? {sourceId: `t3_${row.id}`} : {}), type: 'post', collectedAt: new Date().toISOString()}];
     });
     return {rows, coverage: {provider: this.id, comments: 'not_collected', partial: Boolean(body.data.after)}};
+  }
+  search({query, signal, limit = 30}) {
+    const endpoint = new URL('https://www.reddit.com/search.json');
+    endpoint.search = new URLSearchParams({q: query, sort: 'new', t: 'all', limit: String(limit), raw_json: '1', type: 'link'}).toString();
+    return this.listing(endpoint, signal, limit);
+  }
+  list({subreddit, sort = 'new', signal, limit = 30}) {
+    if (!/^[\w]{2,21}$/.test(subreddit || '') || !['new', 'hot'].includes(sort)) throw new CollectionError('invalid_listing', 400);
+    return this.listing(new URL(`https://www.reddit.com/r/${subreddit}/${sort}.json?limit=${limit}&raw_json=1`), signal, limit);
   }
 }
 
@@ -138,12 +145,13 @@ export class RedlibBridgeAdapter {
     });
   }
   release() { this.active--; this.waiters.shift()?.resolve(); }
-  async search({query, signal, limit = 30}) {
+  async request(method, parameters) {
+    const {signal, ...payload} = parameters;
     await this.acquire(signal);
     try {
       for (let attempt = 0; ; attempt++) {
-        const response = await this.fetchImpl(`${this.baseURL}/v1/search`, {method: 'POST', signal, redirect: 'error',
-          headers: {'Content-Type': 'application/json', Authorization: `Bearer ${this.token}`}, body: JSON.stringify({query, limit})});
+        const response = await this.fetchImpl(`${this.baseURL}/v1/${method}`, {method: 'POST', signal, redirect: 'error',
+          headers: {'Content-Type': 'application/json', Authorization: `Bearer ${this.token}`}, body: JSON.stringify(payload)});
         if (response.status === 429 && attempt < 2) {
           await response.body?.cancel(); await pause(2_000, undefined, {signal}); continue;
         }
@@ -153,6 +161,9 @@ export class RedlibBridgeAdapter {
       }
     } finally { this.release(); }
   }
+  search({query, signal, limit = 30}) { return this.request('search', {query, signal, limit}); }
+  list({subreddit, sort = 'new', signal, limit = 30}) { return this.request('list', {subreddit, sort, signal, limit}); }
+  thread({path, signal, limit = 200}) { return this.request('thread', {path, signal, limit}); }
 }
 
 export function createRedditAdapter({env = process.env, fetchImpl = fetch} = {}) {

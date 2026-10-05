@@ -22,6 +22,18 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
+  monitor:
+    build:
+      context: ..
+      dockerfile: reddit/Dockerfile
+    container_name: opportunity-tracker-monitor
+    restart: unless-stopped
+    command: ["node", "reddit/monitor-worker.mjs"]
+    env_file: .env
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 128m
 networks:
   redlib:
     external: true

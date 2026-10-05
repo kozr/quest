@@ -71,7 +71,7 @@ The main content is centered with a maximum width of (1400px) and section-sized 
 
 At widths of (780px) or less, the columns stack, page padding becomes the base spacing, and the product section ends with a horizontal divider. Product choices use an automatically fitting grid with a minimum column width of (180px). Header actions, status controls, filter fields, match actions, and source query links wrap. Long links and product names can break anywhere.
 
-Match snippets are limited to (75ch), reasons to (80ch), and empty-state copy to (55ch). The add/edit form stays inline in the product section; backup restore appears above the workspace.
+Match snippets are limited to (75ch), reasons to (80ch), and empty-state copy to (55ch). The add/edit form appears above the workspace as a three-step setup: product details, review tracking, and start tracking. The review step uses two columns on desktop and one on mobile. Backup restore appears above the workspace.
 
 ## Elevation & Depth
 

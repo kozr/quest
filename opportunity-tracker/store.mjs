@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync, writeFileSync, renameSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
+import {dueProducts} from './monitor.mjs';
 
 export class Store {
   constructor(directory) {
@@ -31,6 +32,14 @@ export class Store {
     next.items = next.items.filter(p => p.productId !== id);
     delete next.searches[id];
     this.commit(next);
+  }
+  markMonitorAttempt(id) {
+    const next = this.snapshot();
+    const product = dueProducts(next).find(row => row.id === id);
+    if (!product) return false;
+    product.lastMonitorAttemptAt = new Date().toISOString();
+    this.commit(next);
+    return true;
   }
   recordSearch(productId, result) {
     const next = this.snapshot();

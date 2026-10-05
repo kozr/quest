@@ -32,8 +32,8 @@ To move your existing local tracker data online, **Export backup** locally, sign
 ## Use
 
 1. Choose **Add product**, paste its website or App Store link, and optionally **Import details from link**. If a site blocks import, fill in the name and description yourself.
-2. Enter specific opportunity phrases, one per line, describing problems the product actually solves. Add distinctive product names or alternate spellings to watch for mentions; website domains are included automatically.
-3. **Save and find matches** searches public sources. Subsequent searches run when you choose **Find matches**; there is no background monitoring or automatic posting.
+2. Choose **Review tracking**. Review the suggested capabilities, needs, search phrases, and subreddit watchlist. Edit the suggestions and check community accessibility; add distinctive product names to watch for mentions.
+3. Choose **Continue**, then **Start tracking**. Automatic checks are optional and run every 30 minutes for enabled watchlists. **Find matches** also runs a broader phrase and mention search. There is no automatic posting.
 4. Review the excerpt, matching reason, date, and original discussion. Save useful matches, dismiss irrelevant ones, and add notes. The New, Saved, and Dismissed filters support restoring decisions.
 5. Use **Export backup** before moving computers. **Restore backup** replaces the current records after confirmation.
 
@@ -45,11 +45,11 @@ To move your existing local tracker data online, **Export backup** locally, sign
 
 Opportunity matches require a confirmed phrase/topic in the same request or difficulty statement. Earlier achievements and unrelated requests in another clause do not qualify. Mentions require an exact confirmed alias or website domain; use a distinctive alias to disambiguate common product names. Exclusions remove matching phrases. This is conservative text matching, not a guarantee of product fit or a complete internet crawl. Every result requires review. Web excerpts are search-supported and explicitly not independently verified conversation text.
 
-Searches are bounded to six queries per public source, 30 results per query, and a 12-second source deadline. The combined inbox takes up to 100 deduplicated matches per search. Repeated searches preserve saved/dismissed statuses and notes. A source returning only part of a search reports that limitation. No mock data is used in the running app.
+Searches are bounded to six queries per public source, 30 results per query, and a 12-second source deadline for Hacker News/web, 40 seconds for Redlib search, and 35 seconds for watchlist collection. The combined inbox takes up to 100 deduplicated matches per search. Repeated searches preserve saved/dismissed statuses and notes. A source returning only part of a search reports that limitation. No mock data is used in the running app.
 
 ### Redlib adapter
 
-The `reddit/adapters.mjs` contract is `search({query, signal, limit}) -> {rows, coverage}`. Discovery accepts an injected `redditAdapter` for tests and selects the production adapter using environment variables. The Redlib HTML adapter additionally implements `list({subreddit, sort, signal, limit})` and `thread({path, signal, limit})` for later monitoring workers. No scheduler or continuous Reddit-wide feed is introduced by this integration.
+The `reddit/adapters.mjs` contract is `search({query, signal, limit}) -> {rows, coverage}`. Discovery accepts an injected `redditAdapter` for tests and selects the production adapter using environment variables. The Redlib HTML adapter additionally implements `list({subreddit, sort, signal, limit})` and `thread({path, signal, limit})` for watchlist collection and bounded thread revisits. The separate worker polls due products; it does not provide a continuous Reddit-wide feed.
 
 Configure the tracker, including Vercel's **server-only** environment:
 
@@ -87,3 +87,14 @@ node opportunity-tracker/test/browser-check.mjs
 ```
 
 Tests use temporary stores, the local Firestore emulator, and scripted discovery results; no paid requests or real outreach are involved. Hosted integration tests execute actual Firebase Admin transactions and cover concurrent mutations, instance-independent sessions, shared search locks, snapshots larger than one document, and credential-safe failures. To include the Firestore integration tests, start the repository’s Firestore emulator and run `FIRESTORE_EMULATOR_HOST=127.0.0.1:8088 npm test --prefix opportunity-tracker`. Without the emulator, those four integration tests are explicitly skipped. They use the demo project `demo-opportunity-tracker` and unique fixture workspaces, never a cloud database. The browser check uses the repository's installed Playwright and Chrome when available. Separate public network smoke checks verify actual source/metadata responses.
+
+
+## Product setup and continuous Reddit checks
+
+Adding a product now has three steps: import or enter details, review an editable tracking profile, and start tracking. The profile saves confirmed capabilities, user needs, search phrases, product aliases, exclusions, and up to ten subreddit names. Starter suggestions use the product description and curated topic vocabulary. If `OPENAI_API_KEY` and `OPPORTUNITY_SETUP_MODEL` (or the existing discovery model) are configured, the server can draft a profile; model capability text must occur literally in the supplied description. Missing, failed, or unsupported model responses fall back to editable starter suggestions. Community checks retrieve recent public posts and explicitly distinguish accessible feeds from unverified suggestions. They do not establish the completeness or reliability of future collection.
+
+Automatic tracking is optional and can be paused in Edit product. Existing products and older backups remain in manual mode until their watchlist is reviewed and enabled. Both file and Firebase stores preserve the profile. A monitor attempt is recorded atomically without overwriting edits; failures wait until the next 30-minute interval. Searches share leases with manual runs, retain saved statuses and notes, and never send replies.
+
+On this computer, `npm start` runs a monitor loop alongside the local server; automatic checks require that server to remain running. Hosted checks run independently of the browser through the OVH Compose `monitor` service. Set a separate server-only `TRACKER_MONITOR_TOKEN` of at least 32 characters in Vercel production and in the VPS `reddit/.env`, plus `TRACKER_MONITOR_URL=https://product-opportunity-tracker.vercel.app` in the VPS environment. The worker asks the authenticated `GET /api/monitor` endpoint for due IDs once a minute and calls `POST /api/monitor/:id` sequentially. These endpoints accept the monitor bearer token, never a browser session or client-side credential. There is no Vercel cron-plan dependency. Each product is eligible every 30 minutes; failures, upstream delays, and a long queue can delay checks. The first check occurs when a new product is saved through the UI.
+
+Scheduled discovery scans up to 30 recent posts per selected subreddit and retrieves available comments from at most four recent or relevant threads. Recently matched threads from the last seven days are eligible for revisits. This is bounded HTML collection, not an exhaustive stream of every new post or comment. New comments on older or unselected threads may be missed. Manual Find matches additionally runs broader phrase and mention searches. Opportunity matching remains conservative phrase-and-request matching with a narrow check for the functions described in the needs profile; it is not a semantic guarantee. Always review the original conversation and source coverage.
