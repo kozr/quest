@@ -9,7 +9,7 @@ import { configuredFirestore, FirestoreBackend, FirestoreStore } from './firesto
 import { createAuth } from './auth.mjs';
 import {suggestProfile, checkCommunities, validateProfile, profileInput} from './profile.mjs';
 import {createRedditAdapter} from './reddit/adapters.mjs';
-import {dueProducts, startLocalMonitoring} from './monitor.mjs';
+import {dueProducts, startLocalMonitoring, MONITOR_INTERVAL_MS} from './monitor.mjs';
 
 const directory = dirname(fileURLToPath(import.meta.url));
 const list = (value, max = 12) => {
@@ -84,7 +84,7 @@ export function createTrackerApp({ dataDirectory = process.env.TRACKER_DATA_DIR 
     auth.login(res); res.json({ok:true});
   });
   app.post('/api/logout',(_req,res)=>{auth?.logout(res);res.json({ok:true});});
-  app.get('/api/state',async(req,res)=>res.json({...await store.snapshot(),token:auth?auth.csrf(req):token,busy:await busyIds(),storage:hosted?'cloud':'local',monitoring:{available:monitoringAvailable,intervalMinutes:30}}));
+  app.get('/api/state',async(req,res)=>res.json({...await store.snapshot(),token:auth?auth.csrf(req):token,busy:await busyIds(),storage:hosted?'cloud':'local',monitoring:{available:monitoringAvailable,intervalMinutes:MONITOR_INTERVAL_MS / 60000}}));
   app.get('/api/monitor', async(_req, res) => res.json({ids: dueProducts(await store.snapshot()).map(product => product.id)}));
   app.post('/api/monitor/:id', async(req, res) => {
     const result = await runSearch(req.params.id, true);

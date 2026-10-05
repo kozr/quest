@@ -81,6 +81,13 @@ test('automatic checks require a separate secret, honor pauses and backoff, and 
   const persisted=new Store(directory).snapshot().products[0];
   assert.deepEqual(persisted.needs,product.needs);assert.deepEqual(persisted.capabilities,product.capabilities);assert.equal(persisted.monitoring,false);
   assert.deepEqual(dueProducts({products:[{...product,id:'x',lastMonitorAttemptAt:new Date().toISOString()}],searches:{}}),[]);
+  assert.equal(MONITOR_INTERVAL_MS, 60 * 60 * 1000);
+  const checkedAt = Date.parse('2026-10-05T00:00:00Z');
+  const monitored = {products:[{...product,id:'x',lastMonitorAttemptAt:new Date(checkedAt).toISOString()}],searches:{}};
+  assert.deepEqual(dueProducts(monitored, checkedAt + 30 * 60 * 1000), []);
+  assert.deepEqual(dueProducts(monitored, checkedAt + MONITOR_INTERVAL_MS - 1), []);
+  assert.equal(dueProducts(monitored, checkedAt + MONITOR_INTERVAL_MS).length, 1);
+  assert.equal((await fetch(origin+'/api/state').then(r=>r.json())).monitoring.intervalMinutes, 60);
   assert.equal(dueProducts({products:[{...product,id:'x'}],searches:{}},MONITOR_INTERVAL_MS).length,1);
   const profile=await fetch(origin+'/api/profile',{method:'POST',headers,body:JSON.stringify(product)}).then(r=>r.json());
   assert(profile.checks.some(check=>check.status==='accessible'));

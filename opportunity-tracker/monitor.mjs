@@ -1,4 +1,4 @@
-export const MONITOR_INTERVAL_MS = 30 * 60 * 1000;
+export const MONITOR_INTERVAL_MS = 60 * 60 * 1000;
 
 export function dueProducts(state, now = Date.now()) {
   return state.products.filter(product => product.monitoring && product.communities?.length &&
