@@ -80,7 +80,8 @@ export class LinkedInCollector {
     if (!endpoint) throw new Error('Configure the private LINKEDIN_MCP_URL on OVH.');
     const url = new URL(endpoint);
     if (url.protocol !== 'http:' || !['127.0.0.1', 'localhost', 'mcp', 'querylane-linkedin-mcp-mcp-1'].includes(url.hostname) || url.pathname !== '/mcp' || url.username || url.password || url.search || url.hash) throw new Error('Use the existing private LinkedIn MCP endpoint.');
-    this.endpoint = url.href; this.fetchImpl = fetchImpl; this.now = now; this.cache = new Map();
+    this.endpoint = url.href; this.authority = `127.0.0.1:${url.port || '80'}`;
+    this.fetchImpl = fetchImpl; this.now = now; this.cache = new Map();
   }
   async search({query, limit = 30, datePosted = null, signal}) {
     if (typeof query !== 'string' || !query.trim() || query.length > 200 || /[\u0000-\u001f]/.test(query) || !Number.isInteger(limit) || limit < 1 || limit > 30 || ![null, 'past-month'].includes(datePosted)) throw new CollectionError('invalid_linkedin_search', 400);
@@ -88,7 +89,10 @@ export class LinkedInCollector {
     const cached = this.cache.get(key);
     if (cached && cached.expires > this.now()) return structuredClone({...cached.value, rows: cached.value.rows.slice(0, limit), coverage: {...cached.value.coverage, cacheHit: true}});
     let session, protocol = '2025-03-26';
-    const headers = () => ({'Content-Type': 'application/json', Accept: 'application/json, text/event-stream',
+    // Like an ordinary reverse proxy, retain the upstream's existing loopback
+    // authority while connecting on its private Docker network. Its Host/Origin
+    // guard and public loopback binding remain unchanged.
+    const headers = () => ({Host: this.authority, 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream',
       ...(session ? {'Mcp-Session-Id': session, 'MCP-Protocol-Version': protocol} : {})});
     const send = async (method, params, id) => {
       const response = await this.fetchImpl(this.endpoint, {method: 'POST', redirect: 'error', signal, headers: headers(),

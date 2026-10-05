@@ -67,6 +67,7 @@ test('MCP transport initializes SSE session, calls only bounded read-only post s
   assert.equal(first.rows.length, 1);
   assert.deepEqual(JSON.parse(calls[2].body).params, {name: 'search_posts', arguments: {keywords: 'subscription reminders', max_pages: 1, date_posted: 'past-month'}});
   assert.equal(calls[2].headers['Mcp-Session-Id'], 'fixture-session');
+  assert.equal(calls[2].headers.Host, '127.0.0.1:8080');
   assert.equal((await collector.search({query: 'subscription reminders', datePosted: 'past-month'})).coverage.cacheHit, true);
   assert.equal(calls.length, 4);
   now += 300_001; await collector.search({query: 'subscription reminders', datePosted: 'past-month'});
