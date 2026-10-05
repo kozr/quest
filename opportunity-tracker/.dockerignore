@@ -1,0 +1,8 @@
+node_modules/
+.local/
+.vercel/
+.env*
+reddit/.env*
+test/
+test-results/
+.git/

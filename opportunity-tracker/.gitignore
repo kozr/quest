@@ -4,3 +4,4 @@ test-results/
 .impeccable/review/
 node_modules/
 .vercel/
+.env*.local
