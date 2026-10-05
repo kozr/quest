@@ -40,6 +40,24 @@ async function server(t,store) {
   };
 }
 
+test('cloud instances preserve LinkedIn settings, source coverage, identity, decisions and hourly due state', firestoreTest, async t => {
+  const {create} = await backend(t);
+  const a = new FirestoreStore(create()), b = new FirestoreStore(create());
+  const p = await a.saveProduct({...product, communities: [], linkedin: true, monitoring: true});
+  assert.deepEqual(await b.activeSearches(), []);
+  const item = {url: 'https://www.linkedin.com/posts/demo-person_fixture-share-7507254982996332545-AbCd', title: 'I need task management help', kind: 'opportunity', source: 'LinkedIn', provider: 'linkedin-mcp', sourceId: 'li_7507254982996332545', postId: '7507254982996332545', type: 'post'};
+  await a.recordSearch(p.id, {searchedAt: new Date().toISOString(), trigger: 'scheduled', sources: [{name: 'LinkedIn', status: 'ok', count: 1, coverage: [{provider: 'linkedin-mcp', partial: true}]}], items: [item]});
+  const id = (await b.snapshot()).items[0].id;
+  await b.updateItem(id, {status: 'saved', note: 'Check the linked post.'});
+  await a.recordSearch(p.id, {searchedAt: new Date().toISOString(), trigger: 'manual', sources: [{name: 'LinkedIn', status: 'error', message: 'Session renewal required.'}], items: []});
+  const snapshot = await new FirestoreStore(create()).snapshot();
+  assert.equal(snapshot.products[0].linkedin, true);
+  assert.equal(snapshot.items[0].sourceId, item.sourceId);
+  assert.equal(snapshot.items[0].status, 'saved');
+  assert.equal(snapshot.items[0].note, 'Check the linked post.');
+  assert.equal(snapshot.searches[p.id].sources[0].status, 'error');
+});
+
 test('actual Firestore transactions persist across cloud instances without losing concurrent updates',firestoreTest,async t=>{
   const {create}=await backend(t);
   const a=new FirestoreStore(create()),b=new FirestoreStore(create());

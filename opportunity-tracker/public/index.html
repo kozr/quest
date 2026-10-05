@@ -78,6 +78,11 @@
             <label for="product-aliases">Names to watch for mentions</label>
             <textarea id="product-aliases" name="aliases" rows="2" placeholder="Product name, alternate spelling (one per line)" maxlength="2000"></textarea>
             <p class="field-help">Your website domain is also checked. Use distinctive names.</p>
+            <label class="checkbox-label" for="product-linkedin">
+              <input id="product-linkedin" type="checkbox" aria-describedby="linkedin-help">
+              Check LinkedIn posts
+            </label>
+            <p id="linkedin-help" class="field-help">Checks one search phrase and one product name through your saved server session. Only posts with a verified author and permalink enter the inbox; coverage is partial.</p>
             <details>
               <summary>Exclude phrases</summary>
               <label for="product-exclusions">Ignore matches containing these phrases</label>
@@ -91,7 +96,7 @@
         <div id="setup-summary"></div>
         <label class="checkbox-label" for="product-monitoring">
           <input id="product-monitoring" type="checkbox">
-          Check the subreddit watchlist automatically
+          Check selected sources automatically
         </label>
         <p id="monitoring-help" class="field-help">Checks run every hour, even when this page is closed. Selected thread comments are also revisited; coverage is partial.</p>
         <p class="secondary">Find matches also searches your phrases and product mentions more broadly. You can pause automatic checks by editing the product.</p>

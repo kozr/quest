@@ -143,7 +143,7 @@ function render() {
     const last=state.searches[product.id]?.searchedAt;
     const mode=product.monitoring?(state.monitoring?.available?'Automatic checks every hour':'Automatic checks unavailable'):'Automatic checks paused';
     const count=product.communities?.length||0;
-    $('tracking-summary').textContent=`${mode} · ${count} ${count===1?'subreddit':'subreddits'} · ${last?`Last checked ${new Date(last).toLocaleString()}`:'No check yet'}`;
+    $('tracking-summary').textContent=`${mode} · ${count} ${count===1?'subreddit':'subreddits'}${product.linkedin?' · LinkedIn posts':''} · ${last?`Last checked ${new Date(last).toLocaleString()}`:'No check yet'}`;
   }
   $('find-matches').disabled=searching||state.products.length===0;
 }
@@ -183,11 +183,12 @@ function showStep(value, focus=true) {
   $('save-product').hidden=value!==3;
   if(value===3) {
     const names=watchlist();
-    const available=Boolean(state.monitoring?.available)&&names.length>0;
+    const linkedin=$('product-linkedin').checked&&Boolean(state.sources?.linkedin?.available);
+    const available=Boolean(state.monitoring?.available)&&(names.length>0||linkedin);
     $('product-monitoring').disabled=!available;
     if(!available) $('product-monitoring').checked=false;
-    $('monitoring-help').textContent=!state.monitoring?.available?'Automatic checks are not configured on this server. You can save and use Find matches.':!names.length?'Add subreddits in the previous step to enable automatic checks. You can also save and search manually.':'Checks run every hour, even when this page is closed. Selected thread comments are revisited; coverage is partial.';
-    $('setup-summary').replaceChildren(node('h3',$('product-name').value),node('p',`Watchlist: ${names.length?names.map(name=>`r/${name}`).join(', '):'No communities selected'}`),node('p',`Search phrases: ${lines($('product-keywords').value).join(', ')}`));
+    $('monitoring-help').textContent=!state.monitoring?.available?'Automatic checks are not configured on this server. You can save and use Find matches.':!names.length&&!linkedin?'Add subreddits or enable LinkedIn in the previous step to enable automatic checks. You can also save and search manually.':'Checks run every hour, even when this page is closed. Selected Reddit thread comments and enabled LinkedIn searches are checked; coverage is partial.';
+    $('setup-summary').replaceChildren(node('h3',$('product-name').value),node('p',`Watchlist: ${names.length?names.map(name=>`r/${name}`).join(', '):'No communities selected'}${linkedin?' · LinkedIn posts':''}`),node('p',`Search phrases: ${lines($('product-keywords').value).join(', ')}`));
   }
   setSetupBusy(setupBusy);
   if(focus) document.querySelector(`#setup-${['details','profile','monitoring'][value-1]} legend`).focus();
@@ -231,6 +232,9 @@ function openForm(product=null) {
   $('delete-product').hidden=!product;
   if(product) for(const key of ['url','name','description','capabilities','needs','communities','keywords','aliases','exclusions']) $(`product-${key}`).value=Array.isArray(product[key])?product[key].join('\n'):product[key]||'';
   $('product-monitoring').checked=product?Boolean(product.monitoring):Boolean(state.monitoring?.available);
+  $('product-linkedin').checked=product?Boolean(product.linkedin):Boolean(state.sources?.linkedin?.available);
+  $('product-linkedin').disabled=!state.sources?.linkedin?.available&&!$('product-linkedin').checked;
+  $('linkedin-help').textContent=state.sources?.linkedin?.available?'Checks one search phrase and one product name through your saved server session. Only posts with a verified author and permalink enter the inbox; coverage is partial.':'LinkedIn collection is not configured on this server. Existing Reddit and web searches remain available.';
   generatedSignature=product?.capabilities?.length?signature():null;communityChecks=[];renderCommunityChecks();
   $('profile-message').textContent=product?'Review your saved needs, phrases, and watchlist. Refresh suggestions if the product has changed.':'Suggestions will be prepared from your product details.';
   $('product-form').hidden=false;
@@ -308,6 +312,7 @@ $('product-form').addEventListener('submit',async event=>{
   for(const key of ['url','name','description']) product[key]=$(`product-${key}`).value;
   for(const key of ['keywords','aliases','exclusions','capabilities','needs']) product[key]=lines($(`product-${key}`).value);
   product.communities=watchlist();product.monitoring=$('product-monitoring').checked;
+  product.linkedin=$('product-linkedin').checked;
   if(!product.aliases.length) product.aliases=[product.name];
   try {
     const result=await api(priorId?`/products/${priorId}`:'/products',{method:priorId?'PUT':'POST',body:JSON.stringify(product)});

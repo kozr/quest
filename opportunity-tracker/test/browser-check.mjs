@@ -11,11 +11,11 @@ const dataDirectory=await mkdtemp(join(tmpdir(),'product-tracker-browser-'));
 const screenshots=join(directory,'.impeccable','review');
 await mkdir(screenshots,{recursive:true});
 let calls=0;
-const {app,store}=createTrackerApp({dataDirectory,metadataFn:async url=>({url,name:'Pilot',description:'A habit tracker for daily routines.',type:'website'}),profileFn:async()=>({capabilities:['A habit tracker for daily routines.'],needs:['Keep track of daily habits.'],keywords:['habit tracking','daily routine'],communities:['habits'],message:'Scripted profile suggestions for browser testing.'}),redditAdapter:{list:async()=>({rows:[{}]})},discoverFn:async product=>{
+const {app,store}=createTrackerApp({dataDirectory,linkedinAvailable:true,metadataFn:async url=>({url,name:'Pilot',description:'A habit tracker for daily routines.',type:'website'}),profileFn:async()=>({capabilities:['A habit tracker for daily routines.'],needs:['Keep track of daily habits.'],keywords:['habit tracking','daily routine'],communities:['habits'],message:'Scripted profile suggestions for browser testing.'}),redditAdapter:{list:async()=>({rows:[{}]})},discoverFn:async product=>{
   calls++;
   const at=new Date().toISOString();
-  return {searchedAt:at,sources:[{name:'Hacker News',status:'ok',count:2,message:'Scripted test fixture, not live discovery.',queries:[{label:'Search habit tracking',url:'https://hn.algolia.com/?q=habit%20tracking'}]},{name:'Reddit',status:'error',message:'Scripted blocked-source fixture.',queries:[{label:'Search Reddit',url:'https://www.reddit.com/search/?q=habit%20tracking'}]}],items:[
-    {title:'Test fixture: looking for a way to keep track of daily habits',snippet:'I need help with habit tracking. My spreadsheet is difficult to keep up with.',url:'https://news.ycombinator.com/item?id=10000001',source:'Hacker News',kind:'opportunity',matchedTerms:['habit tracking'],reason:'Review needed: habit tracking appears near a request for help.',publishedAt:at},
+  return {searchedAt:at,sources:[{name:'Hacker News',status:'ok',count:1,message:'Scripted test fixture, not live discovery.',queries:[{label:'Search habit tracking',url:'https://hn.algolia.com/?q=habit%20tracking'}]},{name:'LinkedIn',status:'ok',count:1,message:'Scripted LinkedIn fixture. Coverage is partial.',queries:[{label:'Search habit tracking',url:'https://www.linkedin.com/search/results/content/?keywords=habit%20tracking'}]},{name:'Reddit',status:'error',message:'Scripted blocked-source fixture.',queries:[{label:'Search Reddit',url:'https://www.reddit.com/search/?q=habit%20tracking'}]}],items:[
+    {title:'Test fixture: looking for a way to keep track of daily habits',snippet:'I need help with habit tracking. My spreadsheet is difficult to keep up with.',url:'https://www.linkedin.com/posts/demo-person_habits-share-7507254982996332545-AbCd',source:'LinkedIn',provider:'linkedin-mcp',sourceId:'li_7507254982996332545',postId:'7507254982996332545',type:'post',kind:'opportunity',matchedTerms:['habit tracking'],reason:'Review needed: habit tracking appears near a request for help.',publishedAt:at},
     {title:'Test fixture: Pilot helped me build a consistent routine',snippet:'I tried Pilot for habit tracking and have been using it every day.',url:'https://news.ycombinator.com/item?id=10000002',source:'Hacker News',kind:'mention',matchedTerms:['Pilot'],reason:'Review needed: the exact product name Pilot appears in this source.',publishedAt:at}
   ]};
 }});
@@ -36,6 +36,8 @@ try {
   await page.getByText('Details imported. Check them').waitFor();
   await page.getByRole('button',{name:'Review tracking',exact:true}).click();
   await page.getByText('Scripted profile suggestions for browser testing.').waitFor();
+  assert.equal(await page.locator('#product-linkedin').isChecked(),true);
+  assert.equal(await page.locator('#product-linkedin').isDisabled(),false);
   assert.equal(await page.locator('#product-capabilities').inputValue(),'A habit tracker for daily routines.');
   assert.equal(await page.locator('#product-communities').inputValue(),'habits');
   await page.getByText('Recent public posts retrieved.',{exact:false}).waitFor();
@@ -52,6 +54,10 @@ try {
   assert.equal(calls,1);
   assert.deepEqual(store.data.products[0].communities,['habits']);
   assert.equal(store.data.products[0].monitoring,true);
+  assert.equal(store.data.products[0].linkedin,true);
+  assert.match(await page.locator('#tracking-summary').textContent(),/LinkedIn posts/);
+  await page.locator('#coverage').evaluate(element=>{element.open=true;});
+  await page.getByText('LinkedIn: Checked · 1 matches',{exact:true}).waitFor();
   assert.deepEqual(store.data.products[0].needs,['Keep track of daily habits.']);
   await page.locator('#kind-filter').selectOption('opportunity');
   assert.equal(await page.locator('.match').count(),1);
@@ -87,12 +93,15 @@ try {
   await page.locator('#product-description').fill('A simple habit tracker that helps people maintain daily routines.');
   await page.getByRole('button',{name:'Review tracking',exact:true}).click();
   await page.locator('#setup-profile').waitFor({state:'visible'});
+  assert.equal(await page.locator('#product-linkedin').isChecked(),true);
+  await page.locator('#product-linkedin').uncheck();
   await page.getByRole('button',{name:'Continue',exact:true}).click();
   await page.locator('#product-monitoring').uncheck();
   await page.getByRole('button',{name:'Save changes',exact:true}).click();
   await page.getByText('Product saved.',{exact:true}).waitFor();
   assert.equal(calls,2,'Editing a product does not silently trigger discovery');
   assert.equal(store.data.products[0].monitoring,false,'Pausing monitoring persists');
+  assert.equal(store.data.products[0].linkedin,false,'Pausing LinkedIn persists');
   await page.locator('#coverage').evaluate(e=>e.open=false);
   await page.evaluate(()=>{document.activeElement?.blur();window.scrollTo(0,0);});
   await page.screenshot({path:join(screenshots,'desktop.png'),fullPage:true});

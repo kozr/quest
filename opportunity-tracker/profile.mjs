@@ -78,8 +78,9 @@ export function validateProfile(value) {
   const needs = strings(value.needs || [], 8, 240);
   const watchlist = communities(value.communities || []);
   if (value.monitoring !== undefined && typeof value.monitoring !== 'boolean') throw new Error('Choose whether to enable automatic checks.');
-  if (value.monitoring && !watchlist.length) throw new Error('Choose at least one subreddit before starting automatic checks.');
-  return {capabilities, needs, communities: watchlist, monitoring: value.monitoring === true};
+  if (value.linkedin !== undefined && typeof value.linkedin !== 'boolean') throw new Error('Choose whether to check LinkedIn.');
+  if (value.monitoring && !watchlist.length && !value.linkedin) throw new Error('Choose at least one subreddit or LinkedIn before starting automatic checks.');
+  return {capabilities, needs, communities: watchlist, linkedin: value.linkedin === true, monitoring: value.monitoring === true};
 }
 
 export function profileInput(value) {

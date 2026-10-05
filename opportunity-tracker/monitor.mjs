@@ -1,7 +1,7 @@
 export const MONITOR_INTERVAL_MS = 60 * 60 * 1000;
 
 export function dueProducts(state, now = Date.now()) {
-  return state.products.filter(product => product.monitoring && product.communities?.length &&
+  return state.products.filter(product => product.monitoring && (product.communities?.length || product.linkedin) &&
     now - Math.max(Date.parse(state.searches[product.id]?.searchedAt || '') || 0, Date.parse(product.lastMonitorAttemptAt || '') || 0) >= MONITOR_INTERVAL_MS);
 }
 

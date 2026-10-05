@@ -1,6 +1,7 @@
 import {createHash} from 'node:crypto';
 import {isIP} from 'node:net';
 import {createRedditAdapter} from './reddit/adapters.mjs';
+import {createLinkedInAdapter} from './linkedin/adapter.mjs';
 
 const DEADLINE_MS = 12_000;
 const MAX_BYTES = 1_048_576;
@@ -251,8 +252,12 @@ async function boundedText(response) {
   return Buffer.concat(chunks).toString('utf8');
 }
 
-function safeError(error) {
-  if (['TimeoutError', 'AbortError'].includes(error?.name)) return 'Source did not respond within 12 seconds.';
+function safeError(error, deadline = DEADLINE_MS) {
+  if (error?.code === 'linkedin_session_required') return 'LinkedIn requires the owner to renew the saved session on OVH.';
+  if (error?.code === 'linkedin_timeout') return 'LinkedIn collection reached its time limit. Try again later.';
+  if (error?.code === 'linkedin_schema_changed') return 'LinkedIn returned an unsupported result layout.';
+  if (error?.code === 'linkedin_provider_failed') return 'LinkedIn collection failed. Check the original search or try again later.';
+  if (['TimeoutError', 'AbortError'].includes(error?.name)) return `Source did not respond within ${deadline / 1000} seconds.`;
   if (/^HTTP \d{3}$/.test(error?.message ?? '')) return error.message;
   if (['Response exceeded the size limit.', 'Source returned an empty response.', 'Source returned an unexpected response.'].includes(error?.message)) return error.message;
   if (error?.code === 'unrecognized_redlib_page') return 'Redlib returned an error page or an unsupported HTML layout.';
@@ -267,7 +272,7 @@ async function source(name, plan, link, fetchRows, deadline = DEADLINE_MS) {
   const settled = await Promise.allSettled(plan.map(entry => fetchRows(entry, signal)));
   const rows = settled.flatMap(result => result.status === 'fulfilled' ? result.value.rows ?? result.value : []);
   const coverage = settled.flatMap(result => result.status === 'fulfilled' && result.value.coverage ? [result.value.coverage] : []);
-  const failures = settled.filter(result => result.status === 'rejected').map(result => safeError(result.reason));
+  const failures = settled.filter(result => result.status === 'rejected').map(result => safeError(result.reason, deadline));
   const successCount = settled.length - failures.length;
   return {rows, source: {name, status: successCount ? 'ok' : 'error',
     message: failures.length ? `${successCount ? `Completed ${successCount} of ${plan.length} searches. ` : ''}${[...new Set(failures)].join(' ')}` : `Search completed. Results are a limited sample of public sources. ${WINDOW_MESSAGE}`,
@@ -332,7 +337,7 @@ async function webSource(product, context, plan, fetchImpl, now) {
 }
 
 /** Public discovery only: it does not send replies or change external accounts. */
-export async function discover(product, {fetchImpl = fetch, now = new Date(), redditAdapter, watchOnly = false, recentThreads = []} = {}) {
+export async function discover(product, {fetchImpl = fetch, now = new Date(), redditAdapter, linkedinAdapter, watchOnly = false, recentThreads = []} = {}) {
   if (!product || typeof product !== 'object' || typeof fetchImpl !== 'function' || !(now instanceof Date) || !Number.isFinite(now.getTime())) throw new TypeError('A product, fetch function and valid current date are required.');
   const context = productContext(product);
   const plan = queryPlan(context);
@@ -349,6 +354,12 @@ export async function discover(product, {fetchImpl = fetch, now = new Date(), re
     webSource(product, context, plan, fetchImpl, now),
     ]),
     ...(product.communities?.length ? [watchlistSource(product, context, redditAdapter, recentThreads)] : []),
+    ...(product.linkedin ? [source('LinkedIn', [plan.find(entry => entry.label.startsWith('Opportunity:')), plan.find(entry => entry.label.startsWith('Mention:'))].filter(Boolean),
+      query => `https://www.linkedin.com/search/results/content/?${new URLSearchParams({keywords: query})}`,
+      ({query, label}, signal) => {
+        linkedinAdapter ||= createLinkedInAdapter({fetchImpl});
+        return linkedinAdapter.search({query, signal, limit: MAX_QUERY_RESULTS, datePosted: label.startsWith('Opportunity:') ? 'past-month' : null});
+      }, 48_000)] : []),
   ]);
   const unique = new Map();
   for (const result of results) {
@@ -365,6 +376,14 @@ export async function discover(product, {fetchImpl = fetch, now = new Date(), re
       }
     }
     result.source.count = sourceURLs.size;
+    if (result.source.name === 'LinkedIn') {
+      result.source.provider = 'linkedin-mcp';
+      if (result.source.status === 'ok') {
+        const skipped = (result.source.coverage || []).reduce((sum, entry) => sum + (entry.skippedPosts || 0), 0);
+        const failures = result.source.message.startsWith('Completed ') ? result.source.message + ' ' : '';
+        result.source.message = `${failures}LinkedIn checked up to two phrase/name searches and one scroll page per search. ${skipped ? `Skipped ${skipped} posts whose author and permalink could not be verified. ` : ''}Coverage is partial; comments and publication dates are unverified. Review the original post.`;
+      }
+    }
     if (result.source.name === 'Reddit' && result.source.coverage?.some(entry => entry.provider === 'redlib')) {
       result.source.provider = 'redlib';
       const partial = result.source.coverage.some(entry => entry.partial || entry.errors?.length);

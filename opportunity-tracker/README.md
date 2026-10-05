@@ -41,6 +41,7 @@ To move your existing local tracker data online, **Export backup** locally, sign
 
 - **Hacker News:** public Algolia search, including posts and comments. Opportunity searches use recent results; known opportunity dates older than 90 days are excluded. Exact mentions can include older results.
 - **Reddit:** interchangeable adapters. `public-json` keeps the original bounded Reddit JSON search; `redlib` calls the authenticated OVH HTML collector. Provider failures remain visible, with manual search links; neither adapter silently falls back to another provider.
+- **LinkedIn:** opt in with **Check LinkedIn posts** when reviewing a product's tracking profile. The existing authenticated OVH gateway calls Querylane's private LinkedIn MCP server with its saved owner session. Manual and hourly checks search one opportunity phrase and one product name, up to one scroll page each. Matches use the existing inbox, notes, save/dismiss decisions, and source coverage. Existing products retain their saved settings until edited.
 - **Broader web:** optional server-side OpenAI web search. Without configuration, manual search links remain available.
 
 Opportunity matches require a confirmed phrase/topic in the same request or difficulty statement. Earlier achievements and unrelated requests in another clause do not qualify. Mentions require an exact confirmed alias or website domain; use a distinctive alias to disambiguate common product names. Exclusions remove matching phrases. This is conservative text matching, not a guarantee of product fit or a complete internet crawl. Every result requires review. Web excerpts are search-supported and explicitly not independently verified conversation text.
@@ -70,6 +71,34 @@ Each query collects at most two listing pages / 30 posts, then visits at most th
 The bridge allows two active collection jobs and 60 requests per minute, with a 25-second job deadline. The tracker queues its searches with two concurrent requests and a 40-second overall Reddit deadline; healthy sources and partial collected results remain usable. Individual HTML requests have eight-second timeouts and at most two transient retries with backoff. Long upstream Retry-After values cause an explicit failure instead of early retry. Redirects and external pagination links are rejected, response sizes are bounded, and unrecognized/error HTML cannot become a successful empty collection.
 
 ## Optional web discovery
+
+### LinkedIn collection through the existing gateway
+
+`POST /v1/linkedin/search` accepts only `{query, limit, datePosted}`. It uses the
+existing `REDLIB_BRIDGE_URL` and server-only `REDLIB_BRIDGE_TOKEN`; no new secret,
+browser credential, paid provider, or Querylane token purchase is required. The
+OVH bridge joins `querylane-linkedin-mcp_default` and reaches the private
+`http://querylane-linkedin-mcp-mcp-1:8080/mcp` endpoint. The MCP host port remains
+bound to loopback. The gateway invokes only the read-only `search_posts` tool;
+it provides no generic MCP proxy or messaging, connection, inbox, or login route.
+
+The upstream 4.26.2 response contains page text and unordered permalink
+references. The collector only accepts a single observed author profile slug
+with a single matching `/posts/` permalink, and skips ambiguous posts rather
+than pairing by order. Skipped counts and partial coverage are visible in Search
+coverage. Comments and publication dates are unverified; dates stay null and
+the existing matcher asks for review. Provider failures and expired sessions
+remain visible. To renew a session, use Querylane's existing manual OVH login
+process. There is no automatic login or provider fallback.
+
+LinkedIn work is serialized, limited to 12 gateway requests per minute, and has
+a 22-second collection deadline per request / 48-second overall source deadline.
+Successful searches cache for five minutes (up to 100 queries); failures do not.
+Only two searches per product check are sent. The same existing hourly monitor
+handles LinkedIn-only products, pauses, retries at the next interval, and shared
+search leases. Backups preserve source identity, timestamps, status, and notes.
+This personal tracker has no monetary usage ledger; bounded request counts and
+source coverage follow the existing Redlib conventions.
 
 Copy `.env.example` to `.env` in this directory and configure both `OPENAI_API_KEY` and `OPPORTUNITY_OPENAI_MODEL` with a model available to your API project that supports Responses web search. Restart the tracker. The key stays on the server. Live web discovery makes billable API requests; one search is capped at six web tool calls and 3,600 output tokens. There is no monthly spending ledger in this personal tool. Leave the optional provider unset to use the free sources and manual links.
 
