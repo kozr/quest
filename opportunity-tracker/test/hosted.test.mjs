@@ -40,7 +40,7 @@ async function server(t,store) {
   };
 }
 
-test('cloud instances preserve LinkedIn settings, source coverage, identity, decisions and hourly due state', firestoreTest, async t => {
+test('cloud instances preserve LinkedIn settings, source coverage, identity and decisions', firestoreTest, async t => {
   const {create} = await backend(t);
   const a = new FirestoreStore(create()), b = new FirestoreStore(create());
   const p = await a.saveProduct({...product, communities: [], linkedin: true, monitoring: true});
@@ -56,6 +56,14 @@ test('cloud instances preserve LinkedIn settings, source coverage, identity, dec
   assert.equal(snapshot.items[0].status, 'saved');
   assert.equal(snapshot.items[0].note, 'Check the linked post.');
   assert.equal(snapshot.searches[p.id].sources[0].status, 'error');
+  const morning = Date.parse('2026-10-05T15:00:00Z');
+  const evening = Date.parse('2026-10-06T03:00:00Z');
+  const scheduled = await a.saveProduct({...product, communities: ['productivity'], linkedin: true, monitoring: true});
+  assert.deepEqual((await a.markMonitorAttempt(scheduled.id, morning)).sources, ['reddit', 'linkedin']);
+  assert.equal(await b.markMonitorAttempt(scheduled.id, morning + 60000), null);
+  assert.deepEqual((await b.markMonitorAttempt(scheduled.id, morning + 3600000)).sources, ['reddit']);
+  assert.deepEqual((await new FirestoreStore(create()).markMonitorAttempt(scheduled.id, evening)).sources, ['reddit', 'linkedin']);
+  assert.equal((await a.snapshot()).products.find(row => row.id === scheduled.id).monitorAttempts.linkedin, new Date(evening).toISOString());
 });
 
 test('actual Firestore transactions persist across cloud instances without losing concurrent updates',firestoreTest,async t=>{

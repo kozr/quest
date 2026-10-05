@@ -202,7 +202,7 @@ test('the gateway limits LinkedIn requests to twelve per minute independently of
   assert.equal((await fetch(origin + '/v1/search', options)).status, 200);
 });
 
-test('LinkedIn-only hourly products persist source identity, notes and statuses through searches and backups; old profiles stay off', async t => {
+test('LinkedIn-only products persist source identity, notes and statuses through searches and backups; old profiles stay off', async t => {
   assert.equal(validateProduct({...product, linkedin: undefined, monitoring: false}).linkedin, false);
   assert.throws(() => validateProduct({...product, linkedin: 'true'}), /LinkedIn/);
   assert.equal(dueProducts({products: [product], searches: {}}, MONITOR_INTERVAL_MS).length, 1);
@@ -226,5 +226,6 @@ test('LinkedIn-only hourly products persist source identity, notes and statuses 
   assert.equal((await fetch(origin + '/api/import', {method: 'POST', headers, body: JSON.stringify(backup)})).status, 200);
   const restored = tracker.store.snapshot();
   assert.equal(restored.products[0].linkedin, true); assert.equal(restored.items[0].sourceId, `li_${id}`);
+  assert(restored.products[0].monitorAttempts.linkedin);
   assert.equal(restored.items[0].provider, 'linkedin-mcp'); assert.equal(restored.items[0].note, 'Check the original post.');
 });

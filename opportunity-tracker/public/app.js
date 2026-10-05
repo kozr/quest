@@ -42,7 +42,7 @@ async function reload() {
   $('sign-out').hidden=state.storage!=='cloud';
   $('restore-toggle').hidden=false;
   document.querySelector('a[download]').hidden=false;
-  $('storage-status').textContent=(state.storage==='cloud'?'Products, matches, and notes are saved in your private cloud tracker.':'Products, matches, and notes are saved on this computer.')+' Enabled watchlists are checked every hour. Find matches runs a broader search when you choose.';
+  $('storage-status').textContent=(state.storage==='cloud'?'Products, matches, and notes are saved in your private cloud tracker.':'Products, matches, and notes are saved on this computer.')+' Enabled Reddit watchlists run hourly; LinkedIn runs at 8 a.m. and 8 p.m. Pacific. Find matches runs a broader search when you choose.';
   if(selected&&!state.products.some(p=>p.id===selected)) selected=null;
   render();
 }
@@ -82,6 +82,7 @@ function renderCoverage() {
       const row=node('div',null,{class:'source-record'});
       const label=source.status==='ok'?`Checked${Number.isFinite(source.count)?` · ${source.count} matches`:''}`:source.status==='unconfigured'?'Not configured':'Could not check';
       row.append(node('p',`${source.name}: ${label}`));
+      if(source.checkedAt) row.append(node('p',`Last checked ${new Date(source.checkedAt).toLocaleString()}`,{class:'secondary'}));
       if(source.message||source.error) row.append(node('p',source.message||source.error,{class:'secondary'}));
       if(source.queries?.length) {
         const queries=node('div',null,{class:'query-links'});
@@ -141,9 +142,9 @@ function render() {
   $('tracking-summary').hidden=!product;
   if(product) {
     const last=state.searches[product.id]?.searchedAt;
-    const mode=product.monitoring?(state.monitoring?.available?'Automatic checks every hour':'Automatic checks unavailable'):'Automatic checks paused';
+    const mode=product.monitoring?(state.monitoring?.available?'Automatic checks enabled':'Automatic checks unavailable'):'Automatic checks paused';
     const count=product.communities?.length||0;
-    $('tracking-summary').textContent=`${mode} · ${count} ${count===1?'subreddit':'subreddits'}${product.linkedin?' · LinkedIn posts':''} · ${last?`Last checked ${new Date(last).toLocaleString()}`:'No check yet'}`;
+    $('tracking-summary').textContent=`${mode} · ${count} ${count===1?'subreddit':'subreddits'}${count?' hourly':''}${product.linkedin?' · LinkedIn posts at 8 a.m. / 8 p.m. Pacific':''} · ${last?`Last checked ${new Date(last).toLocaleString()}`:'No check yet'}`;
   }
   $('find-matches').disabled=searching||state.products.length===0;
 }
@@ -187,7 +188,7 @@ function showStep(value, focus=true) {
     const available=Boolean(state.monitoring?.available)&&(names.length>0||linkedin);
     $('product-monitoring').disabled=!available;
     if(!available) $('product-monitoring').checked=false;
-    $('monitoring-help').textContent=!state.monitoring?.available?'Automatic checks are not configured on this server. You can save and use Find matches.':!names.length&&!linkedin?'Add subreddits or enable LinkedIn in the previous step to enable automatic checks. You can also save and search manually.':'Checks run every hour, even when this page is closed. Selected Reddit thread comments and enabled LinkedIn searches are checked; coverage is partial.';
+    $('monitoring-help').textContent=!state.monitoring?.available?'Automatic checks are not configured on this server. You can save and use Find matches.':!names.length&&!linkedin?'Add subreddits or enable LinkedIn in the previous step to enable automatic checks. You can also save and search manually.':'Reddit runs hourly; LinkedIn runs at 8 a.m. and 8 p.m. Pacific, even when this page is closed. Matches are filtered for relevant requests, difficulties, or product mentions. Coverage is partial.';
     $('setup-summary').replaceChildren(node('h3',$('product-name').value),node('p',`Watchlist: ${names.length?names.map(name=>`r/${name}`).join(', '):'No communities selected'}${linkedin?' · LinkedIn posts':''}`),node('p',`Search phrases: ${lines($('product-keywords').value).join(', ')}`));
   }
   setSetupBusy(setupBusy);
@@ -234,7 +235,7 @@ function openForm(product=null) {
   $('product-monitoring').checked=product?Boolean(product.monitoring):Boolean(state.monitoring?.available);
   $('product-linkedin').checked=product?Boolean(product.linkedin):Boolean(state.sources?.linkedin?.available);
   $('product-linkedin').disabled=!state.sources?.linkedin?.available&&!$('product-linkedin').checked;
-  $('linkedin-help').textContent=state.sources?.linkedin?.available?'Checks one search phrase and one product name through your saved server session. Only posts with a verified author and permalink enter the inbox; coverage is partial.':'LinkedIn collection is not configured on this server. Existing Reddit and web searches remain available.';
+  $('linkedin-help').textContent=state.sources?.linkedin?.available?'Searches rotating topics from your phrases and confirmed needs, plus product mentions. Relevant requests and difficulties can match related wording. Automatic checks run at 8 a.m. and 8 p.m. Pacific. Only posts with a verified author and permalink enter the inbox; coverage is partial.':'LinkedIn collection is not configured on this server. Existing Reddit and web searches remain available.';
   generatedSignature=product?.capabilities?.length?signature():null;communityChecks=[];renderCommunityChecks();
   $('profile-message').textContent=product?'Review your saved needs, phrases, and watchlist. Refresh suggestions if the product has changed.':'Suggestions will be prepared from your product details.';
   $('product-form').hidden=false;

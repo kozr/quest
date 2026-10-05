@@ -10,7 +10,7 @@ import { createAuth } from './auth.mjs';
 import {suggestProfile, checkCommunities, validateProfile, profileInput} from './profile.mjs';
 import {createRedditAdapter} from './reddit/adapters.mjs';
 import {linkedinConfigured} from './linkedin/adapter.mjs';
-import {dueProducts, startLocalMonitoring, MONITOR_INTERVAL_MS} from './monitor.mjs';
+import {dueProducts, startLocalMonitoring, MONITOR_INTERVAL_MS, LINKEDIN_TIME_ZONE, LINKEDIN_HOURS} from './monitor.mjs';
 
 const directory = dirname(fileURLToPath(import.meta.url));
 const list = (value, max = 12) => {
@@ -47,10 +47,13 @@ export function createTrackerApp({ dataDirectory = process.env.TRACKER_DATA_DIR 
     else if (!busy.has(id)) {busy.add(id); lease = true;}
     if (!lease) {const error = new Error('A search is already running for this product.');error.status = 409;throw error;}
     try {
-      if (scheduled && !await store.markMonitorAttempt(id)) return null;
+      const attempt = scheduled ? await store.markMonitorAttempt(id) : null;
+      if (scheduled && !attempt) return null;
+      const currentProduct = (await store.snapshot()).products.find(row => row.id === id);
+      if (!currentProduct) return null;
       const recentThreads = snapshot.items.filter(row => row.productId === id && row.source?.startsWith('Reddit') && Date.parse(row.lastSeenAt || row.foundAt) > Date.now() - 7 * 86400000).slice(0, 4).map(row => row.url);
-      const result = await discoverFn(structuredClone(product), {watchOnly: scheduled, recentThreads});
-      await store.recordSearch(id, {...result, trigger: scheduled ? 'scheduled' : 'manual'});
+      const result = await discoverFn(structuredClone(currentProduct), {watchOnly: scheduled, recentThreads, ...(scheduled ? {scheduledSources: attempt.sources} : {})});
+      await store.recordSearch(id, {...result, trigger: scheduled ? 'scheduled' : 'manual', ...(scheduled ? {checkedSources: attempt.sources} : {})});
       const data = await store.snapshot();
       return {search: data.searches[id], items: data.items.filter(row => row.productId === id)};
     } finally {if (store.releaseSearch) await store.releaseSearch(id, lease);else busy.delete(id);}
@@ -85,8 +88,9 @@ export function createTrackerApp({ dataDirectory = process.env.TRACKER_DATA_DIR 
     auth.login(res); res.json({ok:true});
   });
   app.post('/api/logout',(_req,res)=>{auth?.logout(res);res.json({ok:true});});
-  app.get('/api/state',async(req,res)=>res.json({...await store.snapshot(),token:auth?auth.csrf(req):token,busy:await busyIds(),storage:hosted?'cloud':'local',sources:{linkedin:{available:linkedinAvailable}},monitoring:{available:monitoringAvailable,intervalMinutes:MONITOR_INTERVAL_MS / 60000}}));
-  app.get('/api/monitor', async(_req, res) => res.json({ids: dueProducts(await store.snapshot()).map(product => product.id)}));
+  app.get('/api/state',async(req,res)=>res.json({...await store.snapshot(),token:auth?auth.csrf(req):token,busy:await busyIds(),storage:hosted?'cloud':'local',sources:{linkedin:{available:linkedinAvailable}},monitoring:{available:monitoringAvailable,intervalMinutes:MONITOR_INTERVAL_MS / 60000,linkedin:{timeZone:LINKEDIN_TIME_ZONE,hours:LINKEDIN_HOURS}}}));
+  app.get('/api/monitor', async(_req, res) => res.json({ids: dueProducts(await store.snapshot()).map(product => product.id),
+    schedules:{reddit:{intervalMinutes:MONITOR_INTERVAL_MS / 60000},linkedin:{timeZone:LINKEDIN_TIME_ZONE,hours:LINKEDIN_HOURS}}}));
   app.post('/api/monitor/:id', async(req, res) => {
     const result = await runSearch(req.params.id, true);
     if (!result) return res.status(204).end();
@@ -138,7 +142,12 @@ export function createTrackerApp({ dataDirectory = process.env.TRACKER_DATA_DIR 
     if(data?.version!==1||!Array.isArray(data.products)||data.products.length>100||!Array.isArray(data.items)||data.items.length>10000) throw new Error('Choose a tracker JSON backup.');
     const products=data.products.map(p=>{
       if(typeof p.id!=='string'||!/^[-a-zA-Z0-9_]{1,100}$/.test(p.id)||['__proto__','constructor','prototype'].includes(p.id)) throw new Error('The backup has invalid product IDs.');
-      return {...validateProduct(p),id:p.id,createdAt:typeof p.createdAt==='string'?p.createdAt:new Date().toISOString(),updatedAt:typeof p.updatedAt==='string'?p.updatedAt:new Date().toISOString()};
+      const monitorAttempts = Object.fromEntries(['reddit','linkedin'].flatMap(source => {
+        const at = p.monitorAttempts?.[source];
+        return typeof at === 'string' && Number.isFinite(Date.parse(at)) && Date.parse(at) <= Date.now() ? [[source, new Date(at).toISOString()]] : [];
+      }));
+      return {...validateProduct(p),id:p.id,createdAt:typeof p.createdAt==='string'?p.createdAt:new Date().toISOString(),updatedAt:typeof p.updatedAt==='string'?p.updatedAt:new Date().toISOString(),
+        ...(Object.keys(monitorAttempts).length ? {monitorAttempts} : {}), ...(typeof p.lastMonitorAttemptAt === 'string' && Number.isFinite(Date.parse(p.lastMonitorAttemptAt)) && Date.parse(p.lastMonitorAttemptAt) <= Date.now() ? {lastMonitorAttemptAt:p.lastMonitorAttemptAt} : {})};
     });
     if(products.some(p=>!p.id)||new Set(products.map(p=>p.id)).size!==products.length) throw new Error('The backup has invalid product IDs.');
     const ids=new Set(products.map(p=>p.id));

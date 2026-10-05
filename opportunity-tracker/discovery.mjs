@@ -2,6 +2,7 @@ import {createHash} from 'node:crypto';
 import {isIP} from 'node:net';
 import {createRedditAdapter} from './reddit/adapters.mjs';
 import {createLinkedInAdapter} from './linkedin/adapter.mjs';
+import {linkedinSlot} from './monitor.mjs';
 
 const DEADLINE_MS = 12_000;
 const MAX_BYTES = 1_048_576;
@@ -105,7 +106,7 @@ function topicWindow(text, term) {
   return null;
 }
 
-function opportunityEvidence(text, term) {
+function opportunityEvidence(text, term, matchTopic = requested => topicWindow(requested, term)) {
   const sentences = [...new Intl.Segmenter('en', {granularity: 'sentence'}).segment(text)].map(part => part.segment);
   for (const sentence of sentences) {
     // A new independent clause can ask for something unrelated to an earlier
@@ -120,7 +121,7 @@ function opportunityEvidence(text, term) {
         // do not establish what this person is currently asking for.
         let requested = pattern === difficultyPattern ? clause : clause.slice(need.index);
         requested = requested.split(/\b(?:after|before|although|whereas|while|because|since)\b/i)[0];
-        const window = topicWindow(requested, term);
+        const window = matchTopic(requested);
         if (window) return {term, window: clause.trim(), need: need[0]};
       }
     }
@@ -135,6 +136,41 @@ function productContext(product) {
   // A store host identifies a platform rather than the user's own product.
   const domain = host && !['apps.apple.com', 'appstoreconnect.apple.com', 'play.google.com'].includes(host) ? host : '';
   return {aliases, domain, keywords: terms(product.keywords), needs: terms(product.needs), exclusions: terms(product.exclusions)};
+}
+
+// Related topics require a confirmed feature/need, a domain anchor and the
+// corresponding function in the same requested clause. This is deliberately
+// bounded local matching; it does not infer arbitrary capabilities from a name.
+const relatedTopics = [
+  {term: 'subscription tracking', confirmed: /subscription|renewal|recurring (?:bill|charge)/i,
+    domain: /\b(?:subscriptions?|renewals?|recurring (?:bills?|charges?)|monthly (?:bills?|charges?))\b/i,
+    function: /track|manag|organiz|record|remind|renew|forget|remember/i},
+  {term: 'collection checklist', confirmed: /(?:collection|figures?|inventory).*(?:track|record|own|missing|list)|(?:track|record|list|catalog).*(?:collection|figures?|inventory)/i,
+    domain: /\b(?:collections?|figures?|collectibles?|blind boxes|blind box|inventory)\b/i,
+    function: /track|record|log|checklist|catalog|remember|forget|organiz|manag|list|wish.?list/i},
+  {term: 'reading log', confirmed: /(?:read|books?).*(?:track|log|record|list)|(?:track|log|record|list).*(?:read|books?)/i,
+    domain: /\b(?:books?|reading|read)\b/i, function: /track|log|record|list|remember|forget|finished|progress/i},
+  {term: 'habit tracking', confirmed: /(?:habit|daily routine).*(?:track|log|record|remind)|(?:track|log|record|remind).*(?:habit|daily routine)/i,
+    domain: /\b(?:habits?|daily routine|routines?)\b/i, function: /track|log|record|remind|remember|forget|consisten|streak/i},
+  {term: 'meal planning', confirmed: /meal plan|plan.*meals?|organiz.*recipes?/i,
+    domain: /\b(?:meals?|recipes?|meal plans?)\b/i, function: /plan|organiz|save|list|remember|forget/i},
+  {term: 'trip itinerary', confirmed: /itinerar|plan.*(?:trip|travel)|organiz.*(?:trip|travel)/i,
+    domain: /\b(?:trips?|travel|itinerar(?:y|ies))\b/i, function: /plan|organiz|manag|save|list|schedule/i},
+];
+
+function linkedinContext(product, context) {
+  const confirmed = [...terms(product.capabilities), ...context.needs].join('. ');
+  return {...context, related: relatedTopics.filter(topic => topic.confirmed.test(confirmed))};
+}
+
+function linkedinQueries(context, now) {
+  const topics = terms([...(context.related || []).map(topic => topic.term), ...context.keywords]);
+  const slot = linkedinSlot(now.getTime());
+  const day = Math.floor(Date.parse(`${slot.slice(0, 10)}T12:00:00Z`) / 86400000);
+  const rotation = day * 2 + (slot.endsWith(':20') ? 1 : 0);
+  const mentions = terms([...context.aliases, context.domain]);
+  return [topics.length ? {query: topics[rotation % topics.length], label: `Opportunity: ${topics[rotation % topics.length]}`} : null,
+    mentions.length ? {query: `"${mentions[rotation % mentions.length].replace(/"/g, '')}"`, label: `Mention: ${mentions[rotation % mentions.length]}`} : null].filter(Boolean);
 }
 
 function queryPlan(context) {
@@ -195,10 +231,14 @@ function classify(row, context, product, now) {
       const evidence = opportunityEvidence(text, term);
       return evidence ? [evidence] : [];
     });
+    for (const topic of context.related || []) {
+      const evidence = opportunityEvidence(text, topic.term, requested => topic.domain.test(requested) && topic.function.test(requested));
+      if (evidence) matches.push({...evidence, related: true});
+    }
     if (!matches.length) return null;
-    if (context.needs.length && !matches.some(match => fitsNeeds(match.window, context.needs))) return null;
+    if (context.needs.length && !matches.some(match => match.related || fitsNeeds(match.window, context.needs))) return null;
     kind = 'opportunity'; matchedTerms = matches.map(match => match.term); evidence = matches[0].window;
-    reason = `Review needed: topic “${matches[0].term}” appears in the same request or difficulty statement (“${matches[0].need}”). Confirm your product helps with the actual need${row.searchEvidence ? '; this is a search excerpt, not an independently retrieved conversation' : ''}.${publishedAt ? '' : ' Publication date is unavailable; verify whether the need is still current.'}`;
+    reason = `Review needed: ${matches[0].related ? 'a related topic and function from your confirmed tracking profile' : `topic “${matches[0].term}”`} appears in the same request or difficulty statement (“${matches[0].need}”). Confirm your product helps with the actual need${row.searchEvidence ? '; this is a search excerpt, not an independently retrieved conversation' : ''}.${publishedAt ? '' : ' Publication date is unavailable; verify whether the need is still current.'}`;
   }
   return {id: createHash('sha256').update(`${product.id ?? ''}:${url}`).digest('hex').slice(0, 32), productId: product.id,
     title, snippet: clean(evidence, 600), url, source: row.source, author: clean(row.author, 120) || null,
@@ -337,9 +377,10 @@ async function webSource(product, context, plan, fetchImpl, now) {
 }
 
 /** Public discovery only: it does not send replies or change external accounts. */
-export async function discover(product, {fetchImpl = fetch, now = new Date(), redditAdapter, linkedinAdapter, watchOnly = false, recentThreads = []} = {}) {
+export async function discover(product, {fetchImpl = fetch, now = new Date(), redditAdapter, linkedinAdapter, watchOnly = false, recentThreads = [], scheduledSources} = {}) {
   if (!product || typeof product !== 'object' || typeof fetchImpl !== 'function' || !(now instanceof Date) || !Number.isFinite(now.getTime())) throw new TypeError('A product, fetch function and valid current date are required.');
   const context = productContext(product);
+  const linkedin = linkedinContext(product, context);
   const plan = queryPlan(context);
   const searchedAt = now.toISOString();
   if (!plan.length) return {items: [], sources: [{name: 'Discovery', status: 'unconfigured', message: 'Add a product name, website domain or opportunity phrase to search.', queries: [], count: 0}], searchedAt};
@@ -353,8 +394,8 @@ export async function discover(product, {fetchImpl = fetch, now = new Date(), re
     }, redditAdapter?.id === 'redlib' || process.env.REDDIT_PROVIDER === 'redlib' || process.env.REDLIB_BRIDGE_URL ? 40_000 : DEADLINE_MS),
     webSource(product, context, plan, fetchImpl, now),
     ]),
-    ...(product.communities?.length ? [watchlistSource(product, context, redditAdapter, recentThreads)] : []),
-    ...(product.linkedin ? [source('LinkedIn', [plan.find(entry => entry.label.startsWith('Opportunity:')), plan.find(entry => entry.label.startsWith('Mention:'))].filter(Boolean),
+    ...(product.communities?.length && (!watchOnly || !scheduledSources || scheduledSources.includes('reddit')) ? [watchlistSource(product, context, redditAdapter, recentThreads)] : []),
+    ...(product.linkedin && (!watchOnly || !scheduledSources || scheduledSources.includes('linkedin')) ? [source('LinkedIn', linkedinQueries(linkedin, now),
       query => `https://www.linkedin.com/search/results/content/?${new URLSearchParams({keywords: query})}`,
       ({query, label}, signal) => {
         linkedinAdapter ||= createLinkedInAdapter({fetchImpl});
@@ -365,7 +406,7 @@ export async function discover(product, {fetchImpl = fetch, now = new Date(), re
   for (const result of results) {
     const sourceURLs = new Set();
     for (const row of result.rows) {
-      const item = classify(row, context, product, now);
+      const item = classify(row, result.source.name === 'LinkedIn' ? linkedin : context, product, now);
       if (!item) continue;
       sourceURLs.add(item.url);
       const previous = unique.get(item.url);
@@ -381,7 +422,7 @@ export async function discover(product, {fetchImpl = fetch, now = new Date(), re
       if (result.source.status === 'ok') {
         const skipped = (result.source.coverage || []).reduce((sum, entry) => sum + (entry.skippedPosts || 0), 0);
         const failures = result.source.message.startsWith('Completed ') ? result.source.message + ' ' : '';
-        result.source.message = `${failures}LinkedIn checked up to two phrase/name searches and one scroll page per search. ${skipped ? `Skipped ${skipped} posts whose author and permalink could not be verified. ` : ''}Coverage is partial; comments and publication dates are unverified. Review the original post.`;
+        result.source.message = `${failures}LinkedIn checked a rotating topic from your phrases or confirmed needs and an exact product name/domain, up to two searches and one scroll page each. Matches require a request or difficulty tied to your profile, or an exact mention. ${skipped ? `Skipped ${skipped} posts whose author and permalink could not be verified. ` : ''}Coverage is partial; comments and publication dates are unverified. Review the original post.`;
       }
     }
     if (result.source.name === 'Reddit' && result.source.coverage?.some(entry => entry.provider === 'redlib')) {

@@ -48,6 +48,7 @@ try {
   await page.locator('#product-communities').fill('r/Habits');
   await page.getByRole('button',{name:'Continue',exact:true}).click();
   assert.equal(await page.locator('#product-monitoring').isChecked(),true);
+  assert.match(await page.locator('#monitoring-help').textContent(),/Reddit runs hourly; LinkedIn runs at 8 a.m. and 8 p.m. Pacific/);
   await page.getByRole('button',{name:'Start tracking',exact:true}).click();
   await page.getByText('Search finished. Review the matches').waitFor();
   assert.equal(await page.locator('.match').count(),2);
@@ -56,6 +57,8 @@ try {
   assert.equal(store.data.products[0].monitoring,true);
   assert.equal(store.data.products[0].linkedin,true);
   assert.match(await page.locator('#tracking-summary').textContent(),/LinkedIn posts/);
+  assert.match(await page.locator('#tracking-summary').textContent(),/subreddit hourly/);
+  assert.match(await page.locator('#tracking-summary').textContent(),/8 a.m. \/ 8 p.m. Pacific/);
   await page.locator('#coverage').evaluate(element=>{element.open=true;});
   await page.getByText('LinkedIn: Checked · 1 matches',{exact:true}).waitFor();
   assert.deepEqual(store.data.products[0].needs,['Keep track of daily habits.']);

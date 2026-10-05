@@ -33,7 +33,7 @@ To move your existing local tracker data online, **Export backup** locally, sign
 
 1. Choose **Add product**, paste its website or App Store link, and optionally **Import details from link**. If a site blocks import, fill in the name and description yourself.
 2. Choose **Review tracking**. Review the suggested capabilities, needs, search phrases, and subreddit watchlist. Edit the suggestions and check community accessibility; add distinctive product names to watch for mentions.
-3. Choose **Continue**, then **Start tracking**. Automatic checks are optional and run every hour for enabled watchlists. **Find matches** also runs a broader phrase and mention search. There is no automatic posting.
+3. Choose **Continue**, then **Start tracking**. Automatic checks are optional: Reddit watchlists run hourly; LinkedIn runs at 8 a.m. and 8 p.m. Pacific. **Find matches** also runs a broader phrase and mention search. There is no automatic posting.
 4. Review the excerpt, matching reason, date, and original discussion. Save useful matches, dismiss irrelevant ones, and add notes. The New, Saved, and Dismissed filters support restoring decisions.
 5. Use **Export backup** before moving computers. **Restore backup** replaces the current records after confirmation.
 
@@ -41,7 +41,7 @@ To move your existing local tracker data online, **Export backup** locally, sign
 
 - **Hacker News:** public Algolia search, including posts and comments. Opportunity searches use recent results; known opportunity dates older than 90 days are excluded. Exact mentions can include older results.
 - **Reddit:** interchangeable adapters. `public-json` keeps the original bounded Reddit JSON search; `redlib` calls the authenticated OVH HTML collector. Provider failures remain visible, with manual search links; neither adapter silently falls back to another provider.
-- **LinkedIn:** opt in with **Check LinkedIn posts** when reviewing a product's tracking profile. The existing authenticated OVH gateway calls Querylane's private LinkedIn MCP server with its saved owner session. Manual and hourly checks search one opportunity phrase and one product name, up to one scroll page each. Matches use the existing inbox, notes, save/dismiss decisions, and source coverage. Existing products retain their saved settings until edited.
+- **LinkedIn:** opt in with **Check LinkedIn posts** when reviewing a product's tracking profile. The existing authenticated OVH gateway calls Querylane's private LinkedIn MCP server with its saved owner session. Manual and twice-daily checks search a rotating topic from the saved phrases or confirmed needs, plus an exact product name/domain, up to one scroll page each. Local filters accept supported related wording in a request or difficulty; exact keyword presence alone is insufficient. Matches use the existing inbox, notes, save/dismiss decisions, and source coverage. Existing products retain their saved settings until edited.
 - **Broader web:** optional server-side OpenAI web search. Without configuration, manual search links remain available.
 
 Opportunity matches require a confirmed phrase/topic in the same request or difficulty statement. Earlier achievements and unrelated requests in another clause do not qualify. Mentions require an exact confirmed alias or website domain; use a distinctive alias to disambiguate common product names. Exclusions remove matching phrases. This is conservative text matching, not a guarantee of product fit or a complete internet crawl. Every result requires review. Web excerpts are search-supported and explicitly not independently verified conversation text.
@@ -94,9 +94,18 @@ process. There is no automatic login or provider fallback.
 LinkedIn work is serialized, limited to 12 gateway requests per minute, and has
 a 30-second collection deadline per request / 55-second overall source deadline.
 Successful searches cache for five minutes (up to 100 queries); failures do not.
-Only two searches per product check are sent. The same existing hourly monitor
-handles LinkedIn-only products, pauses, retries at the next interval, and shared
-search leases. Backups preserve source identity, timestamps, status, and notes.
+Only two searches per product check are sent. The existing monitor checks Reddit
+hourly and LinkedIn at 08:00/20:00 in `America/Los_Angeles`, including daylight-saving
+changes. Source attempt times and coverage receipts are independent: Reddit checks
+do not rerun LinkedIn or replace its last receipt. Failed LinkedIn checks wait for
+the next slot; delayed workers check the latest slot once without a backlog.
+Manual searches remain available and count toward the current LinkedIn slot.
+Both sources share search leases. Backups preserve source identity, attempt
+timestamps, status, and notes.
+Related-topic filters are bounded rules for confirmed collection, subscription,
+reading, habit, meal, or trip needs; they are not unrestricted semantic search.
+They require a domain and relevant function in the same requested clause and
+retain exclusions, age checks, deduplication, and review-needed evidence.
 This personal tracker has no monetary usage ledger; bounded request counts and
 source coverage follow the existing Redlib conventions.
 
@@ -122,8 +131,8 @@ Tests use temporary stores, the local Firestore emulator, and scripted discovery
 
 Adding a product now has three steps: import or enter details, review an editable tracking profile, and start tracking. The profile saves confirmed capabilities, user needs, search phrases, product aliases, exclusions, and up to ten subreddit names. Starter suggestions use the product description and curated topic vocabulary. If `OPENAI_API_KEY` and `OPPORTUNITY_SETUP_MODEL` (or the existing discovery model) are configured, the server can draft a profile; model capability text must occur literally in the supplied description. Missing, failed, or unsupported model responses fall back to editable starter suggestions. Community checks retrieve recent public posts and explicitly distinguish accessible feeds from unverified suggestions. They do not establish the completeness or reliability of future collection.
 
-Automatic tracking is optional and can be paused in Edit product. Existing products and older backups remain in manual mode until their watchlist is reviewed and enabled. Both file and Firebase stores preserve the profile. A monitor attempt is recorded atomically without overwriting edits; failures wait until the next hourly interval. Searches share leases with manual runs, retain saved statuses and notes, and never send replies.
+Automatic tracking is optional and can be paused in Edit product. Existing products and older backups remain in manual mode until their watchlist is reviewed and enabled. Both file and Firebase stores preserve the profile. Source attempts are recorded atomically without overwriting edits; failures wait until the next source interval or slot. Searches share leases with manual runs, retain saved statuses and notes, and never send replies.
 
-On this computer, `npm start` runs a monitor loop alongside the local server; automatic checks require that server to remain running. Hosted checks run independently of the browser through the OVH Compose `monitor` service. Set a separate server-only `TRACKER_MONITOR_TOKEN` of at least 32 characters in Vercel production and in the VPS `reddit/.env`, plus `TRACKER_MONITOR_URL=https://product-opportunity-tracker.vercel.app` in the VPS environment. The worker asks the authenticated `GET /api/monitor` endpoint for due IDs once a minute and calls `POST /api/monitor/:id` sequentially. These endpoints accept the monitor bearer token, never a browser session or client-side credential. There is no Vercel cron-plan dependency. Each product is eligible every hour; failures, upstream delays, and a long queue can delay checks. The first check occurs when a new product is saved through the UI.
+On this computer, `npm start` runs a monitor loop alongside the local server; automatic checks require that server to remain running. Hosted checks run independently of the browser through the OVH Compose `monitor` service. Set a separate server-only `TRACKER_MONITOR_TOKEN` of at least 32 characters in Vercel production and in the VPS `reddit/.env`, plus `TRACKER_MONITOR_URL=https://product-opportunity-tracker.vercel.app` in the VPS environment. The worker asks the authenticated `GET /api/monitor` endpoint for due IDs once a minute and calls `POST /api/monitor/:id` sequentially. That protected response also reports the active source schedules. These endpoints accept the monitor bearer token, never a browser session or client-side credential. There is no Vercel cron-plan dependency. Reddit is eligible hourly; LinkedIn is eligible once per morning/evening Pacific slot. Failures, upstream delays, and a long queue can delay checks. The first manual check occurs when a new product is saved through the UI.
 
 Scheduled discovery scans up to 30 recent posts per selected subreddit and retrieves available comments from at most four recent or relevant threads. Recently matched threads from the last seven days are eligible for revisits. This is bounded HTML collection, not an exhaustive stream of every new post or comment. New comments on older or unselected threads may be missed. Manual Find matches additionally runs broader phrase and mention searches. Opportunity matching remains conservative phrase-and-request matching with a narrow check for the functions described in the needs profile; it is not a semantic guarantee. Always review the original conversation and source coverage.

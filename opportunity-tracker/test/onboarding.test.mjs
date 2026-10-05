@@ -68,7 +68,9 @@ test('automatic checks require a separate secret, honor pauses and backoff, and 
   assert.deepEqual(created.product.communities,['smiskis']);
   assert.equal((await fetch(origin+'/api/monitor',{headers})).status,401);
   const workerHeaders={Authorization:`Bearer ${token}`};
-  assert.deepEqual((await fetch(origin+'/api/monitor',{headers:workerHeaders}).then(r=>r.json())).ids,[created.product.id]);
+  const monitor=await fetch(origin+'/api/monitor',{headers:workerHeaders}).then(r=>r.json());
+  assert.deepEqual(monitor.ids,[created.product.id]);
+  assert.deepEqual(monitor.schedules,{reddit:{intervalMinutes:60},linkedin:{timeZone:'America/Los_Angeles',hours:[8,20]}});
   assert.equal((await fetch(origin+`/api/monitor/${created.product.id}`,{method:'POST',headers:workerHeaders})).status,200);
   assert.equal((await fetch(origin+`/api/monitor/${created.product.id}`,{method:'POST',headers:workerHeaders})).status,204);
   assert.equal(runs,1);

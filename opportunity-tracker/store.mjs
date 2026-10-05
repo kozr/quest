@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync, writeFileSync, renameSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
-import {dueProducts} from './monitor.mjs';
+import {dueSources} from './monitor.mjs';
 
 export class Store {
   constructor(directory) {
@@ -33,13 +33,17 @@ export class Store {
     delete next.searches[id];
     this.commit(next);
   }
-  markMonitorAttempt(id) {
+  markMonitorAttempt(id, now = Date.now()) {
     const next = this.snapshot();
-    const product = dueProducts(next).find(row => row.id === id);
-    if (!product) return false;
-    product.lastMonitorAttemptAt = new Date().toISOString();
+    const product = next.products.find(row => row.id === id);
+    if (!product) return null;
+    const sources = dueSources(product, next, now);
+    if (!sources.length) return null;
+    const attemptedAt = new Date(now).toISOString();
+    product.monitorAttempts = {...product.monitorAttempts, ...Object.fromEntries(sources.map(source => [source, attemptedAt]))};
+    if (sources.includes('reddit')) product.lastMonitorAttemptAt = attemptedAt;
     this.commit(next);
-    return true;
+    return {sources, attemptedAt};
   }
   recordSearch(productId, result) {
     const next = this.snapshot();
@@ -50,7 +54,14 @@ export class Store {
       const record = { ...item, id, productId, status: previous?.status || 'new', note: previous?.note || '', foundAt: previous?.foundAt || result.searchedAt, lastSeenAt: result.searchedAt };
       next.items = [record, ...next.items.filter(i => i.id !== id)];
     }
-    next.searches[productId] = { ...result, items: undefined, found: result.items.length };
+    const prior = next.searches[productId];
+    const sources = (result.sources || []).map(source => ({...source, checkedAt: result.searchedAt}));
+    const updatedNames = new Set(sources.map(source => source.name));
+    const lastChecks = {...prior?.lastChecks};
+    if (sources.some(source => ['Reddit', 'Reddit watchlist'].includes(source.name))) lastChecks.reddit = result.searchedAt;
+    if (sources.some(source => source.name === 'LinkedIn')) lastChecks.linkedin = result.searchedAt;
+    next.searches[productId] = { ...result, items: undefined, found: result.items.length, lastChecks,
+      sources: [...sources, ...(prior?.sources || []).filter(source => !updatedNames.has(source.name)).map(source => ({...source, checkedAt: source.checkedAt || prior.searchedAt}))] };
     this.commit(next);
     return next.searches[productId];
   }
