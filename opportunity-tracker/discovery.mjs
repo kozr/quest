@@ -159,8 +159,8 @@ const relatedTopics = [
 ];
 
 function linkedinContext(product, context) {
-  const confirmed = [...terms(product.capabilities), ...context.needs].join('. ');
-  return {...context, related: relatedTopics.filter(topic => topic.confirmed.test(confirmed))};
+  const confirmed = [...terms(product.capabilities), ...context.needs];
+  return {...context, related: relatedTopics.filter(topic => confirmed.some(statement => topic.confirmed.test(statement)))};
 }
 
 function linkedinQueries(context, now) {

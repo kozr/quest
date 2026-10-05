@@ -91,6 +91,8 @@ test('LinkedIn matches supported related wording and rejects promotion, unrelate
   assert.equal(result.items.find(item=>item.sourceId===rows[8].sourceId).kind,'mention');
   const unsupported=await discover({...product,capabilities:[],needs:[]},{watchOnly:true,scheduledSources:['linkedin'],now:new Date(morning),linkedinAdapter:{search:async()=>({rows:[rows[0]],coverage:{}})}});
   assert.equal(unsupported.items.length,0,'A name/description alone does not invent related capabilities');
+  const unrelatedFeatures=await discover({...product,capabilities:['Browse a collection of furniture.','Track shipping progress.'],needs:[]},{watchOnly:true,scheduledSources:['linkedin'],now:new Date(morning),linkedinAdapter:{search:async()=>({rows:[rows[0]],coverage:{}})}});
+  assert.equal(unrelatedFeatures.items.length,0,'Separate features cannot be joined into an invented collection-tracking capability');
 });
 
 test('retrieval rotates bounded context/name queries and scheduled Reddit checks never call LinkedIn', async () => {
