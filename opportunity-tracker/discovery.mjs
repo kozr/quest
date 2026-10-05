@@ -359,7 +359,7 @@ export async function discover(product, {fetchImpl = fetch, now = new Date(), re
       ({query, label}, signal) => {
         linkedinAdapter ||= createLinkedInAdapter({fetchImpl});
         return linkedinAdapter.search({query, signal, limit: MAX_QUERY_RESULTS, datePosted: label.startsWith('Opportunity:') ? 'past-month' : null});
-      }, 48_000)] : []),
+      }, 55_000)] : []),
   ]);
   const unique = new Map();
   for (const result of results) {

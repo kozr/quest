@@ -92,7 +92,7 @@ remain visible. To renew a session, use Querylane's existing manual OVH login
 process. There is no automatic login or provider fallback.
 
 LinkedIn work is serialized, limited to 12 gateway requests per minute, and has
-a 22-second collection deadline per request / 48-second overall source deadline.
+a 30-second collection deadline per request / 55-second overall source deadline.
 Successful searches cache for five minutes (up to 100 queries); failures do not.
 Only two searches per product check are sent. The same existing hourly monitor
 handles LinkedIn-only products, pauses, retries at the next interval, and shared

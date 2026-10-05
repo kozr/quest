@@ -35,7 +35,7 @@ export function createRedlibBridge({token = process.env.REDLIB_BRIDGE_TOKEN, ada
     if (linkedinActive || linkedinCalls.length >= 12) return res.status(429).set('Retry-After', '2').json({error: 'collector_busy'});
     linkedinCalls.push(Date.now()); linkedinActive = true;
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 22_000);
+    const timer = setTimeout(() => controller.abort(), 30_000);
     const disconnect = () => {if (!res.writableEnded) controller.abort();};
     res.on('close', disconnect);
     try {res.json(await linkedinCollector.search({query, limit, datePosted, signal: controller.signal}));}
