@@ -234,7 +234,8 @@ test('a running search cannot overlap or race a backup restore, and failure allo
 
 test('JSON export and restore preserve durable products, decisions and notes', async t => {
   const original = await tracker(t, {
-    discoverFn: async () => ({ items: [match('https://news.ycombinator.com/item?id=41')], sources: [], searchedAt: '2026-10-03T12:00:00.000Z' }),
+    discoverFn: async () => ({ items: [{...match('https://www.reddit.com/r/Python/comments/abc123/_/def456/'),
+      source: 'Reddit', provider: 'redlib', sourceId: 't1_def456', postId: 'abc123', parentId: 't3_abc123', type: 'comment', collectedAt: '2026-10-03T11:59:00.000Z'}], sources: [], searchedAt: '2026-10-03T12:00:00.000Z' }),
   });
   const product = await addProduct(original, { ...productInput, url: 'https://apps.apple.com/us/app/quietboard/id123456789' });
   const search = await original.request(`/api/products/${product.id}/search`, { method: 'POST' });

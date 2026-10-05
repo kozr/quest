@@ -104,7 +104,16 @@ export function createTrackerApp({ dataDirectory = process.env.TRACKER_DATA_DIR 
     const ids=new Set(products.map(p=>p.id));
     const items=data.items.map(i=>{
       if(!ids.has(i.productId)||!['opportunity','mention'].includes(i.kind)||!['new','saved','dismissed'].includes(i.status)||typeof i.id!=='string'||!i.id||typeof i.title!=='string'||typeof i.note!=='string'||i.note.length>3000) throw new Error('The backup has invalid matches.');
-      return {id:i.id,productId:i.productId,kind:i.kind,status:i.status,note:i.note,url:publicUrl(i.url).href,title:i.title.slice(0,500),snippet:String(i.snippet||'').slice(0,10000),reason:String(i.reason||'').slice(0,3000),source:typeof i.source==='string'?i.source.slice(0,100):'Imported',author:typeof i.author==='string'?i.author.slice(0,120):null,publishedAt:typeof i.publishedAt==='string'?i.publishedAt:null,foundAt:typeof i.foundAt==='string'?i.foundAt:new Date().toISOString(),lastSeenAt:typeof i.lastSeenAt==='string'?i.lastSeenAt:new Date().toISOString(),matchedTerms:Array.isArray(i.matchedTerms)?i.matchedTerms.filter(t=>typeof t==='string').slice(0,20):[]};
+      const provenance = {};
+      for (const key of ['sourceId', 'postId', 'parentId']) if (i[key] != null) {
+        if (typeof i[key] !== 'string' || !/^(?:t[13]_)?[a-z0-9]{1,20}$/i.test(i[key])) throw new Error('The backup has invalid Reddit IDs.');
+        provenance[key] = i[key];
+      }
+      if (i.parentId === null) provenance.parentId = null;
+      if (['redlib', 'public-json'].includes(i.provider)) provenance.provider = i.provider;
+      if (['post', 'comment'].includes(i.type)) provenance.type = i.type;
+      if (typeof i.collectedAt === 'string' && Number.isFinite(Date.parse(i.collectedAt))) provenance.collectedAt = new Date(i.collectedAt).toISOString();
+      return {...provenance,id:i.id,productId:i.productId,kind:i.kind,status:i.status,note:i.note,url:publicUrl(i.url).href,title:i.title.slice(0,500),snippet:String(i.snippet||'').slice(0,10000),reason:String(i.reason||'').slice(0,3000),source:typeof i.source==='string'?i.source.slice(0,100):'Imported',author:typeof i.author==='string'?i.author.slice(0,120):null,publishedAt:typeof i.publishedAt==='string'?i.publishedAt:null,foundAt:typeof i.foundAt==='string'?i.foundAt:new Date().toISOString(),lastSeenAt:typeof i.lastSeenAt==='string'?i.lastSeenAt:new Date().toISOString(),matchedTerms:Array.isArray(i.matchedTerms)?i.matchedTerms.filter(t=>typeof t==='string').slice(0,20):[]};
     });
     if(new Set(items.map(i=>i.id)).size!==items.length) throw new Error('The backup has duplicate matches.');
     await store.importData({version:1,products,items,searches:{}});res.json({ok:true});

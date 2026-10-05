@@ -40,12 +40,34 @@ To move your existing local tracker data online, **Export backup** locally, sign
 ## Sources and match behavior
 
 - **Hacker News:** public Algolia search, including posts and comments. Opportunity searches use recent results; known opportunity dates older than 90 days are excluded. Exact mentions can include older results.
-- **Reddit:** bounded public JSON searches. Reddit may block automated access. A failure appears in Search coverage with links to search the same phrases manually; failed searches never become fake results or zero-coverage successes.
+- **Reddit:** interchangeable adapters. `public-json` keeps the original bounded Reddit JSON search; `redlib` calls the authenticated OVH HTML collector. Provider failures remain visible, with manual search links; neither adapter silently falls back to another provider.
 - **Broader web:** optional server-side OpenAI web search. Without configuration, manual search links remain available.
 
 Opportunity matches require a confirmed phrase/topic in the same request or difficulty statement. Earlier achievements and unrelated requests in another clause do not qualify. Mentions require an exact confirmed alias or website domain; use a distinctive alias to disambiguate common product names. Exclusions remove matching phrases. This is conservative text matching, not a guarantee of product fit or a complete internet crawl. Every result requires review. Web excerpts are search-supported and explicitly not independently verified conversation text.
 
 Searches are bounded to six queries per public source, 30 results per query, and a 12-second source deadline. The combined inbox takes up to 100 deduplicated matches per search. Repeated searches preserve saved/dismissed statuses and notes. A source returning only part of a search reports that limitation. No mock data is used in the running app.
+
+### Redlib adapter
+
+The `reddit/adapters.mjs` contract is `search({query, signal, limit}) -> {rows, coverage}`. Discovery accepts an injected `redditAdapter` for tests and selects the production adapter using environment variables. The Redlib HTML adapter additionally implements `list({subreddit, sort, signal, limit})` and `thread({path, signal, limit})` for later monitoring workers. No scheduler or continuous Reddit-wide feed is introduced by this integration.
+
+Configure the tracker, including Vercel's **server-only** environment:
+
+```dotenv
+REDDIT_PROVIDER=redlib
+REDLIB_BRIDGE_URL=https://vps-d6b1b25d.vps.ovh.us
+REDLIB_BRIDGE_TOKEN=<random secret of at least 32 characters>
+```
+
+The same token must be installed privately in `reddit/.env` on the OVH bridge. Never commit it or expose it to browser JavaScript. `REDDIT_PROVIDER=public-json` explicitly restores the original adapter. An incomplete Redlib configuration is an error, not permission to use another provider. The local tracker reads its own `.env` on startup; restart it after configuration changes.
+
+The collector is a separate Docker Compose service deployed to `/home/foray/apps/opportunity-redlib-bridge`, using `reddit/compose.yaml` and `reddit/ovh-deploy.json`. It joins the existing private Redlib and Caddy Docker networks. Redlib's host port remains bound to loopback. The bridge exposes only authenticated normalized JSON endpoints (`POST /v1/search`, `/v1/list`, `/v1/thread`) and a non-sensitive health endpoint. Its local diagnostic port is `127.0.0.1:18081`. Caddy serves HTTPS for the VPS hostname and proxies to `opportunity-redlib-bridge:8081`.
+
+HTML collection uses Cheerio, ordinary HTTP, and actual page links, never `.json`, a browser, or an LLM. Post/comment IDs, separate author/text attribution, parent IDs when observable, original Reddit URLs, and collection timestamps survive classification, storage, and backup restore. Successful normalized pages are cached for 60 seconds with a 200-page cap and in-flight request sharing; failed pages are not cached. Deduplication uses Reddit IDs inside the collector and canonical Reddit URLs in the tracker.
+
+Each query collects at most two listing pages / 30 posts, then visits at most three returned threads. Each thread is bounded to two HTML pages / 200 records. These are mechanical limits, not a claim to retrieve all comments. Coverage reports continuation limits, failed pages, and visible comment counts below the advertised count. It always marks thread completeness as unverified. Comment matches come from selected post threads, **not global comment search**. Cache timestamps retain the original collection time.
+
+The bridge allows two active collection jobs and 60 requests per minute, with a 25-second job deadline. The tracker queues its searches with two concurrent requests and a 40-second overall Reddit deadline; healthy sources and partial collected results remain usable. Individual HTML requests have eight-second timeouts and at most two transient retries with backoff. Long upstream Retry-After values cause an explicit failure instead of early retry. Redirects and external pagination links are rejected, response sizes are bounded, and unrecognized/error HTML cannot become a successful empty collection.
 
 ## Optional web discovery
 

@@ -1,5 +1,6 @@
 import {createHash} from 'node:crypto';
 import {isIP} from 'node:net';
+import {createRedditAdapter} from './reddit/adapters.mjs';
 
 const DEADLINE_MS = 12_000;
 const MAX_BYTES = 1_048_576;
@@ -183,7 +184,10 @@ function classify(row, context, product, now) {
   }
   return {id: createHash('sha256').update(`${product.id ?? ''}:${url}`).digest('hex').slice(0, 32), productId: product.id,
     title, snippet: clean(evidence, 600), url, source: row.source, author: clean(row.author, 120) || null,
-    publishedAt, kind, matchedTerms, reason};
+    publishedAt, kind, matchedTerms, reason,
+    ...(row.provider ? {provider: row.provider} : {}),
+    ...(row.sourceId ? {sourceId: row.sourceId, type: row.type, postId: row.postId ?? null, parentId: row.parentId ?? null} : {}),
+    ...(row.collectedAt ? {collectedAt: row.collectedAt} : {})};
 }
 
 async function boundedText(response) {
@@ -207,20 +211,23 @@ function safeError(error) {
   if (['TimeoutError', 'AbortError'].includes(error?.name)) return 'Source did not respond within 12 seconds.';
   if (/^HTTP \d{3}$/.test(error?.message ?? '')) return error.message;
   if (['Response exceeded the size limit.', 'Source returned an empty response.', 'Source returned an unexpected response.'].includes(error?.message)) return error.message;
+  if (error?.code === 'unrecognized_redlib_page') return 'Redlib returned an error page or an unsupported HTML layout.';
+  if (/^upstream_http_\d{3}$/.test(error?.code || '')) return `Upstream returned HTTP ${error.code.slice(-3)}.`;
   // Provider errors may contain credentials or raw source content.
   return 'Source could not be reached or returned an unreadable response.';
 }
 
-async function source(name, plan, link, fetchRows) {
+async function source(name, plan, link, fetchRows, deadline = DEADLINE_MS) {
   const queries = plan.map(({query, label}) => ({label, url: link(query)}));
-  const signal = AbortSignal.timeout(DEADLINE_MS);
+  const signal = AbortSignal.timeout(deadline);
   const settled = await Promise.allSettled(plan.map(entry => fetchRows(entry, signal)));
-  const rows = settled.flatMap(result => result.status === 'fulfilled' ? result.value : []);
+  const rows = settled.flatMap(result => result.status === 'fulfilled' ? result.value.rows ?? result.value : []);
+  const coverage = settled.flatMap(result => result.status === 'fulfilled' && result.value.coverage ? [result.value.coverage] : []);
   const failures = settled.filter(result => result.status === 'rejected').map(result => safeError(result.reason));
   const successCount = settled.length - failures.length;
   return {rows, source: {name, status: successCount ? 'ok' : 'error',
     message: failures.length ? `${successCount ? `Completed ${successCount} of ${plan.length} searches. ` : ''}${[...new Set(failures)].join(' ')}` : `Search completed. Results are a limited sample of public sources. ${WINDOW_MESSAGE}`,
-    queries, count: 0}};
+    queries, count: 0, ...(coverage.length ? {coverage} : {})}};
 }
 
 async function hnRows({query, label}, signal, fetchImpl, now) {
@@ -241,21 +248,6 @@ async function hnRows({query, label}, signal, fetchImpl, now) {
       title: isComment ? clean(text, 180) || 'Hacker News comment' : hit.title,
       snippet: text, outboundURL: isComment ? null : hit.url, author: hit.author,
       publishedAt: typeof hit.created_at_i === 'number' ? hit.created_at_i : hit.created_at}];
-  });
-}
-
-async function redditRows(query, signal, fetchImpl) {
-  const endpoint = new URL('https://www.reddit.com/search.json');
-  endpoint.search = new URLSearchParams({q: query, sort: 'new', t: 'all', limit: String(MAX_QUERY_RESULTS), raw_json: '1', type: 'link'}).toString();
-  const response = await fetchImpl(endpoint, {signal, redirect: 'error', headers: {Accept: 'application/json', 'User-Agent': 'OpportunityTracker/1.0 (personal read-only research)'}});
-  const body = JSON.parse(await boundedText(response));
-  if (!Array.isArray(body.data?.children)) throw new Error('Source returned an unexpected response.');
-  return body.data.children.slice(0, MAX_QUERY_RESULTS).flatMap(child => {
-    const row = child?.data;
-    if (!row || typeof row.permalink !== 'string' || !/^\/r\/[\w]{2,21}\/comments\/[\da-z]+\//i.test(row.permalink) || row.removed_by_category || row.locked || row.archived) return [];
-    if (row.author === '[deleted]' || ['[removed]', '[deleted]'].includes(row.selftext)) return [];
-    return [{source: 'Reddit', url: `https://www.reddit.com${row.permalink}`, title: row.title,
-      snippet: row.selftext, outboundURL: row.url, author: row.author, publishedAt: row.created_utc}];
   });
 }
 
@@ -296,7 +288,7 @@ async function webSource(product, context, plan, fetchImpl, now) {
 }
 
 /** Public discovery only: it does not send replies or change external accounts. */
-export async function discover(product, {fetchImpl = fetch, now = new Date()} = {}) {
+export async function discover(product, {fetchImpl = fetch, now = new Date(), redditAdapter} = {}) {
   if (!product || typeof product !== 'object' || typeof fetchImpl !== 'function' || !(now instanceof Date) || !Number.isFinite(now.getTime())) throw new TypeError('A product, fetch function and valid current date are required.');
   const context = productContext(product);
   const plan = queryPlan(context);
@@ -304,7 +296,10 @@ export async function discover(product, {fetchImpl = fetch, now = new Date()} = 
   if (!plan.length) return {items: [], sources: [{name: 'Discovery', status: 'unconfigured', message: 'Add a product name, website domain or opportunity phrase to search.', queries: [], count: 0}], searchedAt};
   const results = await Promise.all([
     source('Hacker News', plan, query => `https://hn.algolia.com/?${new URLSearchParams({q: query})}`, (entry, signal) => hnRows(entry, signal, fetchImpl, now)),
-    source('Reddit', plan, query => `https://www.reddit.com/search/?${new URLSearchParams({q: query, sort: 'new'})}`, ({query}, signal) => redditRows(query, signal, fetchImpl)),
+    source('Reddit', plan, query => `https://www.reddit.com/search/?${new URLSearchParams({q: query, sort: 'new'})}`, ({query}, signal) => {
+      redditAdapter ||= createRedditAdapter({fetchImpl});
+      return redditAdapter.search({query, signal, limit: MAX_QUERY_RESULTS});
+    }, redditAdapter?.id === 'redlib' || process.env.REDDIT_PROVIDER === 'redlib' || process.env.REDLIB_BRIDGE_URL ? 40_000 : DEADLINE_MS),
     webSource(product, context, plan, fetchImpl, now),
   ]);
   const unique = new Map();
@@ -322,6 +317,12 @@ export async function discover(product, {fetchImpl = fetch, now = new Date()} = 
       }
     }
     result.source.count = sourceURLs.size;
+    if (result.source.coverage?.some(entry => entry.provider === 'redlib')) {
+      result.source.provider = 'redlib';
+      const partial = result.source.coverage.some(entry => entry.partial || entry.errors?.length);
+      result.source.message = `Redlib HTML collection${partial ? ' returned partial coverage' : ' completed'}. Post searches include comments from selected threads only; this is not a global comment search. Thread completeness is unverified. ${WINDOW_MESSAGE}`;
+      if (result.source.status === 'error') result.source.message += ' The collector could not be reached.';
+    }
     if (result.source.name === 'Reddit' && result.source.status === 'error') result.source.message += ' Reddit can block public automated searches. The search links remain available to open manually.';
   }
   const items = [...unique.values()].sort((a, b) => (b.publishedAt ?? '').localeCompare(a.publishedAt ?? '')).slice(0, MAX_ITEMS);
