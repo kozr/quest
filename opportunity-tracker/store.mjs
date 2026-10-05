@@ -2,6 +2,7 @@ import { mkdirSync, readFileSync, writeFileSync, renameSync, existsSync } from '
 import { join } from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
 import {dueSources} from './monitor.mjs';
+import {stageQualifications, claimQualification, finishQualification, mergeQualificationHistory} from './qualification.mjs';
 
 export class Store {
   constructor(directory) {
@@ -47,11 +48,13 @@ export class Store {
   }
   recordSearch(productId, result) {
     const next = this.snapshot();
-    if (!next.products.some(p => p.id === productId)) return null;
+    const product = next.products.find(p => p.id === productId);
+    if (!product) return null;
+    const qualification = result.semantic ? stageQualifications(next, product, result.candidates || [], result.searchedAt, result.trigger) : undefined;
     for (const item of result.items) {
       const id = createHash('sha256').update(`${productId}:${item.url}`).digest('hex').slice(0, 24);
       const previous = next.items.find(i => i.id === id);
-      const record = { ...item, id, productId, status: previous?.status || 'new', note: previous?.note || '', foundAt: previous?.foundAt || result.searchedAt, lastSeenAt: result.searchedAt };
+      const record = { ...item, ...(previous?.qualification ? {qualification:previous.qualification} : {}), id, productId, status: previous?.status || 'new', note: previous?.note || '', foundAt: previous?.foundAt || result.searchedAt, lastSeenAt: result.searchedAt };
       next.items = [record, ...next.items.filter(i => i.id !== id)];
     }
     const prior = next.searches[productId];
@@ -60,7 +63,7 @@ export class Store {
     const lastChecks = {...prior?.lastChecks};
     if (sources.some(source => ['Reddit', 'Reddit watchlist'].includes(source.name))) lastChecks.reddit = result.searchedAt;
     if (sources.some(source => source.name === 'LinkedIn')) lastChecks.linkedin = result.searchedAt;
-    next.searches[productId] = { ...result, items: undefined, found: result.items.length, lastChecks,
+    next.searches[productId] = { ...result, items: undefined, candidates:undefined, ...(qualification ? {qualification} : {}), found: result.items.length, lastChecks,
       sources: [...sources, ...(prior?.sources || []).filter(source => !updatedNames.has(source.name)).map(source => ({...source, checkedAt: source.checkedAt || prior.searchedAt}))] };
     this.commit(next);
     return next.searches[productId];
@@ -74,6 +77,15 @@ export class Store {
     return item;
   }
   importData(value) {
-    this.commit(structuredClone(value));
+    if (Object.values(this.data.qualifications || {}).some(job => job.status === 'running' && job.leaseUntil > Date.now())) throw new Error('Wait for the running AI check to finish before restoring a backup.');
+    this.commit(this.data.qualifications || value.qualifications ? mergeQualificationHistory(this.data, value) : structuredClone(value));
+  }
+  claimQualification(settings, now, productId) {
+    const next = this.snapshot(), result = claimQualification(next, settings, now, productId);
+    this.commit(next); return result;
+  }
+  finishQualification(key, token, outcome, now) {
+    const next = this.snapshot(), result = finishQualification(next, key, token, outcome, now);
+    this.commit(next); return result;
   }
 }

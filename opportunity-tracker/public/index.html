@@ -30,7 +30,7 @@
     <form id="restore-form" hidden>
       <label for="backup-file">Tracker JSON backup</label>
       <input id="backup-file" type="file" accept="application/json,.json" required>
-      <p class="secondary">Restoring replaces the products, matches, and notes currently on this computer.</p>
+      <p class="secondary">Restoring replaces products, matches, and notes. AI processing history and spent budget are retained to avoid repeat charges.</p>
       <button type="submit">Restore</button>
       <button id="restore-cancel" type="button">Cancel</button>
     </form>
@@ -129,6 +129,10 @@
             <p id="tracking-summary" class="secondary" hidden></p>
           </div>
           <button id="find-matches" type="button" disabled>Find matches</button>
+        </div>
+        <div id="qualification-panel" hidden>
+          <p id="qualification-status" class="secondary" role="status" aria-live="polite"></p>
+          <button id="run-qualification" type="button" hidden>Review one queued post</button>
         </div>
         <div class="filters">
           <div class="statuses" role="group" aria-label="Review status">

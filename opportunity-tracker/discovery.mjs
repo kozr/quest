@@ -340,12 +340,12 @@ async function hnRows({query, label}, signal, fetchImpl, now) {
   });
 }
 
-async function webSource(product, context, plan, fetchImpl, now) {
+async function webSource(product, context, plan, fetchImpl, now, paidWeb) {
   const name = 'Web search';
   const queries = plan.map(({label, query}) => ({label, url: `https://www.google.com/search?${new URLSearchParams({q: query})}`}));
   const apiKey = process.env.OPENAI_API_KEY;
   const model = process.env.OPPORTUNITY_OPENAI_MODEL?.trim() || process.env.LEADS_MODEL_ID?.trim();
-  if (!apiKey || !model) return {rows: [], source: {name, status: 'unconfigured', message: 'Broader web discovery is not enabled. You can use the search links.', queries, count: 0}};
+  if (!paidWeb || !apiKey || !model) return {rows: [], source: {name, status: 'unconfigured', message: 'Broader paid web discovery is disabled. You can use the search links.', queries, count: 0}};
   try {
     const response = await fetchImpl('https://api.openai.com/v1/responses', {method: 'POST', redirect: 'error', signal: AbortSignal.timeout(DEADLINE_MS),
       headers: {Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json'}, body: JSON.stringify({model, store: false, max_output_tokens: 3_600,
@@ -377,7 +377,7 @@ async function webSource(product, context, plan, fetchImpl, now) {
 }
 
 /** Public discovery only: it does not send replies or change external accounts. */
-export async function discover(product, {fetchImpl = fetch, now = new Date(), redditAdapter, linkedinAdapter, watchOnly = false, recentThreads = [], scheduledSources} = {}) {
+export async function discover(product, {fetchImpl = fetch, now = new Date(), redditAdapter, linkedinAdapter, watchOnly = false, recentThreads = [], scheduledSources, semantic = false, paidWeb = false} = {}) {
   if (!product || typeof product !== 'object' || typeof fetchImpl !== 'function' || !(now instanceof Date) || !Number.isFinite(now.getTime())) throw new TypeError('A product, fetch function and valid current date are required.');
   const context = productContext(product);
   const linkedin = linkedinContext(product, context);
@@ -392,7 +392,7 @@ export async function discover(product, {fetchImpl = fetch, now = new Date(), re
       redditAdapter ||= createRedditAdapter({fetchImpl});
       return redditAdapter.search({query, signal, limit: MAX_QUERY_RESULTS});
     }, redditAdapter?.id === 'redlib' || process.env.REDDIT_PROVIDER === 'redlib' || process.env.REDLIB_BRIDGE_URL ? 40_000 : DEADLINE_MS),
-    webSource(product, context, plan, fetchImpl, now),
+    webSource(product, context, plan, fetchImpl, now, paidWeb),
     ]),
     ...(product.communities?.length && (!watchOnly || !scheduledSources || scheduledSources.includes('reddit')) ? [watchlistSource(product, context, redditAdapter, recentThreads)] : []),
     ...(product.linkedin && (!watchOnly || !scheduledSources || scheduledSources.includes('linkedin')) ? [source('LinkedIn', linkedinQueries(linkedin, now),
@@ -403,11 +403,22 @@ export async function discover(product, {fetchImpl = fetch, now = new Date(), re
       }, 55_000)] : []),
   ]);
   const unique = new Map();
+  const candidates = new Map();
   for (const result of results) {
     const sourceURLs = new Set();
     for (const row of result.rows) {
+      const url = publicSourceURL(row.url);
+      const subreddit = url && new URL(url).pathname.match(/^\/r\/([\w]{2,21})\/comments\/[a-z0-9]+\/$/i)?.[1].toLowerCase();
+      const semanticPost = semantic && row.type === 'post' && (row.source === 'LinkedIn' && product.linkedin || row.source?.startsWith('Reddit') && product.communities?.includes(subreddit));
+      if (semanticPost && url) {
+        const title = clean(row.title,1000), snippet = clean(row.snippet,3000), publishedAt = date(row.publishedAt,now);
+        if (title && !context.exclusions.some(term => literalMatch(`${title} ${snippet}`,term)) && (!publishedAt || Date.parse(publishedAt) >= now.getTime()-OPPORTUNITY_WINDOW_MS) && candidates.size < 300) {
+          candidates.set(url,{...row,url,title,snippet,publishedAt});
+        }
+      }
       const item = classify(row, result.source.name === 'LinkedIn' ? linkedin : context, product, now);
       if (!item) continue;
+      if (semanticPost && item.kind === 'opportunity') continue;
       sourceURLs.add(item.url);
       const previous = unique.get(item.url);
       if (!previous) unique.set(item.url, item);
@@ -417,6 +428,7 @@ export async function discover(product, {fetchImpl = fetch, now = new Date(), re
       }
     }
     result.source.count = sourceURLs.size;
+    if (semantic && ['Reddit','Reddit watchlist','LinkedIn'].includes(result.source.name)) result.source.qualification = 'Selected subreddit and LinkedIn posts are queued for AI review; comments and exact mentions keep their existing filters.';
     if (result.source.name === 'LinkedIn') {
       result.source.provider = 'linkedin-mcp';
       if (result.source.status === 'ok') {
@@ -434,5 +446,5 @@ export async function discover(product, {fetchImpl = fetch, now = new Date(), re
     if (result.source.name === 'Reddit' && result.source.status === 'error') result.source.message += ' Reddit can block public automated searches. The search links remain available to open manually.';
   }
   const items = [...unique.values()].sort((a, b) => (b.publishedAt ?? '').localeCompare(a.publishedAt ?? '')).slice(0, MAX_ITEMS);
-  return {items, sources: results.map(result => result.source), searchedAt};
+  return {items, sources: results.map(result => result.source), searchedAt, ...(semantic ? {semantic:true,candidates:[...candidates.values()]} : {})};
 }

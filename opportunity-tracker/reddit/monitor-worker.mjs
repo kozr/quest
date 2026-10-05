@@ -8,7 +8,7 @@ export async function monitorCycle({baseURL, token, fetchImpl = fetch, signal} =
   const headers = {Authorization: `Bearer ${token}`};
   const response = await fetchImpl(new URL('/api/monitor', url), {headers, redirect: 'error', signal: signal || AbortSignal.timeout(15000)});
   if (!response.ok) throw new Error(`Monitor list returned ${response.status}`);
-  const {ids} = await response.json();
+  const {ids,qualifications} = await response.json();
   if (!Array.isArray(ids) || ids.length > 100 || ids.some(id => typeof id !== 'string' || !/^[-a-zA-Z0-9_]{1,100}$/.test(id))) throw new Error('Invalid monitor response');
   const results = [];
   for (const id of ids) {
@@ -17,6 +17,16 @@ export async function monitorCycle({baseURL, token, fetchImpl = fetch, signal} =
       results.push({id, status: result.status});
       await result.body?.cancel();
     } catch { results.push({id, status: 'unavailable'}); }
+  }
+  // Separate short requests keep collection and qualification inside Vercel's
+  // function deadline. The shared ledger enforces spend and one active job.
+  if(qualifications?.available===true) for(let index=0;index<2;index++) {
+    try {
+      const result=await fetchImpl(new URL('/api/monitor/qualifications',url),{method:'POST',headers,redirect:'error',signal:signal||AbortSignal.timeout(25000)});
+      const receipt=result.ok?await result.json():null;
+      results.push({id:'qualification',status:result.status});
+      if(!receipt||['idle','disabled'].includes(receipt.status))break;
+    } catch {results.push({id:'qualification',status:'unavailable'});break;}
   }
   return results;
 }

@@ -4,6 +4,7 @@ let selected = null;
 let status = 'new';
 let editing = null;
 let searching = false;
+let qualifying = false;
 let setupStep = 1;
 let setupBusy = false;
 let setupGeneration = 0;
@@ -84,6 +85,7 @@ function renderCoverage() {
       row.append(node('p',`${source.name}: ${label}`));
       if(source.checkedAt) row.append(node('p',`Last checked ${new Date(source.checkedAt).toLocaleString()}`,{class:'secondary'}));
       if(source.message||source.error) row.append(node('p',source.message||source.error,{class:'secondary'}));
+      if(source.qualification) row.append(node('p',source.qualification,{class:'secondary'}));
       if(source.queries?.length) {
         const queries=node('div',null,{class:'query-links'});
         for(const query of source.queries) if(typeof query==='object'&&query.url) queries.append(link(query.label||'Search this source',query.url));
@@ -118,6 +120,12 @@ function renderMatches() {
     article.append(node('p',[item.kind==='mention'?'Mention':'Opportunity',item.source,!selected?product?.name:null,item.author?`by ${item.author}`:null,date(item.publishedAt)].filter(Boolean).join(' · '),{class:'match-meta'}),heading);
     if(item.snippet) article.append(node('p',item.snippet,{class:'match-snippet'}));
     article.append(node('p',item.reason||'Review the original discussion to judge whether this is a useful match.',{class:'match-reason'}));
+    if(item.qualification) {
+      const evidence=node('details');evidence.append(node('summary','AI fit evidence'));
+      evidence.append(node('p','Luna connected the post to confirmed product features. Review the original post before acting.',{class:'secondary'}));
+      for(const quote of item.qualification.evidenceQuotes||[])evidence.append(node('blockquote',quote));
+      article.append(evidence);
+    }
     const actions=node('div',null,{class:'match-actions'});
     const addAction=(text,next)=>{const button=node('button',text,{type:'button'});button.addEventListener('click',()=>changeItem(item,{status:next},button));actions.append(button);};
     if(item.status!=='saved') addAction('Save','saved');
@@ -147,6 +155,13 @@ function render() {
     $('tracking-summary').textContent=`${mode} · ${count} ${count===1?'subreddit':'subreddits'}${count?' hourly':''}${product.linkedin?' · LinkedIn posts at 8 a.m. / 8 p.m. Pacific':''} · ${last?`Last checked ${new Date(last).toLocaleString()}`:'No check yet'}`;
   }
   $('find-matches').disabled=searching||state.products.length===0;
+  const q=state.qualification, counts=(selected?q?.products?.[selected]:q?.counts)||{}, budget=q?.budget||{};
+  $('qualification-panel').hidden=!q?.collecting&&!Object.keys(counts).length;
+  const spend=((budget.spentMicroUsd||0)+(budget.reservedMicroUsd||0))/1e6;
+  const availability=!q?.enabled?'AI review is paused until server setup is complete.':budget.paused?'Daily AI allowance reached; collection continues.':q.mode==='test'?'AI review runs one post when you choose.':'AI review processes queued posts automatically, with subreddit posts first.';
+  $('qualification-status').textContent=`${availability} ${counts.pending||0} queued · ${counts.qualified||0} qualified · ${counts.rejected||0} rejected · ${counts.uncertain||0} uncertain (no automatic retry) · ${(counts.legacy_processed||0)+(counts.historical_skipped||0)} previously processed or historical. $${spend.toFixed(4)} used or held of $${((budget.limitMicroUsd||0)/1e6).toFixed(2)} today (Pacific).`;
+  $('run-qualification').hidden=!q?.enabled||!selected;
+  $('run-qualification').disabled=qualifying||searching||!counts.pending||budget.paused;
 }
 
 function setupError(message='') { $('setup-error').textContent=message;$('setup-error').hidden=!message; }
@@ -287,6 +302,15 @@ $('check-communities').addEventListener('click',async()=>{
   finally {if(generation===setupGeneration) setSetupBusy(false);}
 });
 $('all-products').addEventListener('click',()=>{selected=null;render();});
+$('run-qualification').addEventListener('click',async()=>{
+  if(qualifying||!selected)return;
+  qualifying=true;render();notice('Reviewing one queued post…');
+  try {
+    const receipt=await api('/qualification/run',{method:'POST',body:JSON.stringify({productId:selected})});
+    await reload();
+    notice(receipt.status==='qualified'?'A post qualified. Review its fit evidence.':receipt.status==='rejected'?'The post did not fit. Its rejection is saved so it will not be reviewed again.':receipt.status==='uncertain'?'The request outcome is uncertain. Its cost is held and it will not be retried automatically.':receipt.status==='disabled'?'AI review is not configured yet.':'No eligible post could be dispatched within the daily allowance.');
+  } catch(error){notice(error.message,true);} finally{qualifying=false;render();}
+});
 $('kind-filter').addEventListener('change',renderMatches);
 $('text-filter').addEventListener('input',renderMatches);
 document.querySelectorAll('[data-status]').forEach(button=>button.addEventListener('click',()=>{status=button.dataset.status;renderMatches();}));

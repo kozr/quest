@@ -39,7 +39,7 @@ export function dueProducts(state, now = Date.now()) {
   return state.products.filter(product => dueSources(product, state, now).length);
 }
 
-export function startLocalMonitoring({store, runSearch, onError = () => {}, interval = 60000}) {
+export function startLocalMonitoring({store, runSearch, runQualification, onError = () => {}, interval = 60000}) {
   let running = false;
   async function tick() {
     if (running) return;
@@ -48,6 +48,7 @@ export function startLocalMonitoring({store, runSearch, onError = () => {}, inte
       for (const product of dueProducts(await store.snapshot())) {
         try { await runSearch(product.id, true); } catch { onError(); }
       }
+      if(runQualification) try {await runQualification();} catch {onError();}
     } catch { onError(); } finally { running = false; }
   }
   const timer = setInterval(tick, interval);
