@@ -110,6 +110,26 @@ test('real HTTP transport preserves MCP loopback authority on a private connecti
   assert.equal(calls.length, 4);
 });
 
+test('expired MCP collection sends cancellation and deletes the session even when cancellation transport fails', async () => {
+  for (const cancelFails of [false, true]) {
+    const methods = []; let entered;
+    const started = new Promise(resolve => {entered = resolve;});
+    const controller = new AbortController();
+    const collector = new LinkedInCollector({endpoint: 'http://mcp:8080/mcp', fetchImpl: async (_url, options) => {
+      if (options.method === 'DELETE') {methods.push('DELETE');return new Response(null, {status: 204});}
+      const body = JSON.parse(options.body); methods.push(body.method);
+      if (body.method === 'initialize') return Response.json({id: 1, result: {protocolVersion: '2025-03-26'}}, {headers: {'Mcp-Session-Id': 'fixture-session'}});
+      if (body.method === 'tools/call') {entered();return new Promise((_, reject) => options.signal.addEventListener('abort', () => reject(options.signal.reason), {once: true}));}
+      if (body.method === 'notifications/cancelled' && cancelFails) throw Error('test cancellation transport failure');
+      return new Response(null, {status: 202});
+    }});
+    const request = collector.search({query: 'fixture', signal: controller.signal});
+    await started; controller.abort();
+    await assert.rejects(request, /linkedin_timeout/);
+    assert.deepEqual(methods.slice(-2), ['notifications/cancelled', 'DELETE']);
+  }
+});
+
 test('gateway enforces existing bearer auth, bounded inputs, one LinkedIn call at a time, safe failures, and Redlib compatibility', async t => {
   let release;
   const pending = new Promise(resolve => {release = resolve;});

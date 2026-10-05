@@ -134,15 +134,17 @@ export class LinkedInCollector {
       if (signal?.aborted) throw new CollectionError('linkedin_timeout', 504);
       throw error instanceof CollectionError ? error : new CollectionError('linkedin_provider_failed');
     } finally {
-      if (session) try {
-        if (signal?.aborted) {
+      if (session) {
+        if (signal?.aborted) try {
           const response = await this.fetchImpl(this.endpoint, {method: 'POST', signal: AbortSignal.timeout(2000), headers: headers(),
             body: JSON.stringify({jsonrpc: '2.0', method: 'notifications/cancelled', params: {requestId: 2, reason: 'Collection deadline reached'}})});
           await response.body?.cancel();
-        }
-        const response = await this.fetchImpl(this.endpoint, {method: 'DELETE', redirect: 'error', signal: AbortSignal.timeout(2000), headers: headers()});
-        await response.body?.cancel();
-      } catch { /* Session cleanup must not mask collection outcome. */ }
+        } catch { /* Still try session deletion if cancellation cannot be sent. */ }
+        try {
+          const response = await this.fetchImpl(this.endpoint, {method: 'DELETE', redirect: 'error', signal: AbortSignal.timeout(2000), headers: headers()});
+          await response.body?.cancel();
+        } catch { /* Session cleanup must not mask collection outcome. */ }
+      }
     }
   }
 }
