@@ -1,8 +1,16 @@
 import {setTimeout as pause} from 'node:timers/promises';
 import {CollectionError, readText} from '../reddit/http.mjs';
+import {ApifyLinkedInAdapter} from './apify.mjs';
+
+export {ApifyLinkedInAdapter} from './apify.mjs';
+
+function provider(env) {
+  return env.LINKEDIN_PROVIDER || (env.APIFY_TOKEN ? 'apify' : 'linkedin-mcp');
+}
 
 export function linkedinConfigured(env = process.env) {
-  return Boolean(env.REDLIB_BRIDGE_URL && env.REDLIB_BRIDGE_TOKEN);
+  if (provider(env) === 'apify') return Boolean(env.APIFY_TOKEN?.trim());
+  return provider(env) === 'linkedin-mcp' && Boolean(env.REDLIB_BRIDGE_URL && env.REDLIB_BRIDGE_TOKEN);
 }
 
 // The existing authenticated gateway is shared; neither MCP nor the LinkedIn
@@ -55,6 +63,17 @@ export class LinkedInBridgeAdapter {
   }
 }
 
+let shared;
 export function createLinkedInAdapter({env = process.env, fetchImpl = fetch} = {}) {
-  return new LinkedInBridgeAdapter({baseURL: env.REDLIB_BRIDGE_URL, token: env.REDLIB_BRIDGE_TOKEN, fetchImpl});
+  const selected = provider(env);
+  if (selected === 'apify') {
+    // Reuse only the production instance so warm workers share paid requests
+    // and validated results. A credential change creates a fresh instance.
+    if (env === process.env && fetchImpl === fetch && shared?.token === env.APIFY_TOKEN) return shared;
+    const adapter = new ApifyLinkedInAdapter({token:env.APIFY_TOKEN,fetchImpl});
+    if (env === process.env && fetchImpl === fetch) shared = adapter;
+    return adapter;
+  }
+  if (selected !== 'linkedin-mcp') throw new Error('Choose apify or linkedin-mcp for LINKEDIN_PROVIDER.');
+  return new LinkedInBridgeAdapter({baseURL:env.REDLIB_BRIDGE_URL,token:env.REDLIB_BRIDGE_TOKEN,fetchImpl});
 }

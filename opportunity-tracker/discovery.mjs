@@ -293,6 +293,7 @@ async function boundedText(response) {
 }
 
 function safeError(error, deadline = DEADLINE_MS) {
+  if (error?.code === 'linkedin_credentials_required') return 'LinkedIn collection needs a valid server-side Apify token with access to the selected actor.';
   if (error?.code === 'linkedin_session_required') return 'LinkedIn requires the owner to renew the saved session on OVH.';
   if (error?.code === 'linkedin_timeout') return 'LinkedIn collection reached its time limit. Try again later.';
   if (error?.code === 'linkedin_schema_changed') return 'LinkedIn returned an unsupported result layout.';
@@ -391,7 +392,7 @@ export async function discover(product, {fetchImpl = fetch, now = new Date(), re
     source('Reddit', plan, query => `https://www.reddit.com/search/?${new URLSearchParams({q: query, sort: 'new'})}`, ({query}, signal) => {
       redditAdapter ||= createRedditAdapter({fetchImpl});
       return redditAdapter.search({query, signal, limit: MAX_QUERY_RESULTS});
-    }, redditAdapter?.id === 'redlib' || process.env.REDDIT_PROVIDER === 'redlib' || process.env.REDLIB_BRIDGE_URL ? 40_000 : DEADLINE_MS),
+    }, ['redlib','scrapebadger'].includes(redditAdapter?.id || process.env.REDDIT_PROVIDER) || process.env.SCRAPEBADGER_API_KEY || process.env.REDLIB_BRIDGE_URL ? 40_000 : DEADLINE_MS),
     webSource(product, context, plan, fetchImpl, now, paidWeb),
     ]),
     ...(product.communities?.length && (!watchOnly || !scheduledSources || scheduledSources.includes('reddit')) ? [watchlistSource(product, context, redditAdapter, recentThreads)] : []),
@@ -430,11 +431,16 @@ export async function discover(product, {fetchImpl = fetch, now = new Date(), re
     result.source.count = sourceURLs.size;
     if (semantic && ['Reddit','Reddit watchlist','LinkedIn'].includes(result.source.name)) result.source.qualification = 'Selected subreddit and LinkedIn posts are queued for AI review; comments and exact mentions keep their existing filters.';
     if (result.source.name === 'LinkedIn') {
-      result.source.provider = 'linkedin-mcp';
+      result.source.provider = linkedinAdapter?.id || result.source.coverage?.[0]?.provider || 'linkedin-mcp';
       if (result.source.status === 'ok') {
         const skipped = (result.source.coverage || []).reduce((sum, entry) => sum + (entry.skippedPosts || 0), 0);
         const failures = result.source.message.startsWith('Completed ') ? result.source.message + ' ' : '';
-        result.source.message = `${failures}LinkedIn checked a rotating topic from your phrases or confirmed needs and an exact product name/domain, up to two searches and one scroll page each. Matches require a request or difficulty tied to your profile, or an exact mention. ${skipped ? `Skipped ${skipped} posts whose author and permalink could not be verified. ` : ''}Coverage is partial; comments and publication dates are unverified. Review the original post.`;
+        if (result.source.provider === 'linkedin-apify') {
+          const incomplete = result.source.coverage.some(entry => entry.errors?.length);
+          result.source.message = `${failures}LinkedIn checked a rotating topic from your phrases or confirmed needs and an exact product name/domain, up to two searches and 30 posts each. Opportunity searches use the past month; exact mentions can be older. ${skipped ? `Skipped ${skipped} unsupported or unattributed posts. ` : ''}${incomplete ? 'Some actor runs ended before collection finished. ' : ''}Coverage is partial. Publication dates are provider-reported; comments are not collected. Review the original post.`;
+        } else {
+          result.source.message = `${failures}LinkedIn checked a rotating topic from your phrases or confirmed needs and an exact product name/domain, up to two searches and one scroll page each. Matches require a request or difficulty tied to your profile, or an exact mention. ${skipped ? `Skipped ${skipped} posts whose author and permalink could not be verified. ` : ''}Coverage is partial; comments and publication dates are unverified. Review the original post.`;
+        }
       }
     }
     if (result.source.name === 'Reddit' && result.source.coverage?.some(entry => entry.provider === 'redlib')) {
@@ -442,6 +448,11 @@ export async function discover(product, {fetchImpl = fetch, now = new Date(), re
       const partial = result.source.coverage.some(entry => entry.partial || entry.errors?.length);
       result.source.message = `Redlib HTML collection${partial ? ' returned partial coverage' : ' completed'}. Post searches include comments from selected threads only; this is not a global comment search. Thread completeness is unverified. ${WINDOW_MESSAGE}`;
       if (result.source.status === 'error') result.source.message += ' The collector could not be reached.';
+    }
+    if (result.source.name === 'Reddit' && result.source.coverage?.some(entry => entry.provider === 'scrapebadger')) {
+      result.source.provider = 'scrapebadger';
+      const partial = result.source.coverage.some(entry => entry.partial || entry.errors?.length);
+      result.source.message = `Reddit collection${partial ? ' returned partial coverage' : ' completed'}. Comments come from selected threads, with bounded depth and result counts. ${WINDOW_MESSAGE}`;
     }
     if (result.source.name === 'Reddit' && result.source.status === 'error') result.source.message += ' Reddit can block public automated searches. The search links remain available to open manually.';
   }

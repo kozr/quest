@@ -11,6 +11,11 @@ let setupGeneration = 0;
 let setupController;
 let generatedSignature;
 let communityChecks = [];
+let view = 'matches';
+const analyzing = new Set();
+const openAnalysis = new Set();
+const replyEdits = new Map();
+let researchBusy = null;
 
 function node(tag, text, attributes = {}) {
   const element = document.createElement(tag);
@@ -140,11 +145,12 @@ function renderMatches() {
     const save=node('button','Save note',{type:'button'});save.addEventListener('click',()=>changeItem(item,{note:input.value},save));
     notes.append(label,input,save);
     article.append(actions,notes);
+    appendAnalysis(article,item,actions);
     $('matches').append(article);
   }
 }
 function render() {
-  renderProducts();renderCoverage();renderMatches();
+  renderProducts();renderCoverage();renderMatches();renderResearch();
   const product=state.products.find(p=>p.id===selected);
   $('inbox-heading').textContent=product?product.name:'Matches';
   $('product-summary').textContent=product?product.description||`Watching: ${product.keywords.join(', ')}`:'Opportunities and mentions for your products.';
@@ -156,6 +162,11 @@ function render() {
     $('tracking-summary').textContent=`${mode} · ${count} ${count===1?'subreddit':'subreddits'}${count?' hourly':''}${product.linkedin?' · LinkedIn posts at 8 a.m. / 8 p.m. Pacific':''} · ${last?`Last checked ${new Date(last).toLocaleString()}`:'No check yet'}`;
   }
   $('find-matches').disabled=searching||state.products.length===0;
+  $('find-matches').hidden=view!=='matches';
+  $('matches-view').hidden=view!=='matches';
+  $('research-view').hidden=view==='matches';
+  $('view-switcher').hidden=!state.products.length;
+  document.querySelectorAll('[data-view]').forEach(button=>button.setAttribute('aria-pressed',String(view===button.dataset.view)));
   const q=state.qualification, counts=(selected?q?.products?.[selected]:q?.counts)||{}, budget=q?.budget||{};
   $('qualification-panel').hidden=!q?.collecting&&!Object.keys(counts).length;
   const spend=((budget.spentMicroUsd||0)+(budget.reservedMicroUsd||0))/1e6;
@@ -163,6 +174,94 @@ function render() {
   $('qualification-status').textContent=`${availability} ${counts.pending||0} queued · ${counts.qualified||0} qualified · ${counts.rejected||0} rejected · ${counts.uncertain||0} uncertain (no automatic retry) · ${(counts.legacy_processed||0)+(counts.historical_skipped||0)} previously processed or historical. $${spend.toFixed(4)} used or held of $${((budget.limitMicroUsd||0)/1e6).toFixed(2)} today (Pacific).`;
   $('run-qualification').hidden=!q?.enabled||!selected;
   $('run-qualification').disabled=qualifying||searching||!counts.pending||budget.paused;
+}
+
+function renderResearch() {
+  const product=state.products.find(row=>row.id===selected), record=state.research?.[selected];
+  const descriptions={problems:'Needs, frustrations, and workflows supported by public discussions.',landscape:'Competitors, alternatives, and workarounds people already use.',people:'Public Reddit authors and commenters discussing the same or a similar problem.'};
+  $('research-heading').textContent={problems:'Problems',landscape:'Landscape',people:'People'}[view]||'Research';
+  $('research-description').textContent=descriptions[view]||'';
+  $('run-research').hidden=!product;
+  $('run-research').disabled=!state.analysis?.available||Boolean(researchBusy)||analyzing.size>0;
+  $('run-research').textContent=researchBusy===selected?'Researching…':record?'Refresh research':'Run research';
+  $('research-coverage').hidden=!record;
+  $('research-scope').textContent=record?.coverage||'';
+  $('research-results').replaceChildren();
+  $('research-state').textContent=!product?'Choose a product to explore its market.':researchBusy===selected?'Researching problems, alternatives, and people. This can take up to 150 seconds…':record?`${record.imported?'Imported backup · sources not rechecked':`Researched ${date(record.generatedAt)}`} ${record.stale?'· Product details changed; refresh the research.':record.expired?'· Results are over 30 days old; refresh the research.':''}`:!state.analysis?.available?'Research is not configured on this server yet.':'Run research to explore Problems, Landscape, and People together.';
+  if(!product||!record||view==='matches') return;
+  const rows=view==='problems'?record.findings:view==='landscape'?record.landscape:record.people;
+  if(!rows?.length) {
+    $('research-results').append(node('p',view==='people'?'No attributable people were found in the inspected sources. Check the research coverage.':'The inspected sources did not provide enough evidence for findings here. Check the research coverage.',{class:'empty-state secondary'}));
+    return;
+  }
+  for(const row of rows) {
+    const article=node('article',null,{class:'research-result'});
+    if(view==='people') {
+      const heading=node('h3'); heading.append(link(`u/${row.handle}`,`https://www.reddit.com/user/${encodeURIComponent(row.handle)}/`));
+      const resolution={unresolved_at_posting:'Unresolved when posted',subsequently_resolved:'Later reported resolved',unclear:'Resolution unclear'}[row.needStatus];
+      article.append(heading,node('p',`${row.matchType==='exact'?'Same problem':'Similar problem'} · ${resolution} · ${date(row.publishedAt)}`,{class:'match-meta'}),node('p',row.problem));
+      article.append(node('blockquote',row.excerpt),node('p',row.fitReason,{class:'match-reason'}),link('Open source discussion',row.sourceUrl));
+    } else {
+      article.append(node('h3',row.title),node('p',row.summary,{class:'research-summary'}));
+      const sources=node('ul',null,{class:'research-sources','aria-label':'Sources'});
+      for(const source of row.sources) {const li=node('li');li.append(link(source.title,source.url));sources.append(li);}
+      article.append(sources);
+    }
+    $('research-results').append(article);
+  }
+}
+async function runResearch() {
+  const id=selected;
+  if(!id||researchBusy||!state.analysis?.available) return;
+  researchBusy=id;render();notice('');
+  try {
+    await api(`/products/${id}/research`,{method:'POST',body:JSON.stringify({refresh:Boolean(state.research?.[id])})});
+    await reload();notice('Research saved. Explore Problems, Landscape, and People.');
+  } catch(error) {notice(error.message,true);}
+  finally {researchBusy=null;render();}
+}
+function appendAnalysis(article,item,actions) {
+  const button=node('button',analyzing.has(item.id)?'Analyzing…':item.analysis?'Refresh analysis':'Analyze fit & replies',{type:'button'});
+  button.disabled=!state.analysis?.available||analyzing.has(item.id)||Boolean(researchBusy);
+  if(!state.analysis?.available) button.title='AI analysis is not configured on this server.';
+  button.addEventListener('click',async()=>{
+    analyzing.add(item.id);render();notice('');
+    try {
+      await api(`/items/${item.id}/analysis`,{method:'POST',body:JSON.stringify({refresh:Boolean(item.analysis)})});
+      for(const key of [...replyEdits.keys()]) if(key.startsWith(`${item.id}:`)) replyEdits.delete(key);
+      openAnalysis.add(item.id);await reload();notice('Fit assessment and reply suggestions saved.');
+    } catch(error) {notice(error.message,true);}
+    finally {analyzing.delete(item.id);render();}
+  });
+  actions.append(button);
+  if(!item.analysis) return;
+  const analysis=item.analysis;
+  const details=node('details',null,{class:'fit-analysis'});
+  details.open=openAnalysis.has(item.id);
+  details.addEventListener('toggle',()=>{if(details.open)openAnalysis.add(item.id);else openAnalysis.delete(item.id);});
+  details.append(node('summary','Fit assessment & reply suggestions'));
+  const labels={strong_fit:'Strong fit',possible_fit:'Possible fit',not_a_fit:'Not a fit',unclear:'Fit unclear'};
+  details.append(node('h3',labels[analysis.decision]),node('p',analysis.summary));
+  if(analysis.evidenceQuote) details.append(node('blockquote',analysis.evidenceQuote));
+  const product=state.products.find(row=>row.id===item.productId);
+  const capabilities=(analysis.matchedCapabilityIds||[]).map(id=>product?.capabilities?.[Number(id.slice(1))-1]).filter(Boolean);
+  if(capabilities.length) details.append(node('p',`Matching features: ${capabilities.join('; ')}`,{class:'secondary'}));
+  details.append(node('p',analysis.limitations,{class:'secondary'}));
+  if(analysis.imported) details.append(node('p','Imported backup · analysis not rerun.',{class:'secondary'}));
+  for(const [index,reply] of (analysis.replies||[]).entries()) {
+    const id=`reply-${item.id}-${index}`, key=`${item.id}:${index}:${analysis.generatedAt}`;
+    details.append(node('label',reply.approach==='helpful'?'Helpful reply':'Reply with a product mention',{for:id}));
+    const field=node('textarea',null,{id,rows:'5',maxlength:'5000'}); field.value=replyEdits.get(key)??reply.body;
+    field.addEventListener('input',()=>replyEdits.set(key,field.value));
+    const copy=node('button','Copy reply',{type:'button'});
+    copy.addEventListener('click',async()=>{
+      try {await navigator.clipboard.writeText(field.value);notice('Reply copied. Review it before posting.');}
+      catch {field.focus();field.select();notice('Select and copy the reply from the text field.');}
+    });
+    details.append(field,copy);
+  }
+  if(analysis.replies?.length) details.append(node('p','Suggestions use the collected excerpt. Review and edit before posting; edits stay in this page until you reload.',{class:'field-help'}));
+  article.append(details);
 }
 
 function setupError(message='') { $('setup-error').textContent=message;$('setup-error').hidden=!message; }
@@ -316,6 +415,8 @@ $('kind-filter').addEventListener('change',renderMatches);
 $('text-filter').addEventListener('input',renderMatches);
 document.querySelectorAll('[data-status]').forEach(button=>button.addEventListener('click',()=>{status=button.dataset.status;renderMatches();}));
 $('find-matches').addEventListener('click',()=>findMatches());
+$('run-research').addEventListener('click',runResearch);
+document.querySelectorAll('[data-view]').forEach(button=>button.addEventListener('click',()=>{view=button.dataset.view;render();}));
 $('import-details').addEventListener('click',async()=>{
   const generation=setupGeneration;setupController=new AbortController();
   const button=$('import-details');setSetupBusy(true);button.textContent='Importing…';$('import-message').hidden=true;
@@ -384,5 +485,5 @@ async function start() {
 }
 start().catch(error=>{notice(`Could not load the tracker: ${error.message} Refresh to try again.`,true);$('empty-heading').textContent='Tracker unavailable';$('empty-message').textContent='Check the tracker configuration, then refresh this page.';});
 setInterval(()=>{
-  if(document.visibilityState==='visible'&&state.token&&!searching&&$('product-form').hidden&&!document.activeElement?.matches('input, textarea, select')&&!document.querySelector('.match details[open]')) reload().catch(()=>{});
+  if(document.visibilityState==='visible'&&state.token&&!searching&&!researchBusy&&!analyzing.size&&$('product-form').hidden&&!document.activeElement?.matches('input, textarea, select')&&!document.querySelector('.match details[open]')) reload().catch(()=>{});
 },60000);

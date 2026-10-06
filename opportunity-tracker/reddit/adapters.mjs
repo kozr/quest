@@ -1,6 +1,8 @@
 import {fetchText, readText, CollectionError} from './http.mjs';
 import {parseRedlib, redlibPath} from './redlib-html.mjs';
 import {setTimeout as pause} from 'node:timers/promises';
+import {ScrapeBadgerAdapter} from './scrapebadger.mjs';
+export {ScrapeBadgerAdapter} from './scrapebadger.mjs';
 
 /**
  * RedditAdapter contract:
@@ -167,8 +169,9 @@ export class RedlibBridgeAdapter {
 }
 
 export function createRedditAdapter({env = process.env, fetchImpl = fetch} = {}) {
-  const provider = env.REDDIT_PROVIDER || (env.REDLIB_BRIDGE_URL ? 'redlib' : 'public-json');
+  const provider = env.REDDIT_PROVIDER || (env.SCRAPEBADGER_API_KEY ? 'scrapebadger' : env.REDLIB_BRIDGE_URL ? 'redlib' : 'public-json');
+  if (provider === 'scrapebadger') return new ScrapeBadgerAdapter({apiKey:env.SCRAPEBADGER_API_KEY,fetchImpl});
   if (provider === 'redlib') return new RedlibBridgeAdapter({baseURL: env.REDLIB_BRIDGE_URL, token: env.REDLIB_BRIDGE_TOKEN, fetchImpl});
   if (provider === 'public-json') return new PublicRedditAdapter({fetchImpl});
-  throw new Error('Unknown REDDIT_PROVIDER. Choose redlib or public-json.');
+  throw new Error('Unknown REDDIT_PROVIDER. Choose scrapebadger, redlib or public-json.');
 }

@@ -123,7 +123,7 @@ export class FirestoreStore {
   }
   async snapshot() {
     const {data} = await this.backend.read();
-    return {version:1,products:structuredClone(data.products),items:structuredClone(data.items),searches:structuredClone(data.searches),
+    return {version:1,products:structuredClone(data.products),items:structuredClone(data.items),searches:structuredClone(data.searches),...(data.research ? {research:structuredClone(data.research)} : {}),
       ...(data.qualifications ? {qualifications:structuredClone(data.qualifications),qualificationMigrations:structuredClone(data.qualificationMigrations),aiBudget:structuredClone(data.aiBudget)} : {})};
   }
   async record(method, ...args) {
@@ -146,16 +146,21 @@ export class FirestoreStore {
   recordSearch(id,result) { return this.record('recordSearch',id,result); }
   markMonitorAttempt(id,now = Date.now()) { return this.record('markMonitorAttempt',id,now); }
   updateItem(id,update) { return this.record('updateItem',id,update); }
+  claimAnalysis(productId,itemId,now,settings) { return this.record('claimAnalysis',productId,itemId,now,settings); }
+  finishAnalysis(lease,result,now) { return this.record('finishAnalysis',lease,result,now); }
+  releaseAnalysis(token) { return this.record('releaseAnalysis',token); }
   claimQualification(settings,now,productId) { return this.record('claimQualification',settings,now,productId); }
   finishQualification(key,token,outcome,now) { return this.record('finishQualification',key,token,outcome,now); }
   importData(value) {
     return this.mutate(data=>{
       if(Object.values(data.leases||{}).some(lease=>lease.expiresAt>Date.now())) throw new Error('Wait for the running searches to finish before restoring a backup.');
       if(Object.values(data.qualifications||{}).some(job=>job.status==='running'&&job.leaseUntil>Date.now())) throw new Error('Wait for the running AI check to finish before restoring a backup.');
+      if(Object.values(data.analysisLeases||{}).some(lease=>lease.expiresAt>Date.now())) throw new Error('Wait for the running analysis to finish before restoring a backup.');
+      const analysisUsage=data.analysisUsage||{};
       const failures=data.loginFailures||[];
       const restored=data.qualifications||value.qualifications?mergeQualificationHistory(data,value):structuredClone(value);
       for(const key of Object.keys(data)) delete data[key];
-      Object.assign(data,restored,{loginFailures:failures});
+      Object.assign(data,restored,{loginFailures:failures,analysisUsage});
     });
   }
   activeSearches() {

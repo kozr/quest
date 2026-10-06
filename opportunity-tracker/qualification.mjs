@@ -107,6 +107,30 @@ function charge(data,job,cost) {
   usage.reservedMicroUsd=Math.max(0,usage.reservedMicroUsd-job.reservationMicroUsd);usage.spentMicroUsd+=cost;
   if(cost>job.reservationMicroUsd)budget.overrun=true;
 }
+// Manual research and reply analysis share the existing owner-approved ledger.
+// Reserve the model's worst-case context across four passes, capped output,
+// and web calls. Settle from usage; uncertain dispatches retain their hold.
+export function reserveAnalysis(data, lease, settings, now) {
+  const fail = (message, status) => {const error = new Error(message); error.status = status; throw error;};
+  if (!settings.active || settings.until <= now) fail('AI analysis is paused. Check the server key and daily budget settings.', 503);
+  const budget = ledger(data), day = budgetDay(now);
+  const usage = budget.dailyUsage[day] ||= {spentMicroUsd:0,reservedMicroUsd:0,calls:0};
+  const reservation = lease.itemId ? 20000 : 1100000;
+  if (budget.overrun || usage.calls >= settings.dailyMaxCalls || usage.spentMicroUsd + usage.reservedMicroUsd + reservation > settings.budgetMicroUsd) fail('There is not enough daily AI allowance for this analysis. Try again tomorrow (Pacific time).', 429);
+  budget.calls++; budget.daily[day] = (budget.daily[day] || 0) + 1; budget.reservedMicroUsd += reservation;
+  usage.calls++; usage.reservedMicroUsd += reservation;
+  Object.assign(lease, {budgetDay:day,dispatchedAt:iso(now),reservationMicroUsd:reservation});
+}
+export function settleAnalysis(data, lease, cost = lease.reservationMicroUsd) {
+  if (lease.reservationMicroUsd === undefined) return;
+  if (!Number.isSafeInteger(cost) || cost < 0) cost = lease.reservationMicroUsd;
+  charge(data, lease, cost);
+}
+export function retireAnalysis(data, now) {
+  for (const [token, lease] of Object.entries(data.analysisLeases || {})) if (lease.expiresAt <= now) {
+    settleAnalysis(data, lease); delete data.analysisLeases[token];
+  }
+}
 function previousCheck(search, platform) {
   const names=platform==='reddit'?['Reddit','Reddit watchlist']:['LinkedIn'];
   return search?.lastChecks?.[platform] || search?.sources?.find(source=>names.includes(source.name))?.checkedAt || (search?.sources?.some(source=>names.includes(source.name))?search.searchedAt:null);
@@ -147,6 +171,7 @@ function retireRunning(data, job, now) {
 }
 export function claimQualification(data, settings, now, productId) {
   if(!settings.active || settings.until<=now)return null;
+  retireAnalysis(data, now);
   const budget=ledger(data);for(const job of Object.values(data.qualifications))retireRunning(data,job,now);
   if(Object.values(data.qualifications).some(job=>job.status==='running') || budget.overrun)return null;
   const day=budgetDay(now), usage=budget.dailyUsage[day] ||= {spentMicroUsd:0,reservedMicroUsd:0,calls:0};

@@ -77,6 +77,17 @@ details label { display: block; margin-top: .4rem; font-size: .875rem; }
 .match-actions button { font-size: .875rem; }
 .match textarea { margin-top: .3rem; }
 .match details button { margin-top: .3rem; }
+.view-switcher { display: flex; flex-wrap: wrap; gap: .5rem; margin: 1rem 0; }
+.research-heading { margin-top: 1.5rem; align-items: flex-start; }
+.research-heading > div { flex: 1; min-width: min(100%, 240px); }
+.research-result { padding: 1.2rem 0; border-top: 1px solid #ccc; }
+.research-result h3 { font-size: 1.0625rem; }
+.research-summary, .research-result > p, .fit-analysis > p { max-width: 75ch; overflow-wrap: anywhere; white-space: pre-line; }
+.research-sources { padding-left: 1.2rem; margin-bottom: 0; font-size: .875rem; }
+.research-sources li { margin-top: .35rem; }
+blockquote { margin: .8rem 0; padding-left: 1rem; border-left: 1px solid #aaa; max-width: 75ch; white-space: pre-line; overflow-wrap: anywhere; }
+.fit-analysis h3 { margin-top: .7rem; }
+.fit-analysis textarea { max-width: 75ch; display: block; }
 .empty-state { padding: 2rem 0; }
 .empty-state p { max-width: 55ch; color: #595959; }
 #notice { border: 1px solid #aaa; padding: .65rem .8rem; margin-bottom: 1rem; }

@@ -130,6 +130,13 @@
           </div>
           <button id="find-matches" type="button" disabled>Find matches</button>
         </div>
+        <div id="view-switcher" class="view-switcher" role="group" aria-label="Product views">
+          <button type="button" data-view="matches" aria-pressed="true">Matches</button>
+          <button type="button" data-view="problems" aria-pressed="false">Problems</button>
+          <button type="button" data-view="landscape" aria-pressed="false">Landscape</button>
+          <button type="button" data-view="people" aria-pressed="false">People</button>
+        </div>
+        <div id="matches-view">
         <div id="qualification-panel" hidden>
           <p id="qualification-status" class="secondary" role="status" aria-live="polite"></p>
           <button id="run-qualification" type="button" hidden>Review one queued post</button>
@@ -161,6 +168,23 @@
           <p id="empty-message">Add its website or App Store link, then tell the tracker which problems it solves.</p>
           <button id="empty-add" type="button">Add product</button>
         </div>
+        </div>
+        <section id="research-view" aria-labelledby="research-heading" hidden>
+          <div class="section-heading research-heading">
+            <div>
+              <h2 id="research-heading">Problems</h2>
+              <p id="research-description" class="secondary"></p>
+            </div>
+            <button id="run-research" type="button">Run research</button>
+          </div>
+          <p id="research-state" class="secondary" role="status" aria-live="polite"></p>
+          <div id="research-results"></div>
+          <details id="research-coverage" hidden>
+            <summary>Research coverage</summary>
+            <p id="research-scope" class="secondary"></p>
+            <p class="secondary">Findings use web search sources. People are public Reddit authors with attributed problem evidence; their current needs and identities have not been independently verified.</p>
+          </details>
+        </section>
       </section>
     </div>
   </main>

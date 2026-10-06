@@ -1,6 +1,6 @@
 # Product tracker
 
-A standalone personal web tracker for products you build. Add a website or App Store link, confirm the product details and the problems it solves, then find public opportunities and mentions. The interface uses plain HTML, JavaScript, and CSS. There are no sales, purchase, billing, or game features.
+A standalone personal web tracker (StayGrounded) for products you build. Add a website or App Store link, confirm the product details and the problems it solves, then find public opportunities and mentions. On-demand analysis adds Problems, Landscape, People, match-fit assessments, and reply suggestions adapted from Tavern. The interface uses plain HTML, JavaScript, and CSS. There are no sales, purchase, billing, or game features.
 
 ## Run
 
@@ -40,13 +40,32 @@ To move your existing local tracker data online, **Export backup** locally, sign
 ## Sources and match behavior
 
 - **Hacker News:** public Algolia search, including posts and comments. Opportunity searches use recent results; known opportunity dates older than 90 days are excluded. Exact mentions can include older results.
-- **Reddit:** interchangeable adapters. `public-json` keeps the original bounded Reddit JSON search; `redlib` calls the authenticated OVH HTML collector. Provider failures remain visible, with manual search links; neither adapter silently falls back to another provider.
-- **LinkedIn:** opt in with **Check LinkedIn posts** when reviewing a product's tracking profile. The existing authenticated OVH gateway calls Querylane's private LinkedIn MCP server with its saved owner session. Manual and twice-daily checks search a rotating topic from the saved phrases or confirmed needs, plus an exact product name/domain, up to one scroll page each. Local filters accept supported related wording in a request or difficulty; exact keyword presence alone is insufficient. Matches use the existing inbox, notes, save/dismiss decisions, and source coverage. Existing products retain their saved settings until edited.
+- **Reddit:** `scrapebadger` uses the dedicated Reddit API for searches, subreddit feeds, and selected comment trees. `public-json` and the authenticated OVH `redlib` adapter remain available through explicit configuration. Provider failures remain visible, with manual search links; adapters never silently fall back to another provider.
+- **LinkedIn:** opt in with **Check LinkedIn posts** when reviewing a product's tracking profile. Apify's `harvestapi/linkedin-post-search` searches a rotating topic from the saved phrases or confirmed needs, plus an exact product name/domain, up to 30 posts per search. No LinkedIn cookies or login are required. Opportunity searches use the past month; exact mentions can include older posts. Local filters accept supported related wording in a request or difficulty; exact keyword presence alone is insufficient. Matches use the existing inbox, notes, save/dismiss decisions, and source coverage. Existing products retain their saved settings until edited.
 - **Broader web:** manual search links. Paid web tools and AI profile suggestions are disabled in the tracker so they cannot bypass its qualification budget.
 
 Opportunity matches require a confirmed phrase/topic in the same request or difficulty statement. Earlier achievements and unrelated requests in another clause do not qualify. Mentions require an exact confirmed alias or website domain; use a distinctive alias to disambiguate common product names. Exclusions remove matching phrases. This is conservative text matching, not a guarantee of product fit or a complete internet crawl. Every result requires review. Web excerpts are search-supported and explicitly not independently verified conversation text.
 
-Searches are bounded to six queries per public source, 30 results per query, and a 12-second source deadline for Hacker News/web, 40 seconds for Redlib search, and 35 seconds for watchlist collection. The combined inbox takes up to 100 deduplicated matches per search. Repeated searches preserve saved/dismissed statuses and notes. A source returning only part of a search reports that limitation. No mock data is used in the running app.
+Searches are bounded to six queries per public source, 30 results per query, and a 12-second source deadline for Hacker News/web, 40 seconds for ScrapeBadger/Redlib search, and 35 seconds for watchlist collection. The combined inbox takes up to 100 deduplicated matches per search. Repeated searches preserve saved/dismissed statuses and notes. A source returning only part of a search reports that limitation. No mock data is used in the running app.
+
+### ScrapeBadger Reddit adapter
+
+Set the following in the tracker's server environment (Vercel Production for the hosted app):
+
+```dotenv
+REDDIT_PROVIDER=scrapebadger
+SCRAPEBADGER_API_KEY=<enter the key securely in Vercel settings>
+```
+
+The key is used only in the `X-API-Key` header to `https://scrapebadger.com/v1/reddit/`. Never put it in chat, Git, browser JavaScript, URLs, or logs. Add it through Vercel's encrypted Environment Variables UI or interactively with `vercel env add SCRAPEBADGER_API_KEY production`. Redeploy after changing provider settings. In local mode, use the ignored `opportunity-tracker/.env` and restart the server. A key automatically selects ScrapeBadger when `REDDIT_PROVIDER` is unset; explicitly selecting it without a key fails visibly.
+
+`reddit/scrapebadger.mjs` implements the same `search`, `list`, and `thread` adapter contract. Search and subreddit listing use cursor pagination, at most two pages and 30 posts per query. Searches visit up to three selected threads; watchlists revisit up to four recent/relevant threads. A thread retrieves its original post and up to 100 normalized comments, with a provider depth ceiling of ten. Comments retain their own text, author, parent, timestamp, and exact canonical permalink. Deleted, closed, malformed, or contradictory sources are omitted. Existing qualification, notes, saved/dismissed states, backups, and hourly Reddit monitoring keep their existing behavior.
+
+Calls are limited to two concurrent requests per adapter and a 12-second per-request deadline within the existing overall collection deadlines. Validated responses cache for 60 seconds, with a 200-entry cap and shared in-flight requests. Failed schemas are not cached. Ambiguous paid requests are never retried automatically within a collection. Partial thread failures retain the original post and expose incomplete coverage. This is bounded discovery; it is not a complete comment stream.
+
+Coverage includes the provider's `X-Credits-Used` value when present; missing or uncertain accounting is `null`, and cache hits report zero new credits. ScrapeBadger publishes PAYG at $0.15 per 1,000 credits, with base Reddit costs of two credits for searches/posts and three for comment reads. Its general pricing page also describes per-item charges, so verify deductions in a live smoke test before treating base costs as the total bill. These scraping credits are separate from the tracker's existing AI budget. See [ScrapeBadger Reddit docs](https://docs.scrapebadger.com/reddit/overview) and [pricing](https://scrapebadger.com/pricing).
+
+LinkedIn is configured separately with `LINKEDIN_PROVIDER` and `APIFY_TOKEN`; changing `REDDIT_PROVIDER` does not change its provider. The legacy OVH/Querylane gateway remains available through explicit `LINKEDIN_PROVIDER=linkedin-mcp`.
 
 ### Redlib adapter
 
@@ -72,7 +91,28 @@ The bridge allows two active collection jobs and 60 requests per minute, with a 
 
 ## Optional web discovery
 
-### LinkedIn collection through the existing gateway
+### LinkedIn post search on Apify
+
+Use [HarvestAPI's LinkedIn Post Search](https://apify.com/harvestapi/linkedin-post-search), actor `harvestapi/linkedin-post-search`. This fits the tracker's topic/need discovery and exact product mentions: it searches posts and returns their own content, author, original permalink, and publication date. It does not require LinkedIn session cookies. Search results are a limited sample shaped by LinkedIn's search algorithm, not a complete post stream.
+
+Set these **server-only** variables in Vercel Production, then redeploy:
+
+```dotenv
+LINKEDIN_PROVIDER=apify
+APIFY_TOKEN=<enter an Apify API token securely in Vercel settings>
+```
+
+Use Vercel's encrypted Environment Variables UI or `vercel env add APIFY_TOKEN production`; never put the token in chat, Git, browser code, or URLs. Local development uses the ignored tracker `.env` and a server restart. A token automatically selects Apify when `LINKEDIN_PROVIDER` is unset. An explicit provider with missing credentials fails visibly and never falls back. Product-level LinkedIn opt-in and the existing 08:00/20:00 Pacific cadence remain in place.
+
+`linkedin/apify.mjs` calls Apify's REST API with bearer authorization. Each search starts `harvestapi~linkedin-post-search` once, caps `maxPosts` at 30, sorts by newest, uses `postedLimit=month` for opportunity searches and `any` for exact mentions, and selects the free `short` author profile mode. Comments, reactions, and profile enrichment are disabled. The actor has a 45-second remote timeout, `maxTotalChargeUsd=0.10`, and `restartOnError=false`. The adapter polls that run's ID within a 50-second deadline and attempts to abort a known run on cancellation. An ambiguous start is never retried within the collection. If its run ID was not received, the remote timeout and charge cap still apply.
+
+Only supported top-level posts with consistent source IDs, LinkedIn permalinks, author profile/company URLs, and timestamps enter matching. Quoted/reposted text and nested records are not joined to the outer author's evidence. Failed/timed-out runs can retain valid partial posts while reporting incomplete coverage. Publication dates are provider-reported; missing dates remain unknown. Original source identity survives inbox storage and backup restore, and existing AI qualification deduplicates by LinkedIn post ID. Warm workers share identical in-flight requests and cache validated successful searches for five minutes (100 entries, two active runs per adapter); failures are not cached.
+
+Pricing checked 2026-10-06: $2 per 1,000 posts on Free/Bronze, $1.75 on Silver, and $1.50 on Gold or higher. Actor starts cost $0.00005 at the default memory; empty queries cost $0.001. See the [published pricing](https://apify.com/harvestapi/linkedin-post-search/pricing) and [public actor pricing metadata](https://api.apify.com/v2/acts/harvestapi~linkedin-post-search). Two searches of 30 posts twice a day would yield 3,600 posts and about **$7.20 per product per 30 days**, plus small start charges, at the base rate. Fewer returned posts cost less; manual searches and enrichment would add cost. The configured per-run caps bound scheduled actor charges to $12 per product per 30 days. These scraping charges are separate from the existing $2/day AI budget. Immediate run cost figures may be preliminary, so coverage marks reported costs as non-final. A one-post live smoke test succeeded on 2026-10-06 using the existing Firebase `APIFY_TOKEN` secret. The local tracker has been configured and restarted; hosted activation still requires installing the token in that Vercel project and redeploying.
+
+### Legacy LinkedIn gateway
+
+Select `LINKEDIN_PROVIDER=linkedin-mcp` to use the original OVH/Querylane collector. Apify is not used in this mode.
 
 `POST /v1/linkedin/search` accepts only `{query, limit, datePosted}`. It uses the
 existing `REDLIB_BRIDGE_URL` and server-only `REDLIB_BRIDGE_TOKEN`; no new secret,
@@ -125,7 +165,25 @@ The durable key is **product ID + canonical source post ID**, independent of phr
 
 Authenticated state exposes summary counts, daily spend and inbox evidence; raw pending source text, job tokens and credentials stay server-side. Backups contain sanitized terminal receipts. Restoring retains the union of existing processing history and conservative spend, refuses an in-flight request, and never replays imported pending/running jobs.
 
-## Data
+## On-demand analysis
+
+Select a product and choose **Problems**, **Landscape**, or **People**, then **Run research**. One request produces all three views. Problems summarizes source-supported needs and workflows; Landscape covers competitors, alternatives, and workarounds; People shows public Reddit authors and commenters describing the same or a similar problem, including later resolution when observed. Source links, dates when available, and collection limits remain visible. Switching views does not run another request.
+
+On a collected match, choose **Analyze fit & replies**. The assessment uses the saved title/excerpt and confirmed capabilities, with an exact supporting quote and limitations. Strong or possible fits receive two suggestions: practical help and an optional product mention. You can edit and copy them. Generated results are saved; reply edits stay in the current page until a full reload. Posting remains manual.
+
+Analysis uses the existing server-only `TRACKER_OPENAI_API_KEY`, `gpt-6-luna`, and `TRACKER_AI_*` settings. No new key is needed. Research requests at most three web tool calls and 8,000 output tokens, with a 150-second deadline; match analysis has a 30-second deadline and 2,500 output-token cap. A timeout or invalid result keeps saved results and is never automatically retried.
+
+Analysis runs only when requested, including in test mode. It shares qualification's **$2 per Pacific day** budget and call limit. A transaction reserves up to $1.10 for research or $0.02 for fit/replies before dispatch. Successful responses settle from reported usage using conservative Luna long-context cache-write and web-tool rates, releasing the unused hold. An uncertain dispatch retains the reservation as spending; expired reservations and deleted products cannot refund it. This may pause work earlier than the actual provider bill. There is also a persistent 20-analysis-request daily limit per workspace (Pacific). Concurrent instances cannot overlap analysis for the same product. Results cache for 30 days; refresh makes a new billable request. Profile or source changes invalidate match assessments; older research stays visible with a refresh notice.
+
+Research citations must belong to returned web search/opened sources; unsupported citations are omitted. People require an attributed username, verbatim excerpt, original permalink, and valid capability IDs. Web search evidence is not independent platform verification or confirmed current demand. Match quotes must occur in the collected source text. Personal notes and review decisions are excluded from provider inputs. Analysis uses the existing private store, is removed with its product, and is included in backup export. Restored analysis is validated and labeled imported; restoring cannot reset the daily allowance.
+
+```sh
+node opportunity-tracker/test/analysis.browser.mjs
+```
+
+This browser check uses explicitly labeled scripted data and verifies the three research views, product scoping, resolution labels, editable/copyable replies, saved results, and desktop/mobile layouts. It makes no paid provider requests.
+
+## Storage
 
 In local mode, records live in `opportunity-tracker/.local/tracker.json`, ignored by Git. Updates replace the file atomically; data remains after restarting the server. `TRACKER_DATA_DIR` can point to another local data directory. Do not run two local tracker processes against the same data directory. The Vercel version stores records in its configured Firebase Firestore database. Its transactional JSON chunks support snapshots larger than Firestore’s individual document limit, with an 8 MiB total limit per personal workspace. Neither mode synchronizes with the existing iPhone account.
 
@@ -139,7 +197,7 @@ node opportunity-tracker/test/browser-check.mjs
 node opportunity-tracker/test/browser-qualification-check.mjs
 ```
 
-Tests use temporary stores, the local Firestore emulator, and scripted discovery results; no paid requests or real outreach are involved. Hosted integration tests execute actual Firebase Admin transactions and cover concurrent mutations, instance-independent sessions, shared search locks, snapshots larger than one document, and credential-safe failures. To include the Firestore integration tests, start the repository’s Firestore emulator and run `FIRESTORE_EMULATOR_HOST=127.0.0.1:8088 npm test --prefix opportunity-tracker`. Without the emulator, database integration tests are explicitly skipped. They use the demo project `demo-opportunity-tracker` and unique fixture workspaces, never a cloud database. Browser checks use the repository's installed Playwright and Chrome when available. Separate public network smoke checks verify actual source/metadata responses.
+Tests use temporary stores, the local Firestore emulator, and scripted discovery results; no paid requests or real outreach are involved. Hosted integration tests execute actual Firebase Admin transactions and cover concurrent mutations, instance-independent sessions, shared search/analysis locks, snapshots larger than one document, and credential-safe failures. To include the Firestore integration tests, start the repository’s Firestore emulator and run `FIRESTORE_EMULATOR_HOST=127.0.0.1:8088 npm test --prefix opportunity-tracker`. Without the emulator, database integration tests are explicitly skipped. They use the demo project `demo-opportunity-tracker` and unique fixture workspaces, never a cloud database. Browser checks use the repository's installed Playwright and Chrome when available. Separate public network smoke checks verify actual source/metadata responses.
 
 
 ## Product setup and continuous Reddit checks

@@ -147,3 +147,37 @@ test('Vercel federation obtains fresh identity tokens and rejects mismatched pro
   assert.equal(db.databaseId,'opportunity-tracker');
   await db.terminate();
 });
+
+test('analysis reservations and results are shared across cloud instances without resetting allowance on restore',firestoreTest,async t=>{
+  const {create}=await backend(t);const a=new FirestoreStore(create()),b=new FirestoreStore(create());
+  const p=await a.saveProduct({...product,capabilities:['Manage tasks'],needs:['Remember tasks']});
+  const claims=await Promise.allSettled([a.claimAnalysis(p.id),b.claimAnalysis(p.id)]);
+  assert.equal(claims.filter(row=>row.status==='fulfilled').length,1);
+  assert.equal(claims.find(row=>row.status==='rejected').reason.status,409);
+  const lease=claims.find(row=>row.status==='fulfilled').value;
+  await assert.rejects(()=>b.importData({version:1,products:[],items:[],searches:{}}),/running analysis/);
+  await b.finishAnalysis(lease,{findings:[],landscape:[],people:[],coverage:'No supported findings.'});
+  assert.equal((await new FirestoreStore(create()).snapshot()).research[p.id].coverage,'No supported findings.');
+  const before=(await a.backend.read()).data.analysisUsage;
+  await b.importData({version:1,products:[p],items:[],searches:{}});
+  assert.deepEqual((await a.backend.read()).data.analysisUsage,before);
+  const changed=await a.claimAnalysis(p.id);await b.saveProduct({...p,description:'Changed during analysis'},p.id);
+  await assert.rejects(()=>b.finishAnalysis(changed,{findings:[],landscape:[],people:[],coverage:'Should not save.'}),error=>error.status===409);
+  await b.releaseAnalysis(changed.token);assert.equal((await a.snapshot()).research,undefined);
+});
+
+test('qualification and research atomically share the Pacific daily budget across Firestore instances',firestoreTest,async t=>{
+ const {qualificationSettings,budgetDay,qualificationBackup}=await import('../qualification.mjs');
+ const settings=qualificationSettings({TRACKER_OPENAI_API_KEY:'fixture',TRACKER_AI_ENABLED:'true',TRACKER_AI_DAILY_BUDGET_USD:'2'});
+ const {create}=await backend(t),a=new FirestoreStore(create()),b=new FirestoreStore(create());
+ const p=await a.saveProduct({...product,capabilities:['Manage tasks'],needs:['Remember tasks']}),q=await a.saveProduct({...product,name:'Another product',capabilities:['Manage tasks']});
+ const now=Date.now(),day=budgetDay(now);
+ const claims=await Promise.allSettled([a.claimAnalysis(p.id,null,now,settings),b.claimAnalysis(q.id,null,now,settings)]);
+ assert.equal(claims.filter(c=>c.status==='fulfilled').length,1);assert.equal(claims.find(c=>c.status==='rejected').reason.status,429);
+ let snapshot=await a.snapshot();assert.equal(snapshot.aiBudget.dailyUsage[day].reservedMicroUsd,1100000);assert.equal(snapshot.aiBudget.dailyUsage[day].calls,1);
+ await a.finishAnalysis(claims.find(c=>c.status==='fulfilled').value,{findings:[],landscape:[],people:[],coverage:'Fixture',costMicroUsd:10000},now+1000);
+ const remaining=await b.claimAnalysis(q.id,null,now+2000,settings);await b.releaseAnalysis(remaining.token);
+ snapshot=await b.snapshot();assert.equal(snapshot.aiBudget.dailyUsage[day].spentMicroUsd,1110000);assert.equal(snapshot.aiBudget.dailyUsage[day].reservedMicroUsd,0);
+ const old={version:1,products:snapshot.products,items:[],searches:{},...qualificationBackup({qualifications:{},qualificationMigrations:{},aiBudget:{spentMicroUsd:0,reservedMicroUsd:0,calls:0,daily:{},dailyUsage:{}}})};
+ await a.importData(old);assert.equal((await b.snapshot()).aiBudget.dailyUsage[day].spentMicroUsd,1110000);
+});

@@ -253,6 +253,37 @@ test('JSON export and restore preserve durable products, decisions and notes', a
   assert.equal(snapshot.products[0].type, 'app_store');
 });
 
+test('ScrapeBadger backup restore preserves source identity, saved decisions, and notes', async t => {
+  const original = await tracker(t, {discoverFn:async() => ({items:[{...match('https://www.reddit.com/r/swift/comments/abc123/_/c123/'),
+    source:'Reddit comment',provider:'scrapebadger',sourceId:'t1_c123',postId:'t3_abc123',parentId:'t3_abc123',type:'comment',
+    collectedAt:'2026-10-06T12:00:00.000Z'}],sources:[],searchedAt:'2026-10-06T12:00:00.000Z'})});
+  const product = await original.store.saveProduct(productInput);
+  const search = await original.request(`/api/products/${product.id}/search`, {method:'POST'});
+  await original.request(`/api/items/${search.value.items[0].id}`, {method:'PATCH',body:{status:'saved',note:'Keep this comment.'}});
+  const exported = (await original.request('/api/export')).value;
+  const restored = await tracker(t);
+  assert.equal((await restored.request('/api/import',{method:'POST',body:exported})).response.status,200);
+  const [item] = restored.store.snapshot().items;
+  assert.equal(item.provider,'scrapebadger');assert.equal(item.sourceId,'t1_c123');assert.equal(item.postId,'t3_abc123');
+  assert.equal(item.parentId,'t3_abc123');assert.equal(item.status,'saved');assert.equal(item.note,'Keep this comment.');
+});
+
+test('Apify LinkedIn backup restore preserves post identity, saved decisions, and notes', async t => {
+  const id = '7507254982996332545';
+  const original = await tracker(t,{discoverFn:async() => ({items:[{...match(`https://www.linkedin.com/posts/demo-person_product-tracking-activity-${id}-AbCd`),
+    source:'LinkedIn',provider:'linkedin-apify',sourceId:`li_${id}`,postId:id,parentId:null,type:'post',
+    collectedAt:'2026-10-06T12:00:00.000Z'}],sources:[],searchedAt:'2026-10-06T12:00:00.000Z'})});
+  const product = await original.store.saveProduct(productInput);
+  const search = await original.request(`/api/products/${product.id}/search`,{method:'POST'});
+  await original.request(`/api/items/${search.value.items[0].id}`,{method:'PATCH',body:{status:'saved',note:'Check this LinkedIn need.'}});
+  const exported = (await original.request('/api/export')).value;
+  const restored = await tracker(t);
+  assert.equal((await restored.request('/api/import',{method:'POST',body:exported})).response.status,200);
+  const [item] = restored.store.snapshot().items;
+  assert.equal(item.provider,'linkedin-apify');assert.equal(item.sourceId,`li_${id}`);assert.equal(item.postId,id);
+  assert.equal(item.parentId,null);assert.equal(item.status,'saved');assert.equal(item.note,'Check this LinkedIn need.');
+});
+
 test('restore rejects malformed and unsafe backups atomically and cannot pollute prototypes', async t => {
   const instance = await tracker(t, {
     discoverFn: async () => ({ items: [match('https://news.ycombinator.com/item?id=51')], sources: [], searchedAt: '2026-10-03T12:00:00.000Z' }),

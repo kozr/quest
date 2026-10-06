@@ -12,6 +12,7 @@ import {createRedditAdapter} from './reddit/adapters.mjs';
 import {linkedinConfigured} from './linkedin/adapter.mjs';
 import {dueProducts, startLocalMonitoring, MONITOR_INTERVAL_MS, LINKEDIN_TIME_ZONE, LINKEDIN_HOURS} from './monitor.mjs';
 import {qualificationSettings, qualificationPublicState, qualificationBackup, validateQualificationHistory, createQualificationProvider, processQualification} from './qualification.mjs';
+import {analysisConfiguration, analysisSnapshot, researchProduct, analyzeMatch, productHash, matchHash, validateResearch, validateFit, freshAnalysis, ANALYSIS_DAILY_LIMIT} from './analysis.mjs';
 
 const directory = dirname(fileURLToPath(import.meta.url));
 const list = (value, max = 12) => {
@@ -28,7 +29,7 @@ export function validateProduct(value) {
   return { name: value.name.trim(), description: value.description.trim(), url, type: new URL(url).hostname === 'apps.apple.com' ? 'app_store' : 'website', keywords, aliases: list(value.aliases || [value.name]), exclusions: list(value.exclusions || []), ...validateProfile(value) };
 }
 
-export function createTrackerApp({ dataDirectory = process.env.TRACKER_DATA_DIR || join(directory, '.local'), discoverFn = discover, metadataFn = importMetadata, profileFn = product => suggestProfile(product,{env:{}}), redditAdapter, linkedinAvailable = linkedinConfigured(), monitorToken = process.env.TRACKER_MONITOR_TOKEN, qualificationEnv = process.env, qualificationProvider = createQualificationProvider({env:qualificationEnv}), store: providedStore, hosted = false, password = process.env.TRACKER_PASSWORD, sessionSecret = process.env.TRACKER_SESSION_SECRET, firebaseProjectId = process.env.FIREBASE_PROJECT_ID, firebaseServiceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON, workspace = process.env.TRACKER_WORKSPACE || (process.env.VERCEL_ENV === 'preview' ? 'preview' : 'personal') } = {}) {
+export function createTrackerApp({ dataDirectory = process.env.TRACKER_DATA_DIR || join(directory, '.local'), discoverFn = discover, metadataFn = importMetadata, profileFn = product => suggestProfile(product,{env:{}}), analysisProvider, redditAdapter, linkedinAvailable = linkedinConfigured(), monitorToken = process.env.TRACKER_MONITOR_TOKEN, qualificationEnv = process.env, qualificationProvider = createQualificationProvider({env:qualificationEnv}), store: providedStore, hosted = false, password = process.env.TRACKER_PASSWORD, sessionSecret = process.env.TRACKER_SESSION_SECRET, firebaseProjectId = process.env.FIREBASE_PROJECT_ID, firebaseServiceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON, workspace = process.env.TRACKER_WORKSPACE || (process.env.VERCEL_ENV === 'preview' ? 'preview' : 'personal') } = {}) {
   const auth = hosted ? createAuth({password,secret:sessionSecret}) : null;
   const store = providedStore || (hosted ? new FirestoreStore(new FirestoreBackend(configuredFirestore({projectId:firebaseProjectId,serviceAccountJson:firebaseServiceAccountJson}),workspace)) : new Store(dataDirectory));
   const app = express();
@@ -38,6 +39,22 @@ export function createTrackerApp({ dataDirectory = process.env.TRACKER_DATA_DIR 
   const allowedHosts = new Set(['127.0.0.1', 'localhost', '[::1]']);
   const busyIds = async () => store.activeSearches ? await store.activeSearches() : [...busy];
   const monitoringAvailable = !hosted || typeof monitorToken === 'string' && monitorToken.length >= 32;
+  const config = analysisConfiguration(qualificationEnv);
+  const analysis = analysisProvider || {available: config.available, research: product => researchProduct(product, {config}), match: (product, item) => analyzeMatch(product, item, {config})};
+  async function runAnalysis(productId, itemId, refresh) {
+    if (!analysis.available) {const error = new Error('AI analysis is paused. Check the server key and daily budget settings.'); error.status = 503; throw error;}
+    const snapshot = await store.snapshot(), product = snapshot.products.find(row => row.id === productId);
+    const item = itemId ? snapshot.items.find(row => row.id === itemId && row.productId === productId) : null;
+    if (!product || itemId && !item) {const error = new Error('Product or match not found.'); error.status = 404; throw error;}
+    const cached = item ? item.analysis : snapshot.research?.[productId];
+    if (!refresh && freshAnalysis(cached) && cached.profileHash === productHash(product) && (!item || cached.sourceHash === matchHash(item))) return {result: cached, cached: true};
+    const lease = await store.claimAnalysis(productId, itemId, Date.now(), analysisProvider ? null : qualificationSettings(qualificationEnv));
+    try {
+      if (lease.profileHash !== productHash(product) || item && lease.sourceHash !== matchHash(item)) {const error = new Error('The product or conversation changed. Refresh and run analysis again.'); error.status = 409; throw error;}
+      const result = item ? await analysis.match(structuredClone(product), structuredClone(item)) : await analysis.research(structuredClone(product));
+      return {result: await store.finishAnalysis(lease, result), cached: false};
+    } finally {await store.releaseAnalysis(lease.token);}
+  }
   async function runQualification(productId) {
     const settings = qualificationSettings(qualificationEnv);
     if (!productId && settings.mode !== 'ongoing') return {status:'disabled'};
@@ -96,10 +113,13 @@ export function createTrackerApp({ dataDirectory = process.env.TRACKER_DATA_DIR 
     auth.login(res); res.json({ok:true});
   });
   app.post('/api/logout',(_req,res)=>{auth?.logout(res);res.json({ok:true});});
-  app.get('/api/state',async(req,res)=>res.json({...qualificationPublicState(await store.snapshot(),qualificationSettings(qualificationEnv)),token:auth?auth.csrf(req):token,busy:await busyIds(),storage:hosted?'cloud':'local',sources:{linkedin:{available:linkedinAvailable}},monitoring:{available:monitoringAvailable,intervalMinutes:MONITOR_INTERVAL_MS / 60000,linkedin:{timeZone:LINKEDIN_TIME_ZONE,hours:LINKEDIN_HOURS}}}));
+  app.get('/api/state',async(req,res)=>{
+    const snapshot = await store.snapshot();
+    res.json({...qualificationPublicState(snapshot,qualificationSettings(qualificationEnv)),...analysisSnapshot(snapshot),analysis:{available:analysis.available,dailyLimit:ANALYSIS_DAILY_LIMIT},token:auth?auth.csrf(req):token,busy:await busyIds(),storage:hosted?'cloud':'local',sources:{linkedin:{available:linkedinAvailable}},monitoring:{available:monitoringAvailable,intervalMinutes:MONITOR_INTERVAL_MS / 60000,linkedin:{timeZone:LINKEDIN_TIME_ZONE,hours:LINKEDIN_HOURS}}});
+  });
   app.get('/api/monitor', async(_req, res) => {
     const snapshot=await store.snapshot(),settings=qualificationSettings(qualificationEnv);
-    res.json({ids:dueProducts(snapshot).map(product=>product.id),qualifications:{available:settings.active&&settings.mode==='ongoing',pending:Object.values(snapshot.qualifications||{}).filter(job=>job.status==='pending').length},
+    res.json({ids:dueProducts(snapshot).map(product=>product.id),analysis:{available:analysis.available,model:config.model},qualifications:{available:settings.active&&settings.mode==='ongoing',pending:Object.values(snapshot.qualifications||{}).filter(job=>job.status==='pending').length},
       schedules:{reddit:{intervalMinutes:MONITOR_INTERVAL_MS / 60000},linkedin:{timeZone:LINKEDIN_TIME_ZONE,hours:LINKEDIN_HOURS}}});
   });
   app.post('/api/monitor/qualifications',async(_req,res)=>res.json(await runQualification()));
@@ -140,6 +160,12 @@ export function createTrackerApp({ dataDirectory = process.env.TRACKER_DATA_DIR 
   app.post('/api/products/:id/search',async(req,res)=>{
     res.json(await runSearch(req.params.id));
   });
+  app.post('/api/products/:id/research',async(req,res)=>res.json(await runAnalysis(req.params.id, null, req.body?.refresh === true)));
+  app.post('/api/items/:id/analysis',async(req,res)=>{
+    const item = (await store.snapshot()).items.find(row => row.id === req.params.id);
+    if (!item) return res.status(404).json({error: 'Match not found.'});
+    res.json(await runAnalysis(item.productId, item.id, req.body?.refresh === true));
+  });
   app.post('/api/qualification/run',async(req,res)=>{
     const id=req.body.productId;
     if(typeof id!=='string'||!(await store.snapshot()).products.some(product=>product.id===id)) return res.status(404).json({error:'Product not found.'});
@@ -154,7 +180,7 @@ export function createTrackerApp({ dataDirectory = process.env.TRACKER_DATA_DIR 
   });
   app.get('/api/export',async(_req,res)=>{
     const snapshot=await store.snapshot();
-    res.set('Content-Disposition','attachment; filename="product-tracker.json"').json({version:snapshot.version,products:snapshot.products,items:snapshot.items,searches:snapshot.searches,...qualificationBackup(snapshot)});
+    res.set('Content-Disposition','attachment; filename="product-tracker.json"').json({...analysisSnapshot(snapshot),...qualificationBackup(snapshot)});
   });
   app.post('/api/import',async(req,res)=>{
     if((await busyIds()).length) throw new Error('Wait for the running searches to finish before restoring a backup.');
@@ -176,16 +202,25 @@ export function createTrackerApp({ dataDirectory = process.env.TRACKER_DATA_DIR 
       if(!ids.has(i.productId)||!['opportunity','mention'].includes(i.kind)||!['new','saved','dismissed'].includes(i.status)||typeof i.id!=='string'||!i.id||typeof i.title!=='string'||typeof i.note!=='string'||i.note.length>3000) throw new Error('The backup has invalid matches.');
       const provenance = {};
       for (const key of ['sourceId', 'postId', 'parentId']) if (i[key] != null) {
-        if (typeof i[key] !== 'string' || !(i.provider === 'linkedin-mcp' ? /^(?:li_)?\d{10,20}$/.test(i[key]) : /^(?:t[13]_)?[a-z0-9]{1,20}$/i.test(i[key]))) throw new Error('The backup has invalid source IDs.');
+        if (typeof i[key] !== 'string' || !(['linkedin-mcp','linkedin-apify'].includes(i.provider) ? /^(?:li_)?\d{10,20}$/.test(i[key]) : /^(?:t[13]_)?[a-z0-9]{1,20}$/i.test(i[key]))) throw new Error('The backup has invalid source IDs.');
         provenance[key] = i[key];
       }
       if (i.parentId === null) provenance.parentId = null;
-      if (['redlib', 'public-json', 'linkedin-mcp'].includes(i.provider)) provenance.provider = i.provider;
+      if (['scrapebadger', 'redlib', 'public-json', 'linkedin-mcp', 'linkedin-apify'].includes(i.provider)) provenance.provider = i.provider;
       if (['post', 'comment'].includes(i.type)) provenance.type = i.type;
       if (typeof i.collectedAt === 'string' && Number.isFinite(Date.parse(i.collectedAt))) provenance.collectedAt = new Date(i.collectedAt).toISOString();
-      return {...provenance,id:i.id,productId:i.productId,kind:i.kind,status:i.status,note:i.note,url:publicUrl(i.url).href,title:i.title.slice(0,500),snippet:String(i.snippet||'').slice(0,10000),reason:String(i.reason||'').slice(0,3000),source:typeof i.source==='string'?i.source.slice(0,100):'Imported',author:typeof i.author==='string'?i.author.slice(0,120):null,publishedAt:typeof i.publishedAt==='string'?i.publishedAt:null,foundAt:typeof i.foundAt==='string'?i.foundAt:new Date().toISOString(),lastSeenAt:typeof i.lastSeenAt==='string'?i.lastSeenAt:new Date().toISOString(),matchedTerms:Array.isArray(i.matchedTerms)?i.matchedTerms.filter(t=>typeof t==='string').slice(0,20):[]};
+      const item = {...provenance,id:i.id,productId:i.productId,kind:i.kind,status:i.status,note:i.note,url:publicUrl(i.url).href,title:i.title.slice(0,500),snippet:String(i.snippet||'').slice(0,10000),reason:String(i.reason||'').slice(0,3000),source:typeof i.source==='string'?i.source.slice(0,100):'Imported',author:typeof i.author==='string'?i.author.slice(0,120):null,publishedAt:typeof i.publishedAt==='string'?i.publishedAt:null,foundAt:typeof i.foundAt==='string'?i.foundAt:new Date().toISOString(),lastSeenAt:typeof i.lastSeenAt==='string'?i.lastSeenAt:new Date().toISOString(),matchedTerms:Array.isArray(i.matchedTerms)?i.matchedTerms.filter(t=>typeof t==='string').slice(0,20):[]};
+      const product = products.find(row => row.id === item.productId);
+      if (i.analysis && i.analysis.profileHash === productHash(product) && i.analysis.sourceHash === matchHash(item)) item.analysis = {...validateFit(i.analysis, product, item), profileHash: productHash(product), sourceHash: matchHash(item), imported: true, generatedAt: typeof i.analysis.generatedAt === 'string' ? i.analysis.generatedAt.slice(0,40) : null};
+      return item;
     });
     if(new Set(items.map(i=>i.id)).size!==items.length) throw new Error('The backup has duplicate matches.');
+    const research = {};
+    if (data.research !== undefined && (!data.research || Array.isArray(data.research) || typeof data.research !== 'object' || Object.keys(data.research).length > 100)) throw new Error('The backup has invalid research records.');
+    for (const product of products) {
+      const row = Object.hasOwn(data.research || {}, product.id) ? data.research[product.id] : null;
+      if (row) research[product.id] = {...validateResearch(row, product), profileHash: typeof row.profileHash === 'string' ? row.profileHash.slice(0,64) : '', imported: true, generatedAt: typeof row.generatedAt === 'string' ? row.generatedAt.slice(0,40) : null};
+    }
     // Qualification evidence comes from validated receipts, not arbitrary
     // imported item metadata. Human status and notes retain backup semantics.
     const receipts=new Map(Object.values(history.qualifications||{}).filter(job=>job.status==='qualified').map(job=>[`${job.productId}:${job.url}`,job]));
@@ -193,7 +228,7 @@ export function createTrackerApp({ dataDirectory = process.env.TRACKER_DATA_DIR 
       const receipt=receipts.get(`${item.productId}:${item.url}`);
       if(receipt?.assessment)item.qualification={model:receipt.model,promptVersion:receipt.promptVersion,...receipt.assessment};
     }
-    await store.importData({version:1,products,items,searches:{},...history});res.json({ok:true});
+    await store.importData({version:1,products,items,searches:{},research,...history});res.json({ok:true});
   });
   app.use(express.static(join(directory,'public')));
   app.use((err,_req,res,_next)=>res.status(err.status||400).json({error:err.type==='entity.too.large'?'The backup is too large.':err.message||'The request failed. Try again.'}));
