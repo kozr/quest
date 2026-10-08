@@ -1,0 +1,14 @@
+{
+  "auth": {
+    "providers": {
+      "googleSignIn": {
+        "oAuthBrandDisplayName": "HearWhispers",
+        "supportEmail": "eggheadlabs.dev@gmail.com",
+        "authorizedRedirectUris": [
+          "https://product-opportunity-tracker.vercel.app",
+          "https://product-opportunity-tracker-kozrs-projects.vercel.app"
+        ]
+      }
+    }
+  }
+}
