@@ -125,3 +125,10 @@ test('limited review allowance prioritises named business replies without discar
  captureEvidence(data,p,[source('The sandwich pickup was slow.',{context:'Fixture Cafe customer experiences'})],new Date(now+1000).toISOString());
  const pending=pendingEvidence(data,p);assert.equal(pending.length,2);assert.equal(pending[0].type,'comment');assert.equal(pending[1].url,'https://www.reddit.com/r/vancouver/comments/older/');
 });
+
+
+test('a named alternative announcement supports attributed competitor research without becoming a lead',()=>{
+ const {p,data}=fixture();captureEvidence(data,p,[source('I run Other Cafe and we offer croissant sandwich pickup.')],at);const e=data.conversationEvidence[p.id][0];
+ const q=classify(p,e,decision(e,{category:'promotion',purposes:[signal('competitor',e.text,{reference:'Other Cafe',reason:'The provider advertises a comparable pickup offering; this is a vendor claim, not an independent review.'})]}));
+ assert.equal(q.directFit,false);assert.equal(q.purposes[0].purpose,'competitor');assert.throws(()=>classify(p,e,{...q,directFit:true,need:'Find lunch',offeringIds:['o1']}),/Promotional posts/);
+});
