@@ -95,7 +95,8 @@ blockquote { margin: .8rem 0; padding-left: 1rem; border-left: 1px solid #aaa; m
 #search-progress { margin: .8rem 0; }
 #restore-form { max-width: 600px; margin-bottom: 1.5rem; border-bottom: 1px solid #aaa; padding-bottom: 1rem; }
 #login-view { max-width: 400px; padding: 1rem 0; }
-#login-form button { margin-top: .8rem; }
+#google-sign-in { min-height: 44px; margin: 1.25rem 0 .5rem; }
+#login-status { min-height: 1.5em; }
 footer { border-top: 1px solid #ccc; padding: 1rem 1.5rem; color: #595959; font-size: .875rem; }
 .skip-link { position: absolute; left: 1rem; top: -100px; background: #fff; padding: .5rem; }
 .skip-link:focus { top: .5rem; }

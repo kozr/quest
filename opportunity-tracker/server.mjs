@@ -29,8 +29,8 @@ export function validateProduct(value) {
   return { name: value.name.trim(), description: value.description.trim(), url, type: new URL(url).hostname === 'apps.apple.com' ? 'app_store' : 'website', keywords, aliases: list(value.aliases || [value.name]), exclusions: list(value.exclusions || []), ...validateProfile(value) };
 }
 
-export function createTrackerApp({ dataDirectory = process.env.TRACKER_DATA_DIR || join(directory, '.local'), discoverFn = discover, metadataFn = importMetadata, profileFn = product => suggestProfile(product,{env:{}}), analysisProvider, redditAdapter, linkedinAvailable = linkedinConfigured(), monitorToken = process.env.TRACKER_MONITOR_TOKEN, qualificationEnv = process.env, qualificationProvider = createQualificationProvider({env:qualificationEnv}), store: providedStore, hosted = false, password = process.env.TRACKER_PASSWORD, sessionSecret = process.env.TRACKER_SESSION_SECRET, firebaseProjectId = process.env.FIREBASE_PROJECT_ID, firebaseServiceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON, workspace = process.env.TRACKER_WORKSPACE || (process.env.VERCEL_ENV === 'preview' ? 'preview' : 'personal') } = {}) {
-  const auth = hosted ? createAuth({password,secret:sessionSecret}) : null;
+export function createTrackerApp({ dataDirectory = process.env.TRACKER_DATA_DIR || join(directory, '.local'), discoverFn = discover, metadataFn = importMetadata, profileFn = product => suggestProfile(product,{env:{}}), analysisProvider, redditAdapter, linkedinAvailable = linkedinConfigured(), monitorToken = process.env.TRACKER_MONITOR_TOKEN, qualificationEnv = process.env, qualificationProvider = createQualificationProvider({env:qualificationEnv}), store: providedStore, hosted = false, googleClientId = process.env.TRACKER_GOOGLE_CLIENT_ID, googleAllowedEmails = process.env.TRACKER_GOOGLE_ALLOWED_EMAILS, googleAllowedSubjects = process.env.TRACKER_GOOGLE_ALLOWED_SUBJECTS, verifyGoogleIdToken, sessionSecret = process.env.TRACKER_SESSION_SECRET, firebaseProjectId = process.env.FIREBASE_PROJECT_ID, firebaseServiceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON, workspace = process.env.TRACKER_WORKSPACE || (process.env.VERCEL_ENV === 'preview' ? 'preview' : 'personal') } = {}) {
+  const auth = hosted ? createAuth({clientId:googleClientId,allowedEmails:googleAllowedEmails,allowedSubjects:googleAllowedSubjects,secret:sessionSecret,verifyIdToken:verifyGoogleIdToken}) : null;
   const store = providedStore || (hosted ? new FirestoreStore(new FirestoreBackend(configuredFirestore({projectId:firebaseProjectId,serviceAccountJson:firebaseServiceAccountJson}),workspace)) : new Store(dataDirectory));
   const app = express();
   const token = randomBytes(24).toString('hex');
@@ -87,7 +87,7 @@ export function createTrackerApp({ dataDirectory = process.env.TRACKER_DATA_DIR 
   if(hosted) app.set('trust proxy',1);
   app.use((req,res,next) => {
     if (!hosted && !allowedHosts.has(req.hostname)) return res.status(403).json({error:'Open this tracker using localhost.'});
-    res.set({ 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer', 'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'" });
+    res.set({ 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'strict-origin-when-cross-origin', 'Cross-Origin-Opener-Policy': 'same-origin-allow-popups', 'Content-Security-Policy': "default-src 'self'; script-src 'self' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; img-src 'self' data:; connect-src 'self' https://accounts.google.com/gsi/; frame-src https://accounts.google.com/gsi/; base-uri 'none'; frame-ancestors 'none'; form-action 'self'" });
     if(req.path.startsWith('/api/')) {
       res.set('Cache-Control','no-store');
       if (req.path === '/api/monitor' || req.path.startsWith('/api/monitor/')) {
@@ -97,20 +97,22 @@ export function createTrackerApp({ dataDirectory = process.env.TRACKER_DATA_DIR 
         return next();
       }
       if(req.method!=='GET' && req.get('origin') && req.get('origin')!==`${req.protocol}://${req.get('host')}`) return res.status(403).json({error:'This request came from another website.'});
-      if(req.path==='/api/auth' || req.path==='/api/login') return next();
+      if(req.path==='/api/auth' || req.path==='/api/login/google') return next();
       if(auth&&!auth.authenticated(req)) return res.status(401).json({error:'Sign in to open your tracker.'});
       if(req.method!=='GET' && req.get('X-Tracker-Token')!==(auth ? auth.csrf(req) : token)) return res.status(403).json({error:'Refresh the page and try again.'});
     }
     next();
   });
   app.use(express.json({limit:'2mb'}));
-  app.get('/api/auth',(_req,res)=>res.json({hosted,authenticated:!auth||auth.authenticated(_req),storage:hosted?'cloud':'local'}));
-  app.post('/api/login',async(req,res)=>{
+  app.get('/api/auth',(req,res)=>{
+    const authenticated = !auth || auth.authenticated(req);
+    res.json({hosted,authenticated,storage:hosted?'cloud':'local',...(!authenticated ? {google:auth.challenge(req,res)} : {})});
+  });
+  app.post('/api/login/google',async(req,res)=>{
     if(!auth) return res.status(400).json({error:'Local mode does not require sign-in.'});
     const allowed=store.allowLoginAttempt ? await store.allowLoginAttempt() : (()=>{while(loginAttempts[0]<Date.now()-300000) loginAttempts.shift(); if(loginAttempts.length>=15)return false; loginAttempts.push(Date.now());return true;})();
     if(!allowed) return res.status(429).json({error:'Too many sign-in attempts. Wait five minutes and try again.'});
-    if(!auth.validPassword(req.body.password)) return res.status(401).json({error:'Incorrect password. Try again.'});
-    auth.login(res); res.json({ok:true});
+    await auth.login(req,res); res.json({ok:true});
   });
   app.post('/api/logout',(_req,res)=>{auth?.logout(res);res.json({ok:true});});
   app.get('/api/state',async(req,res)=>{
@@ -241,7 +243,7 @@ const vercelApp=express();
 let hostedApp;
 vercelApp.use((req,res,next)=>{
   try {hostedApp ||= createTrackerApp({hosted:true}).app;return hostedApp(req,res,next);}
-  catch {res.status(503).json({error:'Configure the Firebase connection, TRACKER_PASSWORD (16+ characters), and TRACKER_SESSION_SECRET (32+ characters) for this Vercel project.'});}
+  catch {res.status(503).json({error:'Configure the Firebase connection, Google sign-in client ID and allowed accounts, and TRACKER_SESSION_SECRET (32+ characters) for this Vercel project.'});}
 });
 export default vercelApp;
 

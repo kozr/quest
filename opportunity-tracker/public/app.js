@@ -37,7 +37,7 @@ function notice(text, error=false) {
 async function api(path, options={}) {
   const response=await fetch(`/api${path}`,{...options,headers:{'Content-Type':'application/json','X-Tracker-Token':state.token||'',...options.headers}});
   const result=await response.json();
-  if(response.status===401&&path!=='/login') showLogin();
+  if(response.status===401&&path!=='/login/google') showLogin();
   if(!response.ok) throw new Error(result.error||'Could not complete that action. Try again.');
   return result;
 }
@@ -460,27 +460,66 @@ $('restore-form').addEventListener('submit',async event=>{
   if(!confirm('Replace all current tracker data with this backup?')) return;
   try { if(file.size>2_000_000) throw new Error('The backup is too large.');const data=JSON.parse(await file.text());await api('/import',{method:'POST',body:JSON.stringify(data)});selected=null;restoreVisibility(false);await reload();notice('Backup restored.'); } catch(error) { notice(error.message,true); }
 });
-function showLogin() {
+let googleScript;
+let loginGeneration = 0;
+let signingIn = false;
+function loadGoogle() {
+  if (window.google?.accounts?.id) return Promise.resolve(window.google.accounts.id);
+  if (!googleScript) googleScript = new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    const fail = () => {clearTimeout(timeout);script.remove();reject(new Error('Google sign-in could not load. Check your connection and try again.'));};
+    const timeout = setTimeout(fail, 15000);
+    script.src = 'https://accounts.google.com/gsi/client';script.async = true;
+    script.onload = () => {clearTimeout(timeout);window.google?.accounts?.id ? resolve(window.google.accounts.id) : fail();};
+    script.onerror = fail;document.head.append(script);
+  }).catch(error => {googleScript = null;throw error;});
+  return googleScript;
+}
+async function renderGoogleSignIn(auth, generation) {
+  $('google-sign-in').replaceChildren();$('google-sign-in').hidden=false;
+  $('login-status').textContent='Loading Google sign-in…';$('login-retry').hidden=true;
+  try {
+    const configuration = auth || await api('/auth');
+    if (configuration.authenticated) {await reload();return;}
+    if (!configuration.google) throw new Error('Google sign-in is unavailable. Refresh the page to try again.');
+    const google = await loadGoogle();
+    if (generation !== loginGeneration || $('login-view').hidden) return;
+    google.initialize({client_id:configuration.google.clientId,nonce:configuration.google.nonce,auto_select:false,
+      callback: async response => {
+        if(signingIn || generation !== loginGeneration) return;
+        signingIn=true;$('google-sign-in').hidden=true;$('login-status').textContent='Signing in…';
+        try {
+          await api('/login/google',{method:'POST',headers:{'X-Tracker-Login':configuration.google.nonce},body:JSON.stringify({credential:response.credential})});
+          await reload();notice('');
+        } catch(error) {
+          $('login-status').textContent=error.message;$('login-retry').hidden=false;
+        } finally {signingIn=false;}
+      }
+    });
+    google.renderButton($('google-sign-in'),{type:'standard',theme:'outline',size:'large',text:'continue_with',shape:'rectangular',width:Math.min(360,$('login-view').clientWidth)});
+    $('login-status').textContent='';
+  } catch(error) {
+    if(generation !== loginGeneration) return;
+    $('login-status').textContent=error.message;$('login-retry').hidden=false;
+  }
+}
+function showLogin(auth) {
   setupController?.abort();setupGeneration++;$('product-form').hidden=true;
   state={products:[],items:[],searches:{},busy:[]};selected=null;
   $('workspace').hidden=true;$('login-view').hidden=false;$('sign-out').hidden=true;
   $('restore-toggle').hidden=true;document.querySelector('a[download]').hidden=true;
   $('restore-form').hidden=true;$('matches').replaceChildren();$('products').replaceChildren();
-  $('tracker-password').focus();
+  void renderGoogleSignIn(auth,++loginGeneration);
 }
-$('login-form').addEventListener('submit',async event=>{
-  event.preventDefault();$('sign-in').disabled=true;
-  try {await api('/login',{method:'POST',body:JSON.stringify({password:$('tracker-password').value})});$('tracker-password').value='';await reload();notice('');}
-  catch(error){notice(error.message,true);}finally{$('sign-in').disabled=false;}
-});
+$('login-retry').addEventListener('click',()=>showLogin());
 $('sign-out').addEventListener('click',async()=>{
-  try {await api('/logout',{method:'POST',body:'{}'});showLogin();notice('Signed out.');}catch(error){notice(error.message,true);}
+  try {await api('/logout',{method:'POST',body:'{}'});window.google?.accounts?.id.disableAutoSelect();showLogin();notice('Signed out.');}catch(error){notice(error.message,true);}
 });
 async function start() {
   const auth=await api('/auth');
   if(auth.hosted&&!auth.authenticated) {
     $('storage-status').textContent='Your private cloud tracker. Sign in to open your products and matches.';
-    showLogin();
+    showLogin(auth);
   } else await reload();
 }
 start().catch(error=>{notice(`Could not load the tracker: ${error.message} Refresh to try again.`,true);$('empty-heading').textContent='Tracker unavailable';$('empty-message').textContent='Check the tracker configuration, then refresh this page.';});

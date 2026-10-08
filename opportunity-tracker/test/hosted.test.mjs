@@ -7,7 +7,7 @@ import { once } from 'node:events';
 import { configuredFirestore, createVercelAuthClient, FirestoreBackend, FirestoreStore } from '../firestore-store.mjs';
 import { createTrackerApp } from '../server.mjs';
 
-const password='test-only-password-very-long';
+import {googleOptions,credential} from './google-fixture.mjs';
 const secret='test-only-session-secret-that-is-at-least-32-chars';
 const product={name:'Tracker test',url:'https://tracker.dev',description:'A tool for specific tasks',keywords:['task management'],aliases:['Tracker test'],exclusions:[]};
 const emulator = process.env.FIRESTORE_EMULATOR_HOST;
@@ -28,12 +28,12 @@ async function backend(t) {
   return {create};
 }
 async function server(t,store) {
-  const app=createTrackerApp({hosted:true,store,password,sessionSecret:secret,discoverFn:async()=>({items:[],sources:[],searchedAt:new Date().toISOString()})}).app;
+  const app=createTrackerApp({hosted:true,store,...googleOptions,discoverFn:async()=>({items:[],sources:[],searchedAt:new Date().toISOString()})}).app;
   const listener=app.listen(0,'127.0.0.1');await once(listener,'listening');
   t.after(()=>new Promise(resolve=>listener.close(resolve)));
-  return async(path,{method='GET',body,cookie,token,origin='https://tracker.vercel.app'}={})=>{
+  return async(path,{method='GET',body,cookie,token,loginNonce,origin='https://tracker.vercel.app'}={})=>{
     const result=await new Promise((resolve,reject)=>{
-      const req=request({host:'127.0.0.1',port:listener.address().port,path,method,headers:{Host:'tracker.vercel.app','X-Forwarded-Proto':'https',Origin:origin,...(body?{'Content-Type':'application/json'}:{}),...(cookie?{Cookie:cookie}:{}),...(token?{'X-Tracker-Token':token}:{})}},res=>{
+      const req=request({host:'127.0.0.1',port:listener.address().port,path,method,headers:{Host:'tracker.vercel.app','X-Forwarded-Proto':'https',Origin:origin,...(body?{'Content-Type':'application/json'}:{}),...(cookie?{Cookie:cookie}:{}),...(token?{'X-Tracker-Token':token}:{}),...(loginNonce?{'X-Tracker-Login':loginNonce}:{})}},res=>{
         const chunks=[];res.on('data',x=>chunks.push(x));res.on('end',()=>resolve({status:res.statusCode,headers:res.headers,value:JSON.parse(Buffer.concat(chunks).toString())}));
       });req.on('error',reject);req.end(body?JSON.stringify(body):undefined);
     });return result;
@@ -93,13 +93,15 @@ test('search leases are shared across instances, imports cannot race searches, a
   await a.releaseSearch(p.id,second);assert.deepEqual(await b.activeSearches(),[]);
 });
 
-test('hosted data requires a password and stable signed sessions/CSRF work across independent functions',firestoreTest,async t=>{
+test('hosted data requires an invited Google identity and stable signed sessions/CSRF work across independent functions',firestoreTest,async t=>{
   const {create}=await backend(t);const a=await server(t,new FirestoreStore(create())),b=await server(t,new FirestoreStore(create()));
   assert.equal((await a('/api/state')).status,401);
   assert.equal((await a('/api/export')).status,401);
-  assert.equal((await a('/api/login',{method:'POST',body:{password:'wrong'}})).status,401);
-  assert.equal((await a('/api/login',{method:'POST',body:{password},origin:'https://evil.dev'})).status,403);
-  const login=await a('/api/login',{method:'POST',body:{password}});assert.equal(login.status,200);
+  const challenge=await a('/api/auth'),loginNonce=challenge.value.google.nonce;
+  const loginOptions={method:'POST',cookie:challenge.headers['set-cookie'][0].split(';')[0],loginNonce,body:{credential:credential(loginNonce)}};
+  assert.equal((await a('/api/login',{method:'POST',body:{password:'retired'}})).status,401);
+  assert.equal((await a('/api/login/google',{...loginOptions,origin:'https://evil.dev'})).status,403);
+  const login=await a('/api/login/google',loginOptions);assert.equal(login.status,200);
   const setCookie=login.headers['set-cookie'][0];assert.match(setCookie,/HttpOnly/);assert.match(setCookie,/Secure/);assert.match(setCookie,/SameSite=Strict/);
   const cookie=setCookie.split(';')[0];
   const state=await b('/api/state',{cookie});assert.equal(state.status,200);assert.equal(state.value.storage,'cloud');
@@ -113,8 +115,8 @@ test('hosted data requires a password and stable signed sessions/CSRF work acros
 });
 
 test('hosted configuration never falls back to ephemeral files and Firebase errors never expose credentials',async()=>{
-  assert.throws(()=>createTrackerApp({hosted:true,password,sessionSecret:secret,firebaseProjectId:''}),/FIREBASE_PROJECT_ID/);
-  assert.throws(()=>createTrackerApp({hosted:true,password:'short',sessionSecret:secret}),/Hosted login/);
+  assert.throws(()=>createTrackerApp({hosted:true,...googleOptions,firebaseProjectId:''}),/FIREBASE_PROJECT_ID/);
+  assert.throws(()=>createTrackerApp({hosted:true,...googleOptions,googleClientId:''}),/Hosted login/);
   assert.throws(()=>configuredFirestore({projectId:'demo-opportunity-tracker',serviceAccountJson:'DO_NOT_EXPOSE'}),error=>!error.message.includes('DO_NOT_EXPOSE')&&/FIREBASE_SERVICE_ACCOUNT_JSON/.test(error.message));
   const value=new FirestoreBackend({collection:()=>({doc:()=>({})}),runTransaction:async()=>{throw new Error('private_key=DO_NOT_EXPOSE');}});
   await assert.rejects(()=>value.read(),error=>error.status===503&&!error.message.includes('DO_NOT_EXPOSE'));

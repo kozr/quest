@@ -21,11 +21,10 @@
   <main>
     <section id="login-view" aria-labelledby="login-heading" hidden>
       <h1 id="login-heading">Open your tracker</h1>
-      <form id="login-form">
-        <label for="tracker-password">Password</label>
-        <input id="tracker-password" type="password" autocomplete="current-password" required maxlength="1024">
-        <button id="sign-in" type="submit">Sign in</button>
-      </form>
+      <p class="secondary">Sign in with your Google account to open your private workspace.</p>
+      <div id="google-sign-in"></div>
+      <p id="login-status" class="secondary" role="status" aria-live="polite">Loading Google sign-in…</p>
+      <button id="login-retry" type="button" hidden>Try again</button>
     </section>
     <form id="restore-form" hidden>
       <label for="backup-file">Tracker JSON backup</label>
