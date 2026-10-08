@@ -12,7 +12,7 @@ export function discoveryProgress(data,product,{settings,available=true,now=Date
   const active=jobs.some(j=>['running','reviewing'].includes(j.status))||pending>0||reviewing;
   const usage=data.aiBudget?.dailyUsage?.[budgetDay(now)]||{};
   const reservation=product.listeningVersion==='v2'&&pending&&listeningReady(product)?stageReservation('qualify',stageContext(data,product.id,'qualify').input):0;
-  const allowance=(data.analysisUsage?.[budgetDay(now)]||0)>=ANALYSIS_DAILY_LIMIT||settings&&(data.aiBudget?.overrun||(usage.calls||0)>=settings.dailyMaxCalls||(usage.spentMicroUsd||0)+(usage.reservedMicroUsd||0)+reservation>settings.budgetMicroUsd);
+  const allowance=product.listeningVersion!=='v2'&&(data.analysisUsage?.[budgetDay(now)]||0)>=ANALYSIS_DAILY_LIMIT||settings&&(data.aiBudget?.overrun||(usage.calls||0)>=settings.dailyMaxCalls||(usage.spentMicroUsd||0)+(usage.reservedMicroUsd||0)+reservation>settings.budgetMicroUsd);
   let phase=active?'finding':'idle',reason=null;
   if(active&&(!listeningReady(product)||data.aiBudget?.overrun||data.collection?.overrun||jobs.some(j=>['search_plan_needs_review','storage_capacity','qualification_history_full'].includes(j.blocked)))){phase='paused';reason='setup';}
   else if(active&&!reviewing&&(jobs.some(j=>['running','reviewing'].includes(j.status)&&j.blocked==='daily_scraper_budget')||pending&&allowance)){phase='paused';reason='allowance';}

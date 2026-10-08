@@ -91,7 +91,8 @@ test('status stays active for unfinished review, shows real allowance pauses, an
  const pause=discoveryProgress(s,f.p,{settings,now});assert.equal(pause.phase,'paused');assert.equal(pause.reason,'allowance');
  let ui=feedProgress({items:[],discovery:{[f.p.id]:pause}},[f.p],now);assert.equal(ui.message,'Updates paused until tomorrow.');
  s.aiBudget.dailyUsage[budgetDay(now)].spentMicroUsd=0;s.analysisUsage={[budgetDay(now)]:40};
- assert.equal(discoveryProgress(s,f.p,{settings,now}).reason,'allowance');
+ assert.equal(discoveryProgress(s,f.p,{settings,now}).phase,'finding');
+ s.aiBudget.dailyUsage[budgetDay(now)].calls=settings.dailyMaxCalls;assert.equal(discoveryProgress(s,f.p,{settings,now}).reason,'allowance');
  review(f,now+1);const complete=f.store.snapshot();complete.collection=s.collection;
  const done=discoveryProgress(complete,f.p,{settings,now:now+10});assert.equal(done.phase,'idle');
  ui=feedProgress({items:complete.items.map(i=>({...i,...conversationCurrentState(complete,i)})),discovery:{[f.p.id]:done}},[f.p],now+10);

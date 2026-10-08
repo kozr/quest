@@ -13,7 +13,7 @@ import {stageRequest,stageReservation,createStageProvider} from '../pipeline-pro
 import {validateV2Qualification} from '../listening-qualification.mjs';
 import {validateInsights,independentThreads} from '../listening-insights.mjs';
 import {validateActions,validateDrafts} from '../action-stages.mjs';
-import {captureEvidence} from '../conversation-evidence.mjs';
+import {captureEvidence,reviewEvidenceFor,findEvidence} from '../conversation-evidence.mjs';
 import {collectionSettings} from '../collection.mjs';
 import {backfillPlan} from '../backfill.mjs';
 import {qualificationSettings,budgetDay,qualificationBackup} from '../qualification.mjs';
@@ -151,4 +151,41 @@ test('collection refreshes and new arrivals do not discard a valid in-flight qua
  assert.equal(f.store.snapshot().conversationEvidence[f.p.id].filter(r=>r.qualification).length,4);
  await f.runStage(f.p.id,'insights');const before=stageSnapshot(f.store.snapshot())[f.p.id].insights;assert.equal(before.stale,false);
  search(rows,new Date(at+4).toISOString());assert.equal(stageSnapshot(f.store.snapshot())[f.p.id].insights.stale,false);
+});
+
+ test('one invalid conversation preserves valid decisions and cannot be automatically repaid',async t=>{
+  const f=await fixture(t);await activate(f);const source=conversations();
+  f.store.recordSearch(f.p.id,{semantic:true,items:[],candidates:source,sources:[],searchedAt:new Date().toISOString()});
+  const now=Date.now(),claimed=f.store.claimStage(f.p.id,'qualify',qualificationSettings(env,now),false,now),value=stageValue('qualify',claimed.input);
+  const invalidId=value.results[0].evidenceId;value.results[0].quote='This sentence was invented.';
+  const completed=f.store.finishStage(claimed.lease,{value,model:'fixture',costMicroUsd:1000},now+1);
+  assert.equal(completed.data.results.length,3);assert.equal(completed.failed.length,1);assert.equal(completed.failed[0].evidenceId,invalidId);
+  const after=f.store.snapshot();assert.equal(after.items.length,3);
+  const cloud=new FirestoreStore({read:async()=>({data:after,revision:1})});assert.deepEqual((await cloud.snapshot()).conversationReviewFailures,after.conversationReviewFailures);
+  f.store.importData(after);assert.deepEqual(f.store.snapshot().conversationReviewFailures,after.conversationReviewFailures);assert.equal(after.conversationReviewFailures[f.p.id][invalidId].reason,'Qualification needs an exact quote from its own conversation.');
+  assert.equal(after.aiBudget.dailyUsage[budgetDay(now)].spentMicroUsd,1000);
+  const evicted=structuredClone(after);evicted.conversationEvidence[f.p.id]=[];assert.equal(reviewEvidenceFor(evicted,after.products[0])[0].id,invalidId);assert.equal(findEvidence(evicted,f.p,invalidId).text,after.conversationReviewFailures[f.p.id][invalidId].row.text);
+  assert.throws(()=>f.store.claimStage(f.p.id,'qualify',qualificationSettings(env,now),false,now+2),/No unqualified/);
+  f.store.recordSearch(f.p.id,{semantic:true,items:[],candidates:source,sources:[],searchedAt:new Date(now+3).toISOString()});
+  assert.throws(()=>f.store.claimStage(f.p.id,'qualify',qualificationSettings(env,now),false,now+4),/No unqualified/);
+ });
+ test('unknown qualification outcomes retain failed source evidence and stop automatic retries',async t=>{
+  const f=await fixture(t);await activate(f);f.store.recordSearch(f.p.id,{semantic:true,items:[],candidates:conversations(),sources:[],searchedAt:new Date().toISOString()});
+  let calls=0;const tracker=createTrackerApp({store:f.store,qualificationEnv:env,stageProvider:{available:true,run:async()=>{calls++;throw Object.assign(new Error('The stage could not finish.'),{status:502});}}});
+  await assert.rejects(()=>tracker.runQualification(f.p.id),/could not finish/);
+  assert.equal(Object.keys(f.store.snapshot().conversationReviewFailures[f.p.id]).length,4);
+  assert.equal((await tracker.runQualification(f.p.id)).status,'complete');assert.equal(calls,1);
+  assert.equal(f.store.snapshot().items.length,0);assert.equal(Object.keys(f.store.snapshot().analysisLeases).length,0);
+ });
+
+
+test('qualification uses its metered allowance while research keeps its request cap',async t=>{
+ const f=await fixture(t);await activate(f);await collect(f);const now=Date.now(),day=budgetDay(now),settings=qualificationSettings(env,now);
+ const data=f.store.snapshot();data.analysisUsage={[day]:40};f.store.commit(data);
+ assert.throws(()=>f.store.claimStage(f.p.id,'search_plan',settings,true,now),/daily analysis request limit/);
+ const claim=f.store.claimStage(f.p.id,'qualify',settings,false,now);assert.equal(f.store.snapshot().analysisUsage[day],40);
+ f.store.finishStage(claim.lease,{value:stageValue('qualify',claim.input),model:'fixture',costMicroUsd:1000},now+1);
+ const limited=f.store.snapshot();limited.aiBudget.dailyUsage[day].calls=settings.dailyMaxCalls;f.store.commit(limited);
+ const rows=conversations().map(r=>({...r,url:r.url+'new',postId:r.postId+'new'}));f.store.recordSearch(f.p.id,{semantic:true,items:[],candidates:rows,sources:[],searchedAt:new Date(now+2).toISOString()});
+ assert.throws(()=>f.store.claimStage(f.p.id,'qualify',settings,false,now+3),/daily AI allowance/);
 });

@@ -1,4 +1,4 @@
-import {claimStage,finishStage,saveSearchPlan,saveDrafts} from './pipeline-runtime.mjs';
+import {claimStage,finishStage,failStage,saveSearchPlan,saveDrafts} from './pipeline-runtime.mjs';
 import {captureEvidence} from './conversation-evidence.mjs';
 import {beginBackfill, beginCollection, claimCollection, finishCollection} from './collection.mjs';
 import { mkdirSync, readFileSync, writeFileSync, renameSync, existsSync } from 'node:fs';
@@ -43,6 +43,7 @@ export class Store {
     if(next.conversationEvidence)delete next.conversationEvidence[id];
     if(next.conversationReviewQueue)delete next.conversationReviewQueue[id];
     if(next.conversationReviewReceipts)delete next.conversationReviewReceipts[id];
+    if(next.conversationReviewFailures)delete next.conversationReviewFailures[id];
     for (const [key, lease] of Object.entries(next.analysisLeases || {})) if (lease.productId === id) {settleAnalysis(next, lease); delete next.analysisLeases[key];}
     this.commit(next);
   }
@@ -93,7 +94,7 @@ export class Store {
     if (Object.values(this.data.qualifications || {}).some(job => job.status === 'running' && job.leaseUntil > Date.now())) throw new Error('Wait for the running AI check to finish before restoring a backup.');
     if (Object.values(this.data.analysisLeases || {}).some(lease => lease.expiresAt > Date.now())) throw new Error('Wait for the running analysis to finish before restoring a backup.');
     if(this.data.collection?.active) throw new Error('Wait for the collection request to finish before restoring a backup.');
-    value = {...value, conversationReviewReceipts:{},...(this.data.collection?{collection:this.data.collection}:{}), analysisUsage:this.data.analysisUsage || {}};
+    value = {...value, conversationReviewReceipts:{},conversationReviewFailures:structuredClone(this.data.conversationReviewFailures||{}),...(this.data.collection?{collection:this.data.collection}:{}), analysisUsage:this.data.analysisUsage || {}};
     this.commit(this.data.qualifications || value.qualifications ? mergeQualificationHistory(this.data, value) : structuredClone(value));
   }
   beginBackfill(productId, now) {const next=this.snapshot(),result=beginBackfill(next,productId,now);this.commit(next);return result;}
@@ -151,6 +152,7 @@ export class Store {
   saveDrafts(productId,value) {const next=this.snapshot(),result=saveDrafts(next,productId,value);this.commit(next);return result;}
   claimStage(productId,stage,settings,refresh,now=Date.now()) {const next=this.snapshot(),result=claimStage(next,productId,stage,settings,refresh,now);this.commit(next);return result;}
   finishStage(lease,result,now=Date.now()) {const next=this.snapshot(),record=finishStage(next,lease,result,now);this.commit(next);return record;}
+  failStage(lease,reason,costMicroUsd,now=Date.now()) {const next=this.snapshot();failStage(next,lease,reason,costMicroUsd,now);this.commit(next);}
   saveSearchPlan(productId,plan,version) {const next=this.snapshot(),product=saveSearchPlan(next,productId,plan,version);this.commit(next);return product;}
   getBusinessProfile(inputHash) {return structuredClone(this.data.businessProfileDrafts?.[inputHash] || null);}
   claimBusinessProfile(inputHash, reservation, now=Date.now(), settings=null, refresh=false) {

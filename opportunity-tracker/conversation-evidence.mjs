@@ -16,7 +16,7 @@ export function captureEvidence(data,product,rows,at){
   // Protect unreviewed samples from every business before shared sample eviction.
   for(const p of data.products.filter(p=>p.listeningVersion==='v2')){
     const pending=data.conversationReviewQueue[p.id] ||= [];
-    for(const old of evidenceFor(data,p))if(old.qualification?.profileHash!==qualificationInputHash(p)&&!pending.some(r=>r.id===old.id)){
+    for(const old of evidenceFor(data,p))if(old.qualification?.profileHash!==qualificationInputHash(p)&&!currentReviewFailure(data,p,old)&&!pending.some(r=>r.id===old.id)){
       if(pending.length>=REVIEW_QUEUE_LIMIT||Object.values(data.conversationReviewQueue).reduce((n,rs)=>n+rs.length,0)>=REVIEW_WORKSPACE_LIMIT)problem('Conversation review is catching up. Try collecting again shortly.',409);
       pending.push(structuredClone(old));
     }
@@ -39,7 +39,7 @@ export function captureEvidence(data,product,rows,at){
       queryIds:[...new Set([...(prior?.queryIds||[]),...(row.queryId?[row.queryId]:[])])].slice(0,12),
       ...(previousHash===contentHash&&previous?{qualification:previous}:{})};
     const queued=queue.findIndex(r=>r.id===id);
-    if(record.qualification?.profileHash!==qualificationInputHash(product)){
+    if(record.qualification?.profileHash!==qualificationInputHash(product)&&!currentReviewFailure(data,product,record)){
       if(queued>=0)queue[queued]={...record,collectedAt:queue[queued].collectedAt};
       else {if(queue.length>=REVIEW_QUEUE_LIMIT||Object.values(data.conversationReviewQueue).reduce((n,rows)=>n+rows.length,0)>=REVIEW_WORKSPACE_LIMIT)problem('Conversation review is catching up. Try collecting again shortly.',409);queue.push(record);}
     }else if(queued>=0)queue.splice(queued,1);
@@ -54,8 +54,17 @@ function trimEvidence(data){
   for(const {p,r} of all.slice(0,600).reverse()){if(Buffer.byteLength(JSON.stringify(data.conversationEvidence))<=2000000)break;data.conversationEvidence[p]=data.conversationEvidence[p].filter(x=>x.id!==r.id);}
 }
 export function evidenceFor(data,product){return data.conversationEvidence?.[product.id]||[];}
-export function findEvidence(data,product,id){return data.conversationReviewQueue?.[product.id]?.find(r=>r.id===id)||evidenceFor(data,product).find(r=>r.id===id);}
-function unqualifiedEvidence(data,product){const h=qualificationInputHash(product),rows=new Map();for(const r of [...(data.conversationReviewQueue?.[product.id]||[]),...evidenceFor(data,product)])if(r.qualification?.profileHash!==h&&!rows.has(r.id))rows.set(r.id,r);const priority=row=>Math.max(commentThreadPriority(product,row),row.type==='comment'&&row.context&&commentThreadPriority(product,{text:row.context})>=3?3:0);return [...rows.values()].sort((a,b)=>priority(b)-priority(a)||a.collectedAt.localeCompare(b.collectedAt)||a.id.localeCompare(b.id));}
+export function findEvidence(data,product,id){return data.conversationReviewQueue?.[product.id]?.find(r=>r.id===id)||evidenceFor(data,product).find(r=>r.id===id)||data.conversationReviewFailures?.[product.id]?.[id]?.row;}
+export function currentReviewFailure(data,product,row){const failure=data.conversationReviewFailures?.[product.id]?.[row.id];return failure?.profileHash===qualificationInputHash(product)&&failure.contentHash===row.contentHash?failure:null;}
+export function reviewEvidenceFor(data,product){const saved=evidenceFor(data,product),rows=new Map(saved.map(row=>[row.id,row]));for(const failure of Object.values(data.conversationReviewFailures?.[product.id]||{}))if(!rows.has(failure.row.id)&&currentReviewFailure(data,product,failure.row))rows.set(failure.row.id,failure.row);return [...rows.values()].sort((a,b)=>Number(Boolean(currentReviewFailure(data,product,b)))-Number(Boolean(currentReviewFailure(data,product,a))));}
+export function failedEvidenceCount(data,product){return reviewEvidenceFor(data,product).filter(row=>currentReviewFailure(data,product,row)).length;}
+export function recordReviewFailure(data,product,row,reason,at){
+  data.conversationReviewFailures ||= {};const failures=data.conversationReviewFailures[product.id] ||= {};
+  failures[row.id]={profileHash:qualificationInputHash(product),contentHash:row.contentHash,failedAt:at,reason:String(reason).slice(0,300),row:structuredClone(row)};
+  for(const id of Object.keys(failures).slice(0,Math.max(0,Object.keys(failures).length-150)))delete failures[id];
+  data.conversationReviewQueue ||= {};data.conversationReviewQueue[product.id]=(data.conversationReviewQueue?.[product.id]||[]).filter(r=>r.id!==row.id);
+}
+function unqualifiedEvidence(data,product){const h=qualificationInputHash(product),rows=new Map();for(const r of [...(data.conversationReviewQueue?.[product.id]||[]),...evidenceFor(data,product)])if(r.qualification?.profileHash!==h&&!currentReviewFailure(data,product,r)&&!rows.has(r.id))rows.set(r.id,r);const priority=row=>Math.max(commentThreadPriority(product,row),row.type==='comment'&&row.context&&commentThreadPriority(product,{text:row.context})>=3?3:0);return [...rows.values()].sort((a,b)=>priority(b)-priority(a)||a.collectedAt.localeCompare(b.collectedAt)||a.id.localeCompare(b.id));}
 export function pendingEvidence(data,product){return unqualifiedEvidence(data,product).slice(0,REVIEW_BATCH_LIMIT);}
 export function pendingEvidenceCount(data,product){return unqualifiedEvidence(data,product).length;}
 export function reviewQueueBlock(data,product){
@@ -70,6 +79,7 @@ export function qualificationDue(data,product,now=Date.now()){
   return rows.length>=REVIEW_BATCH_LIMIT||!collecting||now-Date.parse(rows[0].collectedAt)>=60000;
 }
 export function saveConversationReview(data,product,row,decision,at,model){
+  if(data.conversationReviewFailures?.[product.id])delete data.conversationReviewFailures[product.id][row.id];
   row.qualification={...decision,profileHash:qualificationInputHash(product),qualifiedAt:at};
   data.conversationReviewQueue ||= {};data.conversationReviewQueue[product.id]=(data.conversationReviewQueue[product.id]||[]).filter(r=>r.id!==row.id);
   data.conversationEvidence ||= {};const sample=data.conversationEvidence[product.id] ||= [];

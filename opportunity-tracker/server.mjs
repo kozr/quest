@@ -2,7 +2,7 @@ import {conversationCurrentState} from './conversation-feed.mjs';
 import {stageSnapshot,validateStageRecords} from './pipeline-stages.mjs';
 import {createStageProvider} from './pipeline-provider.mjs';
 import {validateListeningSettings,listeningReady,activeSearchPlan,plannedQueries} from './search-plan.mjs';
-import {evidenceFor,pendingEvidence,pendingEvidenceCount,currentOpportunityFit,currentConversationRelevant,relevantEvidence,validateEvidence,qualificationInputHash,qualificationDue,REVIEW_BATCH_LIMIT,REVIEW_QUEUE_LIMIT,REVIEW_WORKSPACE_LIMIT} from './conversation-evidence.mjs';
+import {evidenceFor,pendingEvidence,pendingEvidenceCount,currentOpportunityFit,currentConversationRelevant,relevantEvidence,validateEvidence,qualificationInputHash,qualificationDue,failedEvidenceCount,currentReviewFailure,reviewEvidenceFor,REVIEW_BATCH_LIMIT,REVIEW_QUEUE_LIMIT,REVIEW_WORKSPACE_LIMIT} from './conversation-evidence.mjs';
 import {discoveryProgress} from './discovery-progress.mjs';
 import {collectionSettings,collectionDueIds,collectionPublicState,createCollectionProvider,processCollection,COLLECTION_VERSION} from './collection.mjs';
 import express from 'express';
@@ -60,7 +60,9 @@ export function createTrackerApp({ dataDirectory = process.env.TRACKER_DATA_DIR 
     if(!stages.available)throw Object.assign(new Error('AI stages are paused. Check the server key and daily budget settings.'),{status:503});
     const claimed=await store.claimStage(productId,stage,stageProvider?null:qualificationSettings(qualificationEnv),refresh);
     if(claimed.cached)return {result:claimed.cached,cached:true};
-    try{return {result:await store.finishStage(claimed.lease,await stages.run(stage,claimed.input)),cached:false};}
+    let result;
+    try{result=await stages.run(stage,claimed.input);return {result:await store.finishStage(claimed.lease,result),cached:false};}
+    catch(error){await store.failStage(claimed.lease,error.message,result?.costMicroUsd);throw error;}
     finally{await store.releaseAnalysis(claimed.lease.token);}
   }
   async function runAnalysis(productId, itemId, refresh) {
@@ -164,7 +166,7 @@ export function createTrackerApp({ dataDirectory = process.env.TRACKER_DATA_DIR 
   app.get('/api/state',async(req,res)=>{
     const snapshot = await store.snapshot();
     const publicAnalysis=analysisSnapshot(snapshot),v2Products=new Set(snapshot.products.filter(p=>p.listeningVersion==='v2').map(p=>p.id));
-    res.json({...qualificationPublicState(snapshot,qualificationSettings(qualificationEnv)),...publicAnalysis,items:publicAnalysis.items.map(item=>({...item,...conversationCurrentState(snapshot,item)})),pipeline:{available:stages.available,actionsEnabled,stages:stageSnapshot(snapshot),products:Object.fromEntries(snapshot.products.map(p=>[p.id,{ready:listeningReady(p),retained:evidenceFor(snapshot,p).length,batchSize:REVIEW_BATCH_LIMIT,pending:pendingEvidenceCount(snapshot,p),relevant:relevantEvidence(snapshot,p).length,conversations:evidenceFor(snapshot,p).map(r=>({...r,classificationCurrent:p.listeningVersion==='v2'&&r.qualification?.profileHash===qualificationInputHash(p)}))}]))},discovery:Object.fromEntries(snapshot.products.map(p=>[p.id,discoveryProgress(snapshot,p,{settings:qualificationSettings(qualificationEnv),available:stages.available})])),analysis:{available:analysis.available,dailyLimit:ANALYSIS_DAILY_LIMIT},businessProfiles:{versions:['v1','v2'],v2Available:businessProfiles.available},token:auth?auth.csrf(req):token,busy:await busyIds(),storage:hosted?'cloud':'local',collection:collector.enabled?collectionPublicState(snapshot):null,sources:{x:{available:collector.enabled&&collector.configured},linkedin:{available:linkedinAvailable}},monitoring:{available:monitoringAvailable,intervalMinutes:MONITOR_INTERVAL_MS / 60000,linkedin:{timeZone:LINKEDIN_TIME_ZONE,hours:LINKEDIN_HOURS}}});
+    res.json({...qualificationPublicState(snapshot,qualificationSettings(qualificationEnv)),...publicAnalysis,items:publicAnalysis.items.map(item=>({...item,...conversationCurrentState(snapshot,item)})),pipeline:{available:stages.available,actionsEnabled,stages:stageSnapshot(snapshot),products:Object.fromEntries(snapshot.products.map(p=>[p.id,{ready:listeningReady(p),retained:evidenceFor(snapshot,p).length,batchSize:REVIEW_BATCH_LIMIT,failed:failedEvidenceCount(snapshot,p),pending:pendingEvidenceCount(snapshot,p),relevant:relevantEvidence(snapshot,p).length,conversations:reviewEvidenceFor(snapshot,p).map(r=>({...r,reviewFailure:currentReviewFailure(snapshot,p,r)?.reason||null,classificationCurrent:p.listeningVersion==='v2'&&r.qualification?.profileHash===qualificationInputHash(p)}))}]))},discovery:Object.fromEntries(snapshot.products.map(p=>[p.id,discoveryProgress(snapshot,p,{settings:qualificationSettings(qualificationEnv),available:stages.available})])),analysis:{available:analysis.available,dailyLimit:ANALYSIS_DAILY_LIMIT},businessProfiles:{versions:['v1','v2'],v2Available:businessProfiles.available},token:auth?auth.csrf(req):token,busy:await busyIds(),storage:hosted?'cloud':'local',collection:collector.enabled?collectionPublicState(snapshot):null,sources:{x:{available:collector.enabled&&collector.configured},linkedin:{available:linkedinAvailable}},monitoring:{available:monitoringAvailable,intervalMinutes:MONITOR_INTERVAL_MS / 60000,linkedin:{timeZone:LINKEDIN_TIME_ZONE,hours:LINKEDIN_HOURS}}});
   });
   app.get('/api/monitor', async(_req, res) => {
     const snapshot=await store.snapshot(),settings=qualificationSettings(qualificationEnv);

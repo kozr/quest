@@ -123,7 +123,7 @@ export class FirestoreStore {
   }
   async snapshot() {
     const {data} = await this.backend.read();
-    return {...(data.pipelineStages?{pipelineStages:structuredClone(data.pipelineStages)}:{}),...(data.conversationEvidence?{conversationEvidence:structuredClone(data.conversationEvidence)}:{}),...(data.conversationReviewQueue?{conversationReviewQueue:structuredClone(data.conversationReviewQueue)}:{}),...(data.analysisLeases?{analysisLeases:structuredClone(data.analysisLeases)}:{}),analysisUsage:structuredClone(data.analysisUsage||{}),...(data.collection?{collection:structuredClone(data.collection)}:{}),version:1,products:structuredClone(data.products),items:structuredClone(data.items),searches:structuredClone(data.searches),...(data.research ? {research:structuredClone(data.research)} : {}),
+    return {...(data.conversationReviewFailures?{conversationReviewFailures:structuredClone(data.conversationReviewFailures)}:{}),...(data.pipelineStages?{pipelineStages:structuredClone(data.pipelineStages)}:{}),...(data.conversationEvidence?{conversationEvidence:structuredClone(data.conversationEvidence)}:{}),...(data.conversationReviewQueue?{conversationReviewQueue:structuredClone(data.conversationReviewQueue)}:{}),...(data.analysisLeases?{analysisLeases:structuredClone(data.analysisLeases)}:{}),analysisUsage:structuredClone(data.analysisUsage||{}),...(data.collection?{collection:structuredClone(data.collection)}:{}),version:1,products:structuredClone(data.products),items:structuredClone(data.items),searches:structuredClone(data.searches),...(data.research ? {research:structuredClone(data.research)} : {}),
       ...(data.qualifications ? {qualifications:structuredClone(data.qualifications),qualificationMigrations:structuredClone(data.qualificationMigrations),aiBudget:structuredClone(data.aiBudget)} : {})};
   }
   async record(method, ...args) {
@@ -152,6 +152,7 @@ export class FirestoreStore {
   saveDrafts(...args) {return this.record('saveDrafts',...args);}
   claimStage(...args) {return this.record('claimStage',...args);}
   finishStage(...args) {return this.record('finishStage',...args);}
+  failStage(...args) {return this.record('failStage',...args);}
   saveSearchPlan(...args) {return this.record('saveSearchPlan',...args);}
   getBusinessProfile(inputHash) {return this.backend.read().then(({data})=>structuredClone(data.businessProfileDrafts?.[inputHash] || null));}
   claimBusinessProfile(inputHash,reservation,now,settings,refresh) {return this.record('claimBusinessProfile',inputHash,reservation,now,settings,refresh);}
@@ -170,12 +171,12 @@ export class FirestoreStore {
       if(Object.values(data.qualifications||{}).some(job=>job.status==='running'&&job.leaseUntil>Date.now())) throw new Error('Wait for the running AI check to finish before restoring a backup.');
       if(Object.values(data.analysisLeases||{}).some(lease=>lease.expiresAt>Date.now())) throw new Error('Wait for the running analysis to finish before restoring a backup.');
       if(data.collection?.active)throw new Error('Wait for the collection request to finish before restoring a backup.');
-      const collection=data.collection;
+      const collection=data.collection,conversationReviewFailures=data.conversationReviewFailures||{};
       const analysisUsage=data.analysisUsage||{};
       const failures=data.loginFailures||[];
       const restored=data.qualifications||value.qualifications?mergeQualificationHistory(data,value):structuredClone(value);
       for(const key of Object.keys(data)) delete data[key];
-      Object.assign(data,restored,{loginFailures:failures,analysisUsage,conversationReviewReceipts:{},...(collection?{collection}:{})});
+      Object.assign(data,restored,{loginFailures:failures,analysisUsage,conversationReviewReceipts:{},conversationReviewFailures,...(collection?{collection}:{})});
     });
   }
   activeSearches() {

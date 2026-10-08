@@ -40,3 +40,13 @@ export function validateV2Qualification(value,product,input){
     return {purposes,evidenceId:r.evidenceId,relevant:r.relevant,directFit:r.directFit,category,need,quote,offeringIds,reason:string(r.reason,300),resolved:oneOf(r.resolved,['yes','no','unknown'])};
   });return {results};
 }
+
+export function validateQualificationBatch(value,product,input){
+  const rows=array(value.results,30,1),ids=input.evidence.map(row=>row.id);
+  references(rows.map(row=>row.evidenceId),ids,30,ids.length);
+  const results=[],failed=[];
+  for(const row of rows)try{
+    results.push(validateV2Qualification({results:[row]},product,{...input,evidence:input.evidence.filter(e=>e.id===row.evidenceId)}).results[0]);
+  }catch(error){failed.push({evidenceId:row.evidenceId,reason:error.message.slice(0,300)});}
+  return {results,failed};
+}
