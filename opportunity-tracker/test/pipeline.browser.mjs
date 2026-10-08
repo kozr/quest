@@ -1,0 +1,29 @@
+import assert from 'node:assert/strict';
+import {chromium} from '@playwright/test';
+import {mkdtemp,rm,mkdir} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join,dirname} from 'node:path';
+import {fileURLToPath} from 'node:url';
+import {once} from 'node:events';
+import {createTrackerApp} from '../server.mjs';
+const directory=await mkdtemp(join(tmpdir(),'tracker-pipeline-browser-'));
+const shots=join(dirname(dirname(fileURLToPath(import.meta.url))),'.impeccable','review');await mkdir(shots,{recursive:true});
+const env={TRACKER_COLLECTION_PIPELINE:'experiment-v1',SCRAPEBADGER_API_KEY:'fixture',TRACKER_AI_ENABLED:'true',TRACKER_AI_MODE:'ongoing',TRACKER_AI_DAILY_BUDGET_USD:'2',TRACKER_OPENAI_API_KEY:'fixture'};
+const {app,store}=createTrackerApp({dataDirectory:directory,qualificationEnv:env,collectionProvider:{fetchPage:async()=>({credits:1,result:{rows:[],cursor:null,oldest:null}})},redditAdapter:{list:async()=>({rows:[{}]})}});
+const p=store.saveProduct({name:'Fixture figure tracker',url:'https://example.com',description:'A scripted product fixture, not live results.',keywords:['figure checklist'],communities:['smiskis'],capabilities:['Record figures you own.'],needs:['Track figures'],aliases:[],exclusions:[],x:true,xQueries:['smiski wishlist','smiski duplicates'],linkedin:false,monitoring:true});
+const at=new Date().toISOString();store.recordSearch(p.id,{sources:[],searchedAt:at,items:[{source:'X',title:'Fixture: I need a figure checklist',snippet:'Scripted X fixture',url:'https://x.com/i/status/123',kind:'opportunity',publishedAt:at},{source:'Reddit comment',title:'Fixture: how can I track my figures?',snippet:'Scripted Reddit fixture',url:'https://www.reddit.com/r/smiskis/comments/abc/_/def/',kind:'opportunity',publishedAt:at}]});
+const server=app.listen(0,'127.0.0.1');await once(server,'listening');let browser;
+try{
+ browser=await chromium.launch({channel:'chrome',headless:true});const page=await browser.newPage({viewport:{width:1365,height:1000}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.goto(`http://127.0.0.1:${server.address().port}`);await page.getByRole('button',{name:p.name,exact:true}).click();
+ assert.match(await page.locator('#tracking-summary').textContent(),/every two hours/);
+ await page.locator('#platform-filter').selectOption('x');assert.equal(await page.locator('.match').count(),1);assert.match(await page.locator('.match').textContent(),/Scripted X fixture/);
+ await page.locator('#platform-filter').selectOption('reddit');assert.equal(await page.locator('.match').count(),1);assert.match(await page.locator('.match').textContent(),/Scripted Reddit fixture/);
+ await page.getByRole('button',{name:`Edit ${p.name}`,exact:true}).click();await page.locator('#setup-next').click();
+ assert.equal(await page.locator('#product-x').isChecked(),true);assert.equal(await page.locator('#product-x-queries').inputValue(),'smiski wishlist\nsmiski duplicates');
+ await page.locator('#cancel-product').click();await page.locator('#find-matches').click();await page.getByText('Collection queued.',{exact:false}).waitFor();
+ assert.equal(store.snapshot().collection.cycles[p.id].status,'running');assert.match(await page.locator('#source-status').textContent(),/Collection in progress/);
+ await page.screenshot({path:join(shots,'pipeline-desktop.png'),fullPage:true});
+ await page.setViewportSize({width:390,height:844});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);await page.screenshot({path:join(shots,'pipeline-mobile.png'),fullPage:true});assert.deepEqual(errors,[]);
+ console.log(JSON.stringify({passed:true,paidCalls:0,fixtureOnly:true,covers:['X/Reddit filters','two-hour cadence','editable X queries','durable queue progress','desktop/mobile layout'],screenshots:shots}));
+}finally{await browser?.close();await new Promise(resolve=>server.close(resolve));await rm(directory,{recursive:true,force:true});}

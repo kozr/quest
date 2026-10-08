@@ -1,0 +1,20 @@
+{
+  "name": "opportunity-tracker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node --env-file-if-exists=.env server.mjs",
+    "test": "node --test test/*.test.mjs",
+    "build:ui": "npm run build --prefix ui"
+  },
+  "engines": {
+    "node": "22.x"
+  },
+  "dependencies": {
+    "@vercel/oidc": "4.0.0",
+    "cheerio": "^1.2.0",
+    "express": "5.2.1",
+    "firebase-admin": "14.3.0",
+    "google-auth-library": "11.1.0"
+  }
+}

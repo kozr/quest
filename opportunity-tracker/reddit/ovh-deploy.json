@@ -1,0 +1,14 @@
+{
+  "host": "vps-d6b1b25d.vps.ovh.us",
+  "user": "foray",
+  "remote_path": "/home/foray/apps/opportunity-redlib-bridge",
+  "local_path": ".",
+  "compose_file": "reddit/compose.yaml",
+  "compose_project": "opportunity-redlib-bridge",
+  "compose_command": "docker compose",
+  "deploy_command": "up -d --build",
+  "local_build": [],
+  "delete": false,
+  "exclude": [".git/", "node_modules/", ".local/", ".vercel/", ".env", ".env.*", "public/", "test/", "*.bundle"],
+  "post_deploy": ["docker compose -f reddit/compose.yaml -p opportunity-redlib-bridge ps"]
+}

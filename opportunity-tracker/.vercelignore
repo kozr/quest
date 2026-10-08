@@ -1,0 +1,6 @@
+.local/
+.env*
+.impeccable/
+test/
+test-results/
+node_modules/

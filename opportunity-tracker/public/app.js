@@ -1,0 +1,577 @@
+const $ = id => document.getElementById(id);
+let state = { products: [], items: [], searches: {}, busy: [] };
+let selected = null;
+let status = 'new';
+let editing = null;
+let searching = false;
+let qualifying = false;
+let setupStep = 1;
+let setupBusy = false;
+let setupGeneration = 0;
+let setupController;
+let generatedSignature;
+let communityChecks = [];
+let view = 'matches';
+const analyzing = new Set();
+const openAnalysis = new Set();
+const replyEdits = new Map();
+let researchBusy = null;
+
+function node(tag, text, attributes = {}) {
+  const element = document.createElement(tag);
+  if (text !== undefined && text !== null) element.textContent = text;
+  for (const [key,value] of Object.entries(attributes)) element.setAttribute(key,value);
+  return element;
+}
+function link(text, url) {
+  const result=node('a',text,{href:url,target:'_blank',rel:'noopener noreferrer'});
+  try { if(!['http:','https:'].includes(new URL(url).protocol)) result.removeAttribute('href'); } catch { result.removeAttribute('href'); }
+  return result;
+}
+function notice(text, error=false) {
+  $('notice').textContent=text;
+  $('notice').className=error?'error':'';
+  $('notice').hidden=!text;
+  $('notice').setAttribute('role',error?'alert':'status');
+}
+async function api(path, options={}) {
+  const response=await fetch(`/api${path}`,{...options,headers:{'Content-Type':'application/json','X-Tracker-Token':state.token||'',...options.headers}});
+  const result=await response.json();
+  if(response.status===401&&path!=='/login/google') showLogin();
+  if(!response.ok) throw new Error(result.error||'Could not complete that action. Try again.');
+  return result;
+}
+async function reload() {
+  state=await api('/state');
+  $('workspace').hidden=false;
+  $('login-view').hidden=true;
+  $('sign-out').hidden=state.storage!=='cloud';
+  $('restore-toggle').hidden=false;
+  document.querySelector('a[download]').hidden=false;
+  $('storage-status').textContent=(state.storage==='cloud'?'Products, matches, and notes are saved in your private cloud tracker.':'Products, matches, and notes are saved on this computer.')+' Enabled Reddit and X monitoring runs every two hours; LinkedIn runs at 8 a.m. and 8 p.m. Pacific. Find matches starts a bounded check when you choose.';
+  if(selected&&!state.products.some(p=>p.id===selected)) selected=null;
+  render();
+}
+function date(value) {
+  if(!value||!Number.isFinite(Date.parse(value))) return 'Date unavailable';
+  return new Date(value).toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'});
+}
+function lines(value) { return value.split(/\n/).map(x=>x.trim()).filter(Boolean); }
+function productItems() { return state.items.filter(i=>!selected||i.productId===selected); }
+function renderProducts() {
+  $('products').replaceChildren();
+  $('products-empty').hidden=state.products.length>0;
+  $('all-products').setAttribute('aria-pressed',String(!selected));
+  for(const product of state.products) {
+    const row=node('li');
+    const choice=node('button',product.name,{type:'button',class:'product-choice','aria-pressed':String(selected===product.id)});
+    choice.addEventListener('click',()=>{selected=product.id;render();});
+    const info=node('div',null,{class:'product-info'});
+    info.append(link(product.type==='app_store'?'App Store':new URL(product.url).hostname,product.url));
+    const edit=node('button','Edit',{type:'button','aria-label':`Edit ${product.name}`});
+    edit.addEventListener('click',()=>openForm(product));
+    info.append(edit);
+    row.append(choice,info);
+    $('products').append(row);
+  }
+}
+function renderCoverage() {
+  $('source-status').replaceChildren();
+  for(const [id,cycle] of Object.entries(state.collection?.cycles || {}))if(!selected||selected===id){
+    const name=state.products.find(p=>p.id===id)?.name || '';
+    $('source-status').append(node('p',`${name}: ${cycle.blocked?'Scraping allowance reached; waiting for the next Pacific day':cycle.status==='running'?`Collection in progress · ${cycle.remaining} requests queued`:cycle.status==='complete'?'Collection cycle complete':cycle.status}. ${cycle.unassessed || 0} candidates exceeded the cycle limit.`,{class:'secondary'}));
+  }
+  if(state.collection?.budget){const b=state.collection.budget;$('source-status').append(node('p',`Scraping today: ${(b.spentCredits || 0)+(b.reservedCredits || 0)} credits used or held of ${state.collection.limitCredits}; ${b.uncertainCredits || 0} credits held for unknown outcomes.`,{class:'secondary'}));}
+  const products=state.products.filter(p=>!selected||p.id===selected);
+  const searches=products.map(p=>({product:p,search:state.searches[p.id]})).filter(x=>x.search);
+  $('coverage').hidden=!searches.length&&!Object.keys(state.collection?.cycles || {}).length;
+  let latest=searches.map(x=>x.search.searchedAt).sort().at(-1);
+  $('coverage-summary').textContent=latest?`Search coverage · last checked ${new Date(latest).toLocaleString()}`:'Search coverage';
+  for(const {product,search} of searches) {
+    if(!selected) $('source-status').append(node('h3',product.name));
+    if(search.qualification?.historyFull) $('source-status').append(node('p','AI processing history is full. New posts cannot enter AI review; source collection and existing matches remain available.',{class:'secondary'}));
+    for(const source of search.sources||[]) {
+      const row=node('div',null,{class:'source-record'});
+      const label=source.status==='ok'?`Checked${Number.isFinite(source.count)?` · ${source.count} matches`:''}`:source.status==='unconfigured'?'Not configured':source.status==='partial'?'Partial coverage':'Could not check';
+      row.append(node('p',`${source.name}: ${label}`));
+      if(source.checkedAt) row.append(node('p',`Last checked ${new Date(source.checkedAt).toLocaleString()}`,{class:'secondary'}));
+      if(source.message||source.error) row.append(node('p',source.message||source.error,{class:'secondary'}));
+      if(source.qualification) row.append(node('p',source.qualification,{class:'secondary'}));
+      if(source.queries?.length) {
+        const queries=node('div',null,{class:'query-links'});
+        for(const query of source.queries) if(typeof query==='object'&&query.url) queries.append(link(query.label||'Search this source',query.url));
+        row.append(queries);
+      }
+      $('source-status').append(row);
+    }
+  }
+}
+async function changeItem(item,update,button) {
+  if(button) button.disabled=true;
+  try { const result=await api(`/items/${item.id}`,{method:'PATCH',body:JSON.stringify(update)}); state.items=state.items.map(i=>i.id===item.id?result.item:i); render(); notice(update.note!==undefined?'Note saved.':'Review status saved.'); } catch(error) { notice(error.message,true); if(button) button.disabled=false; }
+}
+function renderMatches() {
+  const platform=$('platform-filter').value;
+  const platformOf=i=>i.source?.startsWith('Reddit')?'reddit':i.source==='X'?'x':i.source==='LinkedIn'?'linkedin':'other';
+  const all=productItems().filter(i=>platform==='all'||platformOf(i)===platform);
+  for(const s of ['new','saved','dismissed']) { $(`count-${s}`).textContent=all.filter(i=>i.status===s).length; document.querySelector(`[data-status="${s}"]`).setAttribute('aria-pressed',String(status===s)); }
+  const filter=$('text-filter').value.toLowerCase();
+  const kind=$('kind-filter').value;
+  const items=all.filter(i=>i.status===status&&(kind==='all'||kind===i.kind)&&(!filter||`${i.title} ${i.snippet} ${i.source} ${i.reason}`.toLowerCase().includes(filter))).sort((a,b)=>Date.parse(b.publishedAt||b.foundAt)-Date.parse(a.publishedAt||a.foundAt));
+  $('matches').replaceChildren();
+  $('empty-state').hidden=items.length>0;
+  $('empty-add').hidden=state.products.length>0;
+  if(!items.length) {
+    const checked=state.products.some(p=>(!selected||p.id===selected)&&state.searches[p.id]);
+    $('empty-heading').textContent=!state.products.length?'Track something you built':filter||kind!=='all'?'No matches for these filters':status==='saved'?'No saved matches yet':status==='dismissed'?'No dismissed matches':checked?'No new matches found':'Ready to look for matches';
+    $('empty-message').textContent=!state.products.length?'Add its website or App Store link, then tell the tracker which problems it solves.':filter||kind!=='all'?'Try another filter or match type.':status==='saved'?'Save a useful conversation to keep it here.':status==='dismissed'?'Dismissed matches appear here so you can restore them.':checked?'Check search coverage below the filters, or edit your product’s phrases and search again.':'Choose Find matches to search public conversations and product mentions.';
+  }
+  for(const item of items) {
+    const article=node('article',null,{class:'match','data-item-id':item.id});
+    const heading=node('h2');heading.append(link(item.title,item.url));
+    const product=state.products.find(p=>p.id===item.productId);
+    article.append(node('p',[item.kind==='mention'?'Mention':'Opportunity',item.source,item.historical?'Past-year match':null,item.discussionClosed?'Archived or locked':null,!selected?product?.name:null,item.author?`by ${item.author}`:null,date(item.publishedAt)].filter(Boolean).join(' · '),{class:'match-meta'}),heading);
+    if(item.historical)article.append(node('p',item.discussionClosed?'Historical discussion; replies are currently closed.':'Historical discussion; check whether the need is still current before replying.',{class:'secondary'}));
+    if(item.snippet) article.append(node('p',item.snippet,{class:'match-snippet'}));
+    article.append(node('p',item.reason||'Review the original discussion to judge whether this is a useful match.',{class:'match-reason'}));
+    if(item.qualification) {
+      const evidence=node('details');evidence.append(node('summary','AI fit evidence'));
+      evidence.append(node('p',`${item.qualification.model==='gpt-6.1-sol'?'Sol':'AI'} connected the conversation to confirmed product features. Review the original before acting.`,{class:'secondary'}));
+      for(const quote of item.qualification.evidenceQuotes||[])evidence.append(node('blockquote',quote));
+      article.append(evidence);
+    }
+    const actions=node('div',null,{class:'match-actions'});
+    const addAction=(text,next)=>{const button=node('button',text,{type:'button'});button.addEventListener('click',()=>changeItem(item,{status:next},button));actions.append(button);};
+    if(item.status!=='saved') addAction('Save','saved');
+    if(item.status==='new'||item.status==='saved') addAction('Dismiss','dismissed');
+    if(item.status!=='new') addAction('Restore to New','new');
+    actions.append(link('Open discussion',item.url));
+    const notes=node('details');
+    notes.append(node('summary',item.note?'Notes (saved)':'Add a note'));
+    const label=node('label','Your note',{for:`note-${item.id}`});
+    const input=node('textarea',null,{id:`note-${item.id}`,rows:'3',maxlength:'3000'});input.value=item.note||'';
+    const save=node('button','Save note',{type:'button'});save.addEventListener('click',()=>changeItem(item,{note:input.value},save));
+    notes.append(label,input,save);
+    article.append(actions,notes);
+    appendAnalysis(article,item,actions);
+    $('matches').append(article);
+  }
+}
+function render() {
+  renderProducts();renderCoverage();renderMatches();renderResearch();renderBackfill();
+  const product=state.products.find(p=>p.id===selected);
+  $('inbox-heading').textContent=product?product.name:'Matches';
+  $('product-summary').textContent=product?product.description||`Watching: ${product.keywords.join(', ')}`:'Opportunities and mentions for your products.';
+  $('tracking-summary').hidden=!product;
+  if(product) {
+    const last=state.searches[product.id]?.searchedAt;
+    const mode=product.monitoring?(state.monitoring?.available?'Automatic checks enabled':'Automatic checks unavailable'):'Automatic checks paused';
+    const count=product.communities?.length||0;
+    $('tracking-summary').textContent=`${mode} · ${count} ${count===1?'subreddit':'subreddits'}${count?' every two hours':''}${product.x!==false?' · X every two hours':''}${product.linkedin?' · LinkedIn posts at 8 a.m. / 8 p.m. Pacific':''} · ${last?`Last checked ${new Date(last).toLocaleString()}`:'No check yet'}`;
+  }
+  $('find-matches').disabled=searching||state.products.length===0;
+  $('find-matches').hidden=view!=='matches';
+  $('matches-view').hidden=view!=='matches';
+  $('research-view').hidden=view==='matches';
+  $('view-switcher').hidden=!state.products.length;
+  document.querySelectorAll('[data-view]').forEach(button=>button.setAttribute('aria-pressed',String(view===button.dataset.view)));
+  const q=state.qualification, counts=(selected?q?.products?.[selected]:q?.counts)||{}, budget=q?.budget||{};
+  $('qualification-panel').hidden=!q?.collecting&&!Object.keys(counts).length;
+  const spend=((budget.spentMicroUsd||0)+(budget.reservedMicroUsd||0))/1e6;
+  const availability=!q?.enabled?'AI review is paused until server setup is complete.':budget.paused?'Daily AI allowance reached; collection continues.':q.mode==='test'?'AI review runs one post when you choose.':'Sol reviews new Reddit and X posts and comments in batches of up to ten.';
+  $('qualification-status').textContent=`${availability} ${counts.pending||0} queued · ${counts.qualified||0} qualified · ${counts.rejected||0} rejected · ${counts.uncertain||0} uncertain (no automatic retry) · ${(counts.legacy_processed||0)+(counts.historical_skipped||0)} previously processed or historical. $${spend.toFixed(4)} used or held of $${((budget.limitMicroUsd||0)/1e6).toFixed(2)} today (Pacific).`;
+  $('run-qualification').hidden=!q?.enabled||!selected;
+  $('run-qualification').disabled=qualifying||searching||!counts.pending||budget.paused;
+}
+
+function renderBackfill() {
+  const product=state.products.find(p=>p.id===selected),job=state.collection?.backfills?.[selected];
+  const jobs=Object.entries(state.collection?.backfills||{});
+  $('backfill-panel').hidden=!state.collection||!product&&!jobs.length;
+  $('start-backfill').hidden=Boolean(job);
+  $('backfill-details').hidden=!job;
+  if(!product){
+    $('start-backfill').hidden=true;$('backfill-details').hidden=false;
+    $('backfill-status').textContent='Past-year searches run separately from two-hour monitoring. Choose a product for detailed progress.';
+    const coverage=$('backfill-coverage');coverage.replaceChildren();
+    for(const [id,j] of jobs)coverage.append(node('p',`${state.products.find(p=>p.id===id)?.name||'Product'} · ${j.status} · ${j.staged} new candidates · ${j.reviews.qualified||0} qualified · ${(j.reviews.pending||0)+(j.reviews.running||0)} awaiting review.`,{class:'secondary'}));
+    return;
+  }
+  if(!job){$('backfill-status').textContent='Search Reddit and X discussions from the past 365 days, using this product’s confirmed features. New products start this search automatically.';return;}
+  const labels={running:'Searching',reviewing:'Reviewing the remaining candidates',complete:'Search finished',profile_changed:'Stopped because the product profile changed'};
+  const blocks={daily_scraper_budget:'Waiting for tomorrow’s scraping allowance (Pacific time)',awaiting_ai_review:'Waiting for queued AI reviews before collecting more',storage_capacity:'Paused: tracker storage is nearly full',qualification_history_full:'Paused: AI history is full'};
+  const q=job.reviews,reviewed=(q.qualified||0)+(q.rejected||0)+(q.uncertain||0);
+  $('backfill-status').textContent=`${blocks[job.blocked]||labels[job.status]||job.status} · ${date(job.from)}–${date(job.to)}. ${job.staged} new candidates · ${reviewed} reviewed · ${q.qualified||0} qualified · ${(q.pending||0)+(q.running||0)} awaiting review. Results appear below as they qualify.`;
+  const coverage=$('backfill-coverage');coverage.replaceChildren();
+  coverage.append(node('p',`${job.requests} collection requests · ${job.duplicates} duplicate or previously reviewed results · ${job.unassessed} unassessed candidates or queued tasks at a limit. ${job.coverage}`,{class:'secondary'}));
+  coverage.append(node('p',`This first pass allows up to ${job.limits.requests} requests, ${job.limits.candidates} new candidates and ${job.limits.threads} comment threads, within the shared daily scraping and AI allowances.`,{class:'secondary'}));
+  for(const platform of ['reddit','x']) {
+    const branches=job.branches.filter(b=>b.platform===platform);if(!branches.length)continue;
+    const searched=branches.filter(b=>b.status==='searched').length;
+    const detail=node('details');detail.append(node('summary',`${platform==='x'?'X':'Reddit'} · ${searched}/${branches.length} searches finished`));
+    for(const b of branches)detail.append(node('p',`${b.query} · ${b.pages} pages · ${b.rows} results · ${b.status}${platform==='x'?` · ${date(b.from)}–${date(b.to)}`:''}`,{class:'secondary'}));
+    coverage.append(detail);
+  }
+  if(job.errors.length)coverage.append(node('p',`Coverage gaps: ${[...new Set(job.errors)].join(', ')}.`,{class:'secondary'}));
+}
+$('start-backfill').addEventListener('click',async()=>{
+  $('start-backfill').disabled=true;
+  try{await api(`/products/${selected}/backfill`,{method:'POST',body:'{}'});await reload();notice('Past-year search queued. It continues in the background and results appear as they qualify.');}
+  catch(error){notice(error.message,true);}finally{$('start-backfill').disabled=false;}
+});
+function renderResearch() {
+  const product=state.products.find(row=>row.id===selected), record=state.research?.[selected];
+  const descriptions={problems:'Needs, frustrations, and workflows supported by public discussions.',landscape:'Competitors, alternatives, and workarounds people already use.',people:'Public Reddit authors and commenters discussing the same or a similar problem.'};
+  $('research-heading').textContent={problems:'Problems',landscape:'Landscape',people:'People'}[view]||'Research';
+  $('research-description').textContent=descriptions[view]||'';
+  $('run-research').hidden=!product;
+  $('run-research').disabled=!state.analysis?.available||Boolean(researchBusy)||analyzing.size>0;
+  $('run-research').textContent=researchBusy===selected?'Researching…':record?'Refresh research':'Run research';
+  $('research-coverage').hidden=!record;
+  $('research-scope').textContent=record?.coverage||'';
+  $('research-results').replaceChildren();
+  $('research-state').textContent=!product?'Choose a product to explore its market.':researchBusy===selected?'Researching problems, alternatives, and people. This can take up to 150 seconds…':record?`${record.imported?'Imported backup · sources not rechecked':`Researched ${date(record.generatedAt)}`} ${record.stale?'· Product details changed; refresh the research.':record.expired?'· Results are over 30 days old; refresh the research.':''}`:!state.analysis?.available?'Research is not configured on this server yet.':'Run research to explore Problems, Landscape, and People together.';
+  if(!product||!record||view==='matches') return;
+  const rows=view==='problems'?record.findings:view==='landscape'?record.landscape:record.people;
+  if(!rows?.length) {
+    $('research-results').append(node('p',view==='people'?'No attributable people were found in the inspected sources. Check the research coverage.':'The inspected sources did not provide enough evidence for findings here. Check the research coverage.',{class:'empty-state secondary'}));
+    return;
+  }
+  for(const row of rows) {
+    const article=node('article',null,{class:'research-result'});
+    if(view==='people') {
+      const heading=node('h3'); heading.append(link(`u/${row.handle}`,`https://www.reddit.com/user/${encodeURIComponent(row.handle)}/`));
+      const resolution={unresolved_at_posting:'Unresolved when posted',subsequently_resolved:'Later reported resolved',unclear:'Resolution unclear'}[row.needStatus];
+      article.append(heading,node('p',`${row.matchType==='exact'?'Same problem':'Similar problem'} · ${resolution} · ${date(row.publishedAt)}`,{class:'match-meta'}),node('p',row.problem));
+      article.append(node('blockquote',row.excerpt),node('p',row.fitReason,{class:'match-reason'}),link('Open source discussion',row.sourceUrl));
+    } else {
+      article.append(node('h3',row.title),node('p',row.summary,{class:'research-summary'}));
+      const sources=node('ul',null,{class:'research-sources','aria-label':'Sources'});
+      for(const source of row.sources) {const li=node('li');li.append(link(source.title,source.url));sources.append(li);}
+      article.append(sources);
+    }
+    $('research-results').append(article);
+  }
+}
+async function runResearch() {
+  const id=selected;
+  if(!id||researchBusy||!state.analysis?.available) return;
+  researchBusy=id;render();notice('');
+  try {
+    await api(`/products/${id}/research`,{method:'POST',body:JSON.stringify({refresh:Boolean(state.research?.[id])})});
+    await reload();notice('Research saved. Explore Problems, Landscape, and People.');
+  } catch(error) {notice(error.message,true);}
+  finally {researchBusy=null;render();}
+}
+function appendAnalysis(article,item,actions) {
+  const button=node('button',analyzing.has(item.id)?'Analyzing…':item.analysis?'Refresh analysis':'Analyze fit & replies',{type:'button'});
+  button.disabled=!state.analysis?.available||analyzing.has(item.id)||Boolean(researchBusy);
+  if(!state.analysis?.available) button.title='AI analysis is not configured on this server.';
+  button.addEventListener('click',async()=>{
+    analyzing.add(item.id);render();notice('');
+    try {
+      await api(`/items/${item.id}/analysis`,{method:'POST',body:JSON.stringify({refresh:Boolean(item.analysis)})});
+      for(const key of [...replyEdits.keys()]) if(key.startsWith(`${item.id}:`)) replyEdits.delete(key);
+      openAnalysis.add(item.id);await reload();notice('Fit assessment and reply suggestions saved.');
+    } catch(error) {notice(error.message,true);}
+    finally {analyzing.delete(item.id);render();}
+  });
+  actions.append(button);
+  if(!item.analysis) return;
+  const analysis=item.analysis;
+  const details=node('details',null,{class:'fit-analysis'});
+  details.open=openAnalysis.has(item.id);
+  details.addEventListener('toggle',()=>{if(details.open)openAnalysis.add(item.id);else openAnalysis.delete(item.id);});
+  details.append(node('summary','Fit assessment & reply suggestions'));
+  const labels={strong_fit:'Strong fit',possible_fit:'Possible fit',not_a_fit:'Not a fit',unclear:'Fit unclear'};
+  details.append(node('h3',labels[analysis.decision]),node('p',analysis.summary));
+  if(analysis.evidenceQuote) details.append(node('blockquote',analysis.evidenceQuote));
+  const product=state.products.find(row=>row.id===item.productId);
+  const capabilities=(analysis.matchedCapabilityIds||[]).map(id=>product?.capabilities?.[Number(id.slice(1))-1]).filter(Boolean);
+  if(capabilities.length) details.append(node('p',`Matching features: ${capabilities.join('; ')}`,{class:'secondary'}));
+  details.append(node('p',analysis.limitations,{class:'secondary'}));
+  if(analysis.imported) details.append(node('p','Imported backup · analysis not rerun.',{class:'secondary'}));
+  for(const [index,reply] of (analysis.replies||[]).entries()) {
+    const id=`reply-${item.id}-${index}`, key=`${item.id}:${index}:${analysis.generatedAt}`;
+    details.append(node('label',reply.approach==='helpful'?'Helpful reply':'Reply with a product mention',{for:id}));
+    const field=node('textarea',null,{id,rows:'5',maxlength:'5000'}); field.value=replyEdits.get(key)??reply.body;
+    field.addEventListener('input',()=>replyEdits.set(key,field.value));
+    const copy=node('button','Copy reply',{type:'button'});
+    copy.addEventListener('click',async()=>{
+      try {await navigator.clipboard.writeText(field.value);notice('Reply copied. Review it before posting.');}
+      catch {field.focus();field.select();notice('Select and copy the reply from the text field.');}
+    });
+    details.append(field,copy);
+  }
+  if(analysis.replies?.length) details.append(node('p','Suggestions use the collected excerpt. Review and edit before posting; edits stay in this page until you reload.',{class:'field-help'}));
+  article.append(details);
+}
+
+function setupError(message='') { $('setup-error').textContent=message;$('setup-error').hidden=!message; }
+function signature() {return JSON.stringify(['url','name','description'].map(key=>$(`product-${key}`).value));}
+function currentDetails() {return Object.fromEntries(['url','name','description'].map(key=>[key,$(`product-${key}`).value]));}
+function watchlist() {return [...new Set(lines($('product-communities').value).map(name=>name.replace(/^r\//i,'').toLowerCase()))];}
+function checkNames() {
+  const names=watchlist();
+  if(names.length>10||names.some(name=>! /^[a-z0-9_]{2,21}$/.test(name))) throw new Error('Use up to 10 subreddit names, without links or spaces.');
+  return names;
+}
+function renderCommunityChecks() {
+  $('community-checks').replaceChildren();
+  for(const name of watchlist()) {
+    const check=communityChecks.find(row=>row.name===name);
+    const row=node('li');row.append(link(`r/${name}`,`https://www.reddit.com/r/${encodeURIComponent(name)}/`));
+    row.append(document.createTextNode(` — ${check?.message||'Not checked yet.'}`));
+    $('community-checks').append(row);
+  }
+}
+function setSetupBusy(value) {
+  setupBusy=value;
+  ['details','profile','monitoring'].forEach((name,index)=>{$(`setup-${name}`).disabled=value||setupStep!==index+1;});
+  for(const id of ['setup-back','setup-next','save-product']) $(id).disabled=value;
+  $('product-form').setAttribute('aria-busy',String(value));
+}
+function showStep(value, focus=true) {
+  setupStep=value;setupError();
+  const labels=['Product details','Review tracking','Start tracking'];
+  ['details','profile','monitoring'].forEach((name,index)=>{$(`setup-${name}`).hidden=value!==index+1;});
+  $('setup-progress').textContent=`${labels[value-1]} · step ${value} of 3`;
+  $('setup-back').hidden=value===1;
+  $('setup-next').hidden=value===3;
+  $('setup-next').textContent=value===1?'Review tracking':'Continue';
+  $('save-product').hidden=value!==3;
+  if(value===3) {
+    const names=watchlist();
+    const linkedin=$('product-linkedin').checked&&Boolean(state.sources?.linkedin?.available);
+    const available=Boolean(state.monitoring?.available)&&(names.length>0||linkedin||$('product-x').checked);
+    $('product-monitoring').disabled=!available;
+    if(!available) $('product-monitoring').checked=false;
+    $('monitoring-help').textContent=!state.monitoring?.available?'Automatic checks are not configured on this server. You can save and use Find matches.':!names.length&&!linkedin&&!$('product-x').checked?'Add subreddits or enable LinkedIn in the previous step to enable automatic checks. You can also save and search manually.':'Reddit and X run every two hours; LinkedIn runs at 8 a.m. and 8 p.m. Pacific, even when this page is closed. Matches are filtered for relevant requests, difficulties, or product mentions. Coverage is partial.';
+    $('setup-summary').replaceChildren(node('h3',$('product-name').value),node('p',`Watchlist: ${names.length?names.map(name=>`r/${name}`).join(', '):'No communities selected'}${linkedin?' · LinkedIn posts':''}`),node('p',`Search phrases: ${lines($('product-keywords').value).join(', ')}`));
+  }
+  setSetupBusy(setupBusy);
+  if(focus) document.querySelector(`#setup-${['details','profile','monitoring'][value-1]} legend`).focus();
+}
+async function generateProfile(replace=true) {
+  if(setupBusy) return false;
+  const generation=setupGeneration,source=signature();
+  setupController=new AbortController();setSetupBusy(true);setupError();
+  $('profile-message').textContent='Preparing suggestions and checking the communities…';
+  try {
+    const profile=await api('/profile',{method:'POST',body:JSON.stringify(currentDetails()),signal:setupController.signal});
+    if(generation!==setupGeneration||source!==signature()) return false;
+    for(const key of ['capabilities','needs','keywords','communities']) if(replace||!$(`product-${key}`).value.trim()) $(`product-${key}`).value=profile[key].join('\n');
+    communityChecks=profile.checks||[];renderCommunityChecks();
+    generatedSignature=source;$('profile-message').textContent=profile.message+(replace?'':' Your existing entries have been kept.');
+    return true;
+  } catch(error) {
+    if(generation===setupGeneration&&error.name!=='AbortError') {setupError(error.message);$('profile-message').textContent='Suggestions could not be prepared. You can enter the tracking profile yourself.';}
+    return false;
+  } finally {if(generation===setupGeneration) setSetupBusy(false);}
+}
+async function nextStep() {
+  if(setupBusy) return;
+  setupError();
+  if(setupStep===1) {
+    const generation=setupGeneration;
+    if(!['url','name','description'].every(key=>$(`product-${key}`).reportValidity())) return;
+    if(generatedSignature!==signature()) await generateProfile(!editing);
+    if(generation===setupGeneration&&!$('product-form').hidden) showStep(2);
+  } else if(setupStep===2) {
+    if(!$('product-keywords').reportValidity()) return;
+    try {checkNames();showStep(3);} catch(error){setupError(error.message);$('product-communities').focus();}
+  }
+}
+function openForm(product=null) {
+  setupController?.abort();setupGeneration++;setupBusy=false;
+  editing=product?.id||null;
+  $('product-form').reset();
+  $('form-title').textContent=product?'Edit product':'Add product';
+  $('save-product').textContent=product?'Save changes':'Start tracking';
+  $('delete-product').hidden=!product;
+  if(product) for(const key of ['url','name','description','capabilities','needs','communities','keywords','aliases','exclusions']) $(`product-${key}`).value=Array.isArray(product[key])?product[key].join('\n'):product[key]||'';
+  $('product-monitoring').checked=product?Boolean(product.monitoring):Boolean(state.monitoring?.available);
+  $('product-x').checked=product?product.x!==false:Boolean(state.sources?.x?.available);
+  $('product-x').disabled=!state.sources?.x?.available;
+  $('product-x-queries').value=(product?.xQueries || []).join('\n');
+  $('product-linkedin').checked=product?Boolean(product.linkedin):Boolean(state.sources?.linkedin?.available);
+  $('product-linkedin').disabled=!state.sources?.linkedin?.available&&!$('product-linkedin').checked;
+  $('linkedin-help').textContent=state.sources?.linkedin?.available?'Searches rotating topics from your phrases and confirmed needs, plus product mentions. Relevant requests and difficulties can match related wording. Automatic checks run at 8 a.m. and 8 p.m. Pacific. Only posts with a verified author and permalink enter the inbox; coverage is partial.':'LinkedIn collection is not configured on this server. Existing Reddit and web searches remain available.';
+  generatedSignature=product?.capabilities?.length?signature():null;communityChecks=[];renderCommunityChecks();
+  $('profile-message').textContent=product?'Review your saved needs, phrases, and watchlist. Refresh suggestions if the product has changed.':'Suggestions will be prepared from your product details.';
+  $('product-form').hidden=false;
+  showStep(1,false);
+  $('import-message').hidden=true;
+  $('product-url').focus();
+  $('product-form').scrollIntoView({block:'nearest'});
+}
+function closeForm() {setupController?.abort();setupGeneration++;setupBusy=false;$('product-form').hidden=true;editing=null;$('add-product').focus();}
+async function findMatches(productIds) {
+  if(searching) return;
+  const ids=productIds||state.products.filter(p=>!selected||p.id===selected).map(p=>p.id);
+  if(!ids.length) return;
+  searching=true;render();notice('');$('search-progress').hidden=false;
+  let failures=0;
+  for(let index=0;index<ids.length;index++) {
+    const product=state.products.find(p=>p.id===ids[index]);
+    if(!product) continue;
+    $('search-progress').textContent=`Finding matches for ${product.name}${ids.length>1?` (${index+1} of ${ids.length})`:''}…`;
+    try { await api(`/products/${ids[index]}/search`,{method:'POST',body:'{}'});await reload(); } catch(error) { failures++;notice(error.message,true); }
+  }
+  searching=false;$('search-progress').hidden=true;render();
+  $('coverage').open=true;
+  if(!failures) {
+    if(ids.some(id=>state.collection?.cycles?.[id]?.status==='running')){notice('Collection queued. Results will appear as the server finishes collecting and reviewing conversations.');return;}
+    const sources=ids.flatMap(id=>state.searches[id]?.sources||[]);
+    const checked=sources.filter(s=>s.status==='ok').length;
+    notice(checked?'Search finished. Review the matches and source coverage.':'No source could be checked. Use the source search links or try again.',!checked);
+  }
+}
+
+$('add-product').addEventListener('click',()=>openForm());
+$('empty-add').addEventListener('click',()=>openForm());
+$('cancel-product').addEventListener('click',closeForm);
+$('setup-next').addEventListener('click',nextStep);
+$('setup-back').addEventListener('click',()=>showStep(setupStep-1));
+$('suggest-profile').addEventListener('click',()=>generateProfile());
+$('product-communities').addEventListener('input',()=>{communityChecks=[];renderCommunityChecks();});
+$('check-communities').addEventListener('click',async()=>{
+  if(setupBusy) return;
+  const generation=setupGeneration;
+  setupController=new AbortController();
+  try {
+    const names=checkNames();setSetupBusy(true);setupError();
+    $('community-message').hidden=false;$('community-message').textContent='Checking public subreddit feeds…';
+    const result=await api('/communities/check',{method:'POST',body:JSON.stringify({communities:names}),signal:setupController.signal});
+    if(generation!==setupGeneration) return;
+    communityChecks=result.checks;renderCommunityChecks();$('community-message').textContent='Checks finished. Communities that could not be checked remain unverified.';
+  } catch(error) {if(generation===setupGeneration&&error.name!=='AbortError') setupError(error.message);}
+  finally {if(generation===setupGeneration) setSetupBusy(false);}
+});
+$('all-products').addEventListener('click',()=>{selected=null;render();});
+$('run-qualification').addEventListener('click',async()=>{
+  if(qualifying||!selected)return;
+  qualifying=true;render();notice('Reviewing queued conversations…');
+  try {
+    const receipt=await api('/qualification/run',{method:'POST',body:JSON.stringify({productId:selected})});
+    await reload();
+    notice(receipt.status==='processed'?`${receipt.assessed} conversations reviewed. Qualified matches appear in the inbox.`:receipt.status==='qualified'?'A post qualified. Review its fit evidence.':receipt.status==='rejected'?'The post did not fit. Its rejection is saved so it will not be reviewed again.':receipt.status==='uncertain'?'The request outcome is uncertain. Its cost is held and it will not be retried automatically.':receipt.status==='disabled'?'AI review is not configured yet.':'No eligible post could be dispatched within the daily allowance.');
+  } catch(error){notice(error.message,true);} finally{qualifying=false;render();}
+});
+$('platform-filter').addEventListener('change',renderMatches);
+$('kind-filter').addEventListener('change',renderMatches);
+$('text-filter').addEventListener('input',renderMatches);
+document.querySelectorAll('[data-status]').forEach(button=>button.addEventListener('click',()=>{status=button.dataset.status;renderMatches();}));
+$('find-matches').addEventListener('click',()=>findMatches());
+$('run-research').addEventListener('click',runResearch);
+document.querySelectorAll('[data-view]').forEach(button=>button.addEventListener('click',()=>{view=button.dataset.view;render();}));
+$('import-details').addEventListener('click',async()=>{
+  const generation=setupGeneration;setupController=new AbortController();
+  const button=$('import-details');setSetupBusy(true);button.textContent='Importing…';$('import-message').hidden=true;
+  try {
+    const product=await api('/metadata',{method:'POST',body:JSON.stringify({url:$('product-url').value}),signal:setupController.signal});
+    if(generation!==setupGeneration) return;
+    $('product-url').value=product.url;$('product-name').value=product.name;$('product-description').value=product.description;
+    if(!$('product-aliases').value) $('product-aliases').value=product.name;
+    generatedSignature=null;$('import-message').textContent='Details imported. Check them, then choose Review tracking for suggestions.';
+    $('product-name').focus();
+  } catch(error) {if(generation===setupGeneration&&error.name!=='AbortError') $('import-message').textContent=`${error.message} You can fill in the name and description yourself.`;}
+  finally {if(generation===setupGeneration) {setSetupBusy(false);button.textContent='Import details from link';$('import-message').hidden=false;}}
+});
+$('product-form').addEventListener('submit',async event=>{
+  event.preventDefault();
+  if(setupStep!==3) return nextStep();
+  if(setupBusy) return;
+  const priorId=editing;const button=$('save-product');button.disabled=true;
+  const product={};
+  for(const key of ['url','name','description']) product[key]=$(`product-${key}`).value;
+  for(const key of ['keywords','aliases','exclusions','capabilities','needs']) product[key]=lines($(`product-${key}`).value);
+  product.communities=watchlist();product.monitoring=$('product-monitoring').checked;
+  product.linkedin=$('product-linkedin').checked;
+  product.x=$('product-x').checked;product.xQueries=lines($('product-x-queries').value);
+  if(!product.aliases.length) product.aliases=[product.name];
+  try {
+    const result=await api(priorId?`/products/${priorId}`:'/products',{method:priorId?'PUT':'POST',body:JSON.stringify(product)});
+    selected=result.product.id;status='new';closeForm();await reload();notice('Product saved.');
+    if(!priorId) await findMatches([result.product.id]);
+  } catch(error) { setupError(error.message); }
+  finally { button.disabled=false; }
+});
+$('delete-product').addEventListener('click',async()=>{
+  if(!editing||!confirm('Delete this product and its saved matches and notes? Export a backup first if you need them.')) return;
+  try { await api(`/products/${editing}`,{method:'DELETE'});closeForm();await reload();notice('Product deleted.'); } catch(error) { notice(error.message,true); }
+});
+function restoreVisibility(visible) { $('restore-form').hidden=!visible;$('restore-toggle').setAttribute('aria-expanded',String(visible)); }
+$('restore-toggle').addEventListener('click',()=>restoreVisibility($('restore-form').hidden));
+$('restore-cancel').addEventListener('click',()=>restoreVisibility(false));
+$('restore-form').addEventListener('submit',async event=>{
+  event.preventDefault();const file=$('backup-file').files[0];if(!file) return;
+  if(!confirm('Replace all current tracker data with this backup?')) return;
+  try { if(file.size>2_000_000) throw new Error('The backup is too large.');const data=JSON.parse(await file.text());await api('/import',{method:'POST',body:JSON.stringify(data)});selected=null;restoreVisibility(false);await reload();notice('Backup restored.'); } catch(error) { notice(error.message,true); }
+});
+let googleScript;
+let loginGeneration = 0;
+let signingIn = false;
+function loadGoogle() {
+  if (window.google?.accounts?.id) return Promise.resolve(window.google.accounts.id);
+  if (!googleScript) googleScript = new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    const fail = () => {clearTimeout(timeout);script.remove();reject(new Error('Google sign-in could not load. Check your connection and try again.'));};
+    const timeout = setTimeout(fail, 15000);
+    script.src = 'https://accounts.google.com/gsi/client';script.async = true;
+    script.onload = () => {clearTimeout(timeout);window.google?.accounts?.id ? resolve(window.google.accounts.id) : fail();};
+    script.onerror = fail;document.head.append(script);
+  }).catch(error => {googleScript = null;throw error;});
+  return googleScript;
+}
+async function renderGoogleSignIn(auth, generation) {
+  $('google-sign-in').replaceChildren();$('google-sign-in').hidden=false;
+  $('login-status').textContent='Loading Google sign-in…';$('login-retry').hidden=true;
+  try {
+    const configuration = auth || await api('/auth');
+    if (configuration.authenticated) {await reload();return;}
+    if (!configuration.google) throw new Error('Google sign-in is unavailable. Refresh the page to try again.');
+    const google = await loadGoogle();
+    if (generation !== loginGeneration || $('login-view').hidden) return;
+    google.initialize({client_id:configuration.google.clientId,nonce:configuration.google.nonce,auto_select:false,
+      callback: async response => {
+        if(signingIn || generation !== loginGeneration) return;
+        signingIn=true;$('google-sign-in').hidden=true;$('login-status').textContent='Signing in…';
+        try {
+          await api('/login/google',{method:'POST',headers:{'X-Tracker-Login':configuration.google.nonce},body:JSON.stringify({credential:response.credential})});
+          await reload();notice('');
+        } catch(error) {
+          $('login-status').textContent=error.message;$('login-retry').hidden=false;
+        } finally {signingIn=false;}
+      }
+    });
+    google.renderButton($('google-sign-in'),{type:'standard',theme:'outline',size:'large',text:'continue_with',shape:'rectangular',width:Math.min(360,$('login-view').clientWidth)});
+    $('login-status').textContent='';
+  } catch(error) {
+    if(generation !== loginGeneration) return;
+    $('login-status').textContent=error.message;$('login-retry').hidden=false;
+  }
+}
+function showLogin(auth) {
+  setupController?.abort();setupGeneration++;$('product-form').hidden=true;
+  state={products:[],items:[],searches:{},busy:[]};selected=null;
+  $('workspace').hidden=true;$('login-view').hidden=false;$('sign-out').hidden=true;
+  $('restore-toggle').hidden=true;document.querySelector('a[download]').hidden=true;
+  $('restore-form').hidden=true;$('matches').replaceChildren();$('products').replaceChildren();
+  void renderGoogleSignIn(auth,++loginGeneration);
+}
+$('login-retry').addEventListener('click',()=>showLogin());
+$('sign-out').addEventListener('click',async()=>{
+  try {await api('/logout',{method:'POST',body:'{}'});window.google?.accounts?.id.disableAutoSelect();showLogin();notice('Signed out.');}catch(error){notice(error.message,true);}
+});
+async function start() {
+  const auth=await api('/auth');
+  if(auth.hosted&&!auth.authenticated) {
+    $('storage-status').textContent='Your private cloud tracker. Sign in to open your products and matches.';
+    showLogin(auth);
+  } else await reload();
+}
+start().catch(error=>{notice(`Could not load the tracker: ${error.message} Refresh to try again.`,true);$('empty-heading').textContent='Tracker unavailable';$('empty-message').textContent='Check the tracker configuration, then refresh this page.';});
+setInterval(()=>{
+  if(document.visibilityState==='visible'&&state.token&&!searching&&!researchBusy&&!analyzing.size&&$('product-form').hidden&&!document.activeElement?.matches('input, textarea, select')&&!document.querySelector('.match details[open]')) reload().catch(()=>{});
+},60000);

@@ -1,0 +1,48 @@
+services:
+  bridge:
+    build:
+      context: ..
+      dockerfile: reddit/Dockerfile
+    container_name: opportunity-redlib-bridge
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      REDLIB_BASE_URL: http://querylane-redlib-redlib-1:8080
+      LINKEDIN_MCP_URL: http://querylane-linkedin-mcp-mcp-1:8080/mcp
+    ports:
+      - "127.0.0.1:18081:8081"
+    networks:
+      - redlib
+      - linkedin
+      - proxy
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 384m
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8081/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+  monitor:
+    build:
+      context: ..
+      dockerfile: reddit/Dockerfile
+    container_name: opportunity-tracker-monitor
+    restart: unless-stopped
+    command: ["node", "reddit/monitor-worker.mjs"]
+    env_file: .env
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 128m
+networks:
+  linkedin:
+    external: true
+    name: querylane-linkedin-mcp_default
+  redlib:
+    external: true
+    name: querylane-redlib_default
+  proxy:
+    external: true
+    name: reelscribe_default
