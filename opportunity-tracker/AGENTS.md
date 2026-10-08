@@ -6,7 +6,7 @@ Read `../AGENTS.md` before continuing dashboard work. This is the canonical dash
 
 ## Workspace startup — October 8, 2026
 
-- The user subsequently selected the skeleton dashboard loading concept and asked for shadcn. Use the existing shadcn Skeleton component for a soft-gray sidebar, header, and source/draft placeholder shell, with the approved charcoal BrandIcon and one clear loading status. On phones, show the brand in the header and simplify to one placeholder pane. Hide placeholders from assistive technology and respect reduced motion. Keep startup errors in the compact centered brand layout with a clear retry action.
+- The user wants shadcn skeletons but rejected the two-column loading layout, low status placement, and large blank lower area. Use one continuous skeleton list beneath a full-width charcoal brand header. Keep the loading message near the top and let placeholder rows fill the available height on desktop and phones. Hide placeholders from assistive technology and respect reduced motion. Keep startup errors in the compact centered brand layout with a clear retry action.
 
 ## Header hierarchy — October 8, 2026
 
