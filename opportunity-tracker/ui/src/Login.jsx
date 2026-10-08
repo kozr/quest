@@ -1,5 +1,5 @@
 import {useEffect,useRef,useState} from 'react';
-import {SquareStack} from 'lucide-react';
+import {BrandIcon} from '@/components/brand-icon';
 import {Button} from '@/components/ui/button';
 import {api} from './api';
 let googleScript;
@@ -26,5 +26,5 @@ export function Login({configuration,onSignedIn}){
    ref.current.replaceChildren();google.renderButton(ref.current,{type:'standard',theme:'outline',size:'large',text:'continue_with',shape:'rectangular',width:Math.min(360,ref.current.clientWidth)});setMessage('');
   }catch(e){if(alive){setMessage(e.message);setFailed(true);}}})();return()=>{alive=false;};
  },[configuration,retry,onSignedIn]);
- return <main className="login-page review-desk"><div className="login-brand"><SquareStack size={24}/><span>HearWhispers</span></div><section><h1>Your conversations,<br/>in one workspace.</h1><p>Sign in to review relevant discussions, keep useful conversations, and prepare your response.</p><div ref={ref} id="google-sign-in"/><p role={failed?'alert':'status'} className={failed?'form-error':'muted'}>{message}</p>{failed&&<Button variant="outline" onClick={()=>setRetry(n=>n+1)}>Retry Google sign-in</Button>}<p className="login-footnote">Access is limited to the Google account allowed for this private workspace.</p></section></main>;
+ return <main className="login-page review-desk"><div className="login-brand"><BrandIcon/><span>HearWhispers</span></div><section><h1>Your conversations,<br/>in one workspace.</h1><p>Sign in to review relevant discussions, keep useful conversations, and prepare your response.</p><div ref={ref} id="google-sign-in"/><p role={failed?'alert':'status'} className={failed?'form-error':'muted'}>{message}</p>{failed&&<Button variant="outline" onClick={()=>setRetry(n=>n+1)}>Retry Google sign-in</Button>}<p className="login-footnote">Access is limited to the Google account allowed for this private workspace.</p></section></main>;
 }

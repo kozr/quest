@@ -1,0 +1,11 @@
+{
+  "tool": "built-in image_gen",
+  "date": "2026-10-08",
+  "selectedMark": "Listening bubble",
+  "approvedPalette": {
+    "background": "#292724",
+    "mark": "#F7F2EA"
+  },
+  "reference": "design-explorations/hearwhisper-icons-2026-10-08/01-listening-bubble.png",
+  "prompt": "Use case: precise-object-edit.\nAsset type: final square brand/app icon for HearWhispers / ActOnWhispers.\nInput image: edit target, the approved listening-bubble mark.\nPrimary request: change ONLY the color palette. Recolor the entire background to a single perfectly solid warm charcoal #292724 and the existing symbol to a single perfectly solid warm ivory #F7F2EA.\nInvariants: preserve the exact source symbol, its silhouette, every curve, the open right-hand side of the circular speech bubble, the lower-left tail, the two separate rounded curved whisper strokes inside, their positions, their stroke widths, the original scale, all negative spaces, and the exact composition and generous margins. Do not reinterpret or redraw the design.\nStyle: final flat graphic asset with crisp antialiased edges, exactly two flat solid colors. Remove any paper grain, texture, shading or variation from the original. No gradients, no texture, no shadows, no glow, no gloss, no 3D.\nConstraints: single full square opaque icon, background extends all the way to all four edges, square corners (no pre-rounding), no text, no border, no watermark, no mockup, no comparison sheet. Output 1024x1024 if possible."
+}

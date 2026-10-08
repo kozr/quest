@@ -95,3 +95,13 @@ Source: `opportunity-tracker/ui/src/{App.jsx,WorkspaceViews.jsx,ProductEditor.js
 - **Don't** imply autosave, automatic posting, complete search coverage, or persistence of unsaved buffers after session loss.
 - **Don't** revive password sign-in, the obsolete bare-CSS guidance, or treat fixtures as production evidence.
 - **Don't** apply this tracker record to the separate iPhone product or change the root PRODUCT.md.
+
+## Work-page refinement — October 8, 2026
+
+The user requested consistent density, stronger action hierarchy and removal of obsolete version language across the dashboard, with the sidebar left unchanged. Work pages now share a 24px headline, 8px title-to-description gap, 24px header-to-content gap, 24px desktop inset (16px on phones), and a left-aligned content region capped at 1040px. Workflow sections use 20px vertical spacing and 17px headings; Products uses compact 16px rows; Settings aligns section labels with their controls and values. Research puts Run/Refresh research in its page header.
+
+A filled charcoal button identifies the next available task. Add product leads only Products and no-product states. Workflow prerequisites link directly to the business profile, Listening, Insights or Actions; subsequent stage controls remain secondary until their prerequisites are satisfied. Editing a plan or draft gives its save action precedence. Current, unchanged plans cannot be reactivated accidentally. Empty and paused states provide a concise explanation and a relevant next step.
+
+Product setup offers the current reviewed business breakdown, without a version switch. Search-plan activation uses the current API contract; legacy activation choices and all visible version labels are removed. Historical data and internal compatibility identifiers are retained. Profile review, search-phrase validation, explicit draft saves and unsaved-edit buffers remain required.
+
+Validated against the shared port-50740 fixture and the existing disposable populated pipeline fixture, at desktop and phone widths. The UI build and 22 existing profile, pipeline and conversation-feed regression checks pass. This is local preview evidence; production publication remains with the integration chat.

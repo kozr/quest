@@ -20,7 +20,7 @@ export function BusinessProfileBreakdown({profile,onChange,onGenerate,busy,avail
   }
   return <section className="business-breakdown" aria-label="Business breakdown">
     <p className="field-help">Separate what your business offers from assumptions about its customers. Review this breakdown before using it to find conversations.</p>
-    <Button type="button" variant="outline" disabled={busy||!available} onClick={onGenerate}>{busy?'Preparing breakdown…':profile?'Refresh business breakdown':'Generate business breakdown'}</Button>
+    <Button type="button" variant={profile?'outline':'default'} disabled={busy||!available} onClick={onGenerate}>{busy?'Preparing breakdown…':profile?'Refresh business breakdown':'Generate business breakdown'}</Button>
     {!available&&<p className="field-help">Generation is paused. Existing breakdowns remain available to review.</p>}
     {profile&&<>
       {!current&&<p role="status" className="form-error">Business details changed. Refresh this breakdown before using it.</p>}

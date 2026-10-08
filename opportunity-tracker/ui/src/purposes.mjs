@@ -11,5 +11,12 @@ export function normalizePurposes(value){
  return selected.length?selected:[...defaultPurposes];
 }
 const preferenceKey='hearwhispers:sidebar-purposes:v1';
+const activePurposeKey='hearwhispers:active-purpose:v1';
 export function loadPurposes(){try{return normalizePurposes(JSON.parse(localStorage.getItem(preferenceKey)));}catch{return [...defaultPurposes];}}
 export function savePurposes(value){try{localStorage.setItem(preferenceKey,JSON.stringify(normalizePurposes(value)));return true;}catch{return false;}}
+export function loadActivePurpose(enabled=loadPurposes()){
+ const selected=normalizePurposes(enabled);
+ try{const last=localStorage.getItem(activePurposeKey);if(selected.includes(last))return last;}catch{}
+ return selected[0];
+}
+export function saveActivePurpose(id){try{localStorage.setItem(activePurposeKey,id);}catch{}}

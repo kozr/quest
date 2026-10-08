@@ -1,23 +1,25 @@
-import { AtSign, AudioLines, Bookmark, ChartNoAxesCombined, ChevronsUpDown, Clapperboard, Inbox, ListTodo, MessageSquareText, MessagesSquare, Package2, Plus, ScanLine, Search, Settings2, SquareStack, Users } from "lucide-react";
+import { AtSign, AudioLines, ChartNoAxesCombined, ChevronsUpDown, Clapperboard, ListTodo, MessageSquareText, MessagesSquare, Package2, Plus, ScanLine, Search, Settings2, Users } from "lucide-react";
 import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarRail, useSidebar } from "@/components/ui/sidebar";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
-import {defaultPurposes,purposes} from "@/purposes.mjs";
+import { BrandIcon } from "@/components/brand-icon";
+
+import {defaultPurposes,purposes,loadActivePurpose} from "@/purposes.mjs";
 const purposeIcons={mentions:AtSign,opportunities:Users,feedback:MessagesSquare,competitors:ScanLine};
 
-export function AppSidebar({ view, navigate, products, productId, allowAllProducts, onProduct, onAdd, storage, enabledPurposes=defaultPurposes, purposeFilter="all", onPurpose, onPurposes }) {
+export function AppSidebar({ view, navigate, products, productId, allowAllProducts, onProduct, onAdd, storage, enabledPurposes=defaultPurposes, onPurposes }) {
   const { isMobile, setOpenMobile } = useSidebar();
   const productName = products.find(product => product.id === productId)?.name || (products.length ? "All products" : "Choose a product");
-  function go(next) { if(next==="conversations")onPurpose("all"); navigate(next); setOpenMobile(false); }
+  function go(next) { navigate(next); setOpenMobile(false); }
   function item(id, label, Icon) {
-    const active=view===id&&(id!=="conversations"||purposeFilter==="all");
+    const active=view===id;
     return <SidebarMenuItem key={id}><SidebarMenuButton isActive={active} tooltip={label} onClick={() => go(id)} aria-current={active ? "page" : undefined}><Icon /><span>{label}</span></SidebarMenuButton></SidebarMenuItem>;
   }
   return <Sidebar collapsible="icon">
     <SidebarHeader>
       <SidebarMenu><SidebarMenuItem>
-        <SidebarMenuButton size="lg" onClick={() => go("conversations")} tooltip="HearWhispers">
-          <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground"><SquareStack className="size-4" /></div>
+        <SidebarMenuButton size="lg" onClick={() => go(loadActivePurpose(enabledPurposes))} tooltip="HearWhispers">
+          <BrandIcon className="size-8" />
           <div className="grid flex-1 text-left text-sm leading-tight"><span className="truncate font-semibold">HearWhispers</span><span className="truncate text-xs text-muted-foreground">{storage === "cloud" ? "Private workspace" : "Local workspace"}</span></div>
         </SidebarMenuButton>
       </SidebarMenuItem></SidebarMenu>
@@ -40,13 +42,9 @@ export function AppSidebar({ view, navigate, products, productId, allowAllProduc
       <SidebarGroup>
         <SidebarGroupLabel>HearWhispers</SidebarGroupLabel>
         <SidebarGroupContent><SidebarMenu>
-          {item("conversations","Conversations",Inbox)}
-          {purposes.filter(purpose=>enabledPurposes.includes(purpose.id)).map(purpose=>{
-            const Icon=purposeIcons[purpose.id],active=view==="conversations"&&purposeFilter===purpose.relevance;
-            return <SidebarMenuItem key={purpose.id}><SidebarMenuButton isActive={active} tooltip={purpose.label} aria-current={active?"page":undefined} onClick={()=>{onPurpose(purpose.relevance);navigate("conversations");setOpenMobile(false);}}><Icon/><span>{purpose.label}</span></SidebarMenuButton></SidebarMenuItem>;
-          })}
+          {purposes.filter(purpose=>enabledPurposes.includes(purpose.id)).map(purpose=>item(purpose.id,purpose.label,purposeIcons[purpose.id]))}
           <SidebarMenuItem><SidebarMenuButton className="text-muted-foreground" tooltip={enabledPurposes.length<purposes.length?"Add purpose":"Manage purposes"} onClick={()=>{setOpenMobile(false);onPurposes();}}><Plus/><span>{enabledPurposes.length<purposes.length?"Add purpose":"Manage purposes"}</span></SidebarMenuButton></SidebarMenuItem>
-          {[{id:"saved",label:"Saved",icon:Bookmark},{id:"products",label:"Products",icon:Package2},{id:"listening",label:"Listening",icon:AudioLines},{id:"insights",label:"Insights",icon:ChartNoAxesCombined},{id:"research",label:"Research",icon:Search}].map(({id,label,icon:Icon})=>item(id,label,Icon))}
+          {[{id:"products",label:"Products",icon:Package2},{id:"listening",label:"Listening",icon:AudioLines},{id:"insights",label:"Insights",icon:ChartNoAxesCombined},{id:"research",label:"Research",icon:Search}].map(({id,label,icon:Icon})=>item(id,label,Icon))}
         </SidebarMenu></SidebarGroupContent>
       </SidebarGroup>
       <SidebarGroup>
