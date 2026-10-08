@@ -83,7 +83,8 @@ export function createTrackerApp({ dataDirectory = process.env.TRACKER_DATA_DIR 
     const settings = qualificationSettings(qualificationEnv);
     if (!productId && settings.mode !== 'ongoing') return {status:'disabled'};
     const snapshot=await store.snapshot();
-    const selected=productId?snapshot.products.find(p=>p.id===productId):snapshot.products.find(p=>p.listeningVersion==='v2'&&(p.monitoring||snapshot.collection?.cycles?.[p.id]?.trigger==='manual'||snapshot.collection?.backfills?.[p.id]?.trigger==='onboarding')&&listeningReady(p)&&qualificationDue(snapshot,p));
+    const lastReview=p=>Math.max(Date.parse(snapshot.pipelineStages?.[p.id]?.qualify?.generatedAt)||0,...Object.values(snapshot.conversationReviewFailures?.[p.id]||{}).map(f=>Date.parse(f.failedAt)||0));
+    const selected=productId?snapshot.products.find(p=>p.id===productId):snapshot.products.filter(p=>p.listeningVersion==='v2'&&(p.monitoring||snapshot.collection?.cycles?.[p.id]?.trigger==='manual'||snapshot.collection?.backfills?.[p.id]?.trigger==='onboarding')&&listeningReady(p)&&qualificationDue(snapshot,p)&&!Object.values(snapshot.analysisLeases||{}).some(l=>l.productId===p.id&&l.expiresAt>Date.now())).sort((a,b)=>lastReview(a)-lastReview(b))[0];
     if(selected?.listeningVersion==='v2')return pendingEvidence(snapshot,selected).length?runStage(selected.id,'qualify'):{status:'complete'};
     return processQualification(store,settings,qualificationProvider,{productId});
   }

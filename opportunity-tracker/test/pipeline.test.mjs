@@ -189,3 +189,12 @@ test('qualification uses its metered allowance while research keeps its request 
  const rows=conversations().map(r=>({...r,url:r.url+'new',postId:r.postId+'new'}));f.store.recordSearch(f.p.id,{semantic:true,items:[],candidates:rows,sources:[],searchedAt:new Date(now+2).toISOString()});
  assert.throws(()=>f.store.claimStage(f.p.id,'qualify',settings,false,now+3),/daily AI allowance/);
 });
+
+
+test('background qualification gives the waiting business a turn before repeating another batch',async t=>{
+ const f=await fixture(t);await activate(f);await collect(f);
+ const other=f.store.saveProduct(v2Business());await f.runStage(other.id,'search_plan');f.store.saveSearchPlan(other.id,{...f.store.snapshot().pipelineStages[other.id].search_plan.data,reviewed:true},'v2');
+ f.store.recordSearch(other.id,{semantic:true,items:[],candidates:conversations(),sources:[],searchedAt:new Date().toISOString()});
+ const data=f.store.snapshot();data.products.forEach(p=>p.monitoring=true);data.pipelineStages[f.p.id].qualify={generatedAt:new Date().toISOString()};f.store.commit(data);
+ await f.runQualification();assert(f.store.snapshot().items.some(i=>i.productId===other.id));assert.equal(f.store.snapshot().items.some(i=>i.productId===f.p.id),false);
+});
