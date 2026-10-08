@@ -1,0 +1,14 @@
+HearWhispers dashboard trust review — October 7, 2026
+Scope: Current local Conversations dashboard at http://127.0.0.1:4173/#conversations. Desktop, 1280 px wide. Review only; no implementation changes.
+
+Step 1 — Conversations dashboard: solid visual foundation, with reassurance and hierarchy gaps.
+Evidence: 01-dashboard.png captures the opening viewport; 01-dashboard-full.png captures the complete page. Both were captured during this review and visually inspected.
+
+Strengths: Restrained monochrome palette, fine borders, consistent typography and spacing, familiar sidebar and list-detail layout. Visible author, community, date and Original post link provide provenance. Potential fit explicitly avoids claiming buying intent. Local preview and device-only saving are disclosed.
+
+Priority changes:
+1. Make data state apparent near the heading. Historical examples disclosure currently appears below the initial viewport. A production dashboard should distinguish monitoring, last successful check, and problems using actual backend state; never fabricate these signals in the prototype.
+2. Give reviewing conversations more prominence. Add product is the strongest black action despite the screen's primary task being review. New count or clearer unreviewed state could direct attention.
+3. Increase readability of small gray metadata and explanatory text. The historical examples disclosure, dates and saved-on-device label are visually subdued. Contrast and target sizes were not numerically tested.
+
+Limits: Visual and accessibility-tree review of one desktop screen only. No mobile, keyboard, screen-reader, runtime reliability, backend freshness, or live discovery verification. This is a local preview containing historical examples.

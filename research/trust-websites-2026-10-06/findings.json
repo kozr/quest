@@ -1,0 +1,84 @@
+{
+  "title": "How comparable websites earn trust — implications for HearWhispers",
+  "observed_on": "2026-10-06",
+  "method": "Purposive review of four live public websites, saved desktop screenshots, and two public demo interactions. This is a design comparison, not a conversion study.",
+  "steps": [
+    {
+      "step": 1,
+      "site": "RevenueCat",
+      "url": "https://www.revenuecat.com/indies",
+      "health": "Strong audience-specific proof near the promise",
+      "screenshot": "10-revenuecat-indie-hero.jpg",
+      "observed": "The indie-specific hero sits beside a named app customer, individual, role, portrait and link to a longer case. The hero also offers a product demo.",
+      "trust_question": "Has this helped someone building an app like mine?",
+      "hearwhispers_implication": "Place a verified indie app example beside the product promise. Connect the original problem, the actual conversation found, the developer's action and any measured outcome. Until customer evidence exists, identify it as a product demonstration.",
+      "risk": "Animated proof cards and faded adjacent content can make reading harder. Keyboard, reduced-motion and screen-reader behavior were not tested.",
+      "limit": "Customer claims and case outcomes were not independently audited."
+    },
+    {
+      "step": 2,
+      "site": "Plausible",
+      "url": "https://plausible.io/",
+      "demo_url": "https://plausible.io/plausible.io",
+      "health": "Strong inspectable product proof before signup",
+      "screenshots": ["05-plausible-hero.jpg", "06-plausible-public-demo.jpg"],
+      "observed": "The hero offers both a trial and a live demo, above an actual dashboard preview. Opening the demo produced a populated dashboard without signup.",
+      "trust_question": "What will I get, and can I inspect it before committing?",
+      "hearwhispers_implication": "Expose a complete useful result before registration: the source conversation, why it fits the app, relevant community restrictions and a reviewable draft. A demo demonstrates output quality; it does not prove acquisition results.",
+      "risk": "The dashboard preview is small within the landing-page screenshot; the full demo is the stronger inspection path. Keyboard and screen-reader usability were not tested.",
+      "limit": "The demo rendered successfully; the underlying analytics and privacy claims were not independently verified."
+    },
+    {
+      "step": 3,
+      "site": "Syften",
+      "url": "https://syften.com/",
+      "health": "Strong personalized preview and relevant peer testimony",
+      "screenshots": ["12-syften-domain-demo.jpg", "09-syften-relevant-peers.jpg"],
+      "observed": "A public search for dayoneapp.com displayed 22 results for the domain and 31 for dayoneapp over the last two months, with linked result excerpts, before signup. These counts may overlap. Separate testimonials identify founders, their companies and specific uses.",
+      "trust_question": "Can this find anything relevant to my own app?",
+      "hearwhispers_implication": "Prioritize a personal preview using the visitor's app, with inspectable sources. Make the jump from a match to a business result explicit rather than treating every mention as a lead.",
+      "case_url": "https://syften.com/blog/competitor-monitoring-case-study/",
+      "case_note": "The 2020 founder-written case links an original discussion and describes three paying customers through direct assistance, a referral and a later reader. This is a self-reported historical example, not a typical conversion rate.",
+      "risk": "The public preview is farther down the page than the primary promise. Its narrow result column may require scrolling to assess relevance. Contrast and keyboard behavior were not measured.",
+      "limit": "Result availability was observed. Search completeness, counts and match quality were not independently validated."
+    },
+    {
+      "step": 4,
+      "site": "F5Bot",
+      "url": "https://f5bot.com/",
+      "about_url": "https://f5bot.com/about",
+      "health": "Clear offer and initial cost; qualified logo evidence",
+      "screenshots": ["07-f5bot-hero.jpg", "08-f5bot-company-proof.jpg"],
+      "observed": "The hero explains monitored sources and email alerts, places free/no-card terms by signup, and links pricing. The logo wall says Used by professionals at. The about page names the operator and offers direct contact.",
+      "trust_question": "What am I signing up for, what will it cost, and who is responsible?",
+      "hearwhispers_implication": "State actual pricing, limits and operator identity clearly. Label every logo relationship precisely; an individual's employer is not a corporate endorsement.",
+      "risk": "The logo wall is visibly pale; contrast was not measured. Its wording is essential to interpreting the relationship.",
+      "limit": "No account was created, and alert delivery, user affiliations and service metrics were not independently verified."
+    }
+  ],
+  "borrowed_trust": {
+    "platform": "A platform logo may establish coverage or integration when accurate; it does not establish endorsement or customer acquisition effectiveness.",
+    "customer": "Named, relevant customers with inspectable examples and outcomes can address usefulness for a similar buyer. Obtain authentic permission and do not invent evidence.",
+    "authority": "Domain expertise can support a method. Cite the actual relationship and scope; a quotation is not automatically an endorsement of HearWhispers.",
+    "investor": "Funding can support organizational legitimacy but does not prove product effectiveness. Plausible instead emphasizes an independent, customer-funded business model at https://plausible.io/about."
+  },
+  "recommended_design_structure": [
+    "Specific promise for independent app developers",
+    "Inspectable real result beside the promise, with a route to try a personal preview",
+    "Source conversation, fit explanation, community constraints and reviewable response",
+    "Verified peer case showing action and measured outcome when available",
+    "Explicit price, limits, account/data handling and reachable founder"
+  ],
+  "measurement_requirements": "Any cost or time-saving claim needs a defined sample and period. Track manual search time, conversations screened, relevant matches, drafts accepted, replies posted and attributable visits/signups separately. Do not infer customers from conversation counts.",
+  "research_context": [
+    {
+      "url": "https://www.nngroup.com/articles/trustworthy-design/",
+      "note": "2016 usability research identifies organized design, upfront disclosure, comprehensive/current information and external connections as credibility factors. It does not establish conversion effects for HearWhispers."
+    },
+    {
+      "url": "https://www.nngroup.com/articles/commitment-levels/",
+      "note": "2016 guidance supports letting people establish relevance before requesting more personal information or commitment."
+    }
+  ],
+  "overall_limits": "Four selected examples do not establish industry prevalence or causal conversion uplift. Public desktop paths only; no purchases, account creation, complete mobile audit or accessibility compliance assessment."
+}
