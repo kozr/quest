@@ -17,7 +17,7 @@ import {api,date,platform,safeURL,setToken,sourceLabel} from './api';
 import {Login} from './Login';
 import {ProductEditor} from './ProductEditor';
 import {CollectionProgress,Settings,Research} from './WorkspaceViews';
-const views={conversations:'Conversations',saved:'Saved',products:'Products',research:'Research',listening:'Listening',insights:'Insights',actions:'Actions & drafts',settings:'Settings'};
+const views={conversations:'Conversations',saved:'Saved',products:'Products',research:'Research',listening:'Listening',insights:'Insights',actions:'Actions',replies:'Auto-draft replies',content:'Videos & captions',settings:'Settings'};
 const route=()=>views[location.hash.slice(1)]?location.hash.slice(1):'conversations';
 
 export function App(){
@@ -40,9 +40,9 @@ function Dashboard({state,reload,logout,error}){
  const unsaved=Object.keys(draftEdits).length+Object.keys(noteEdits).length+Object.keys(pipelineEdits).length>0;
  useEffect(()=>{if(!unsaved)return;const warn=e=>{e.preventDefault();e.returnValue='';};window.addEventListener('beforeunload',warn);return()=>window.removeEventListener('beforeunload',warn);},[unsaved]);
  const heading=useRef(null);const isFeed=['conversations','saved'].includes(view);
- const singleProduct=['listening','insights','actions','research'].includes(view);
+ const singleProduct=['listening','insights','actions','replies','content','research'].includes(view);
  const productId=state.products.some(p=>p.id===productFilter)?productFilter:singleProduct?(state.products[0]?.id||'all'):'all';
- const section=view==='actions'?'ActOnWhispers':'HearWhispers';
+ const section=['actions','replies','content'].includes(view)?'ActOnWhispers':'HearWhispers';
  useEffect(()=>{const change=()=>{if(location.hash==='#main-content')return;setView(route());setMobileDetail(false);};window.addEventListener('hashchange',change);return()=>window.removeEventListener('hashchange',change);},[]);
  useEffect(()=>{document.title=`${views[view]} · ${section}`;},[view,section]);
  useEffect(()=>{setPage(0);setMobileDetail(false);},[query,productFilter,platformFilter,statusFilter,relevanceFilter,view]);
@@ -92,7 +92,7 @@ function Dashboard({state,reload,logout,error}){
      </article>}
     </div></>}
     {view==='products'&&<div className="products-view"><div className="product-table-heading"><span>Product</span><span>Website</span><span/></div>{state.products.map(p=><div className="product-record" key={p.id}><div className="product-name"><div className="product-icon"><Package2/></div><div><strong>{p.name}</strong><span>{p.monitoring?'Monitoring every two hours':'Regular monitoring paused'}</span></div></div><a className="product-website" href={safeURL(p.url)} target="_blank" rel="noopener noreferrer">{new URL(p.url).hostname}</a><Button variant="outline" size="sm" onClick={()=>{setEditing(p);setFormOpen(true);}}>Edit</Button></div>)}{!state.products.length&&<p className="view-note">Add a product to begin its past-year search.</p>}</div>}
-    {['listening','insights','actions'].includes(view)&&<PipelineWorkspace state={state} view={view} productId={productId} action={action} busy={busy} buffers={pipelineEdits} setBuffer={(id,value)=>setBuffer(setPipelineEdits,id,value)}/>}
+    {['listening','insights','actions','replies','content'].includes(view)&&<PipelineWorkspace state={state} view={view} productId={productId} action={action} busy={busy} buffers={pipelineEdits} setBuffer={(id,value)=>setBuffer(setPipelineEdits,id,value)}/>}
     {view==='settings'&&<Settings state={state} logout={async()=>{if(unsaved&&!confirm('Sign out and discard unsaved drafts and notes?'))return;await logout();}} reload={reload} action={action} busy={busy}/>}
     {view==='research'&&<Research state={state} productFilter={productId} action={action} busy={busy}/>}
    </main>

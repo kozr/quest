@@ -1,4 +1,4 @@
-import { AudioLines, Bookmark, ChartNoAxesCombined, ChevronsUpDown, FilePenLine, Inbox, Package2, Plus, Search, Settings2, SquareStack } from "lucide-react";
+import { AudioLines, Bookmark, ChartNoAxesCombined, ChevronsUpDown, Clapperboard, Inbox, ListTodo, MessageSquareText, Package2, Plus, Search, Settings2, SquareStack } from "lucide-react";
 import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarRail, useSidebar } from "@/components/ui/sidebar";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
@@ -42,7 +42,9 @@ export function AppSidebar({ view, navigate, products, productId, allowAllProduc
       <SidebarGroup>
         <SidebarGroupLabel>ActOnWhispers</SidebarGroupLabel>
         <SidebarGroupContent><SidebarMenu>
-          {item("actions", "Actions & drafts", FilePenLine)}
+          {item("actions", "Actions", ListTodo)}
+          {item("replies", "Auto-draft replies", MessageSquareText)}
+          {item("content", "Videos & captions", Clapperboard)}
         </SidebarMenu></SidebarGroupContent>
       </SidebarGroup>
     </SidebarContent>

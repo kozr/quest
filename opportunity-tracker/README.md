@@ -255,7 +255,7 @@ Each first pass is bounded to 200 provider requests, 2,000 new review candidates
 
 ## V2 listening and action stages
 
-HearWhispers contains stages 1–5. ActOnWhispers contains action recommendations and drafts in stages 6–7 within the same app and workspace. The sidebar groups tools under **HearWhispers** and **ActOnWhispers**. A product switcher at the top selects the shared product context for conversations, listening, insights, research and actions. Conversations and Saved also support All products. There is no in-app plan comparison or explanatory plan copy.
+HearWhispers contains stages 1–5. ActOnWhispers contains action recommendations and drafts in stages 6–7 within the same app and workspace. The sidebar groups tools under **HearWhispers** and **ActOnWhispers**. ActOnWhispers has Actions, Auto-draft replies and Videos & captions entries. Replies show answer drafts; Actions retains post drafts and guides. Saving edits in either view preserves the other drafts. Videos & captions is a placeholder for a future video template and caption tool. A product switcher at the top selects the shared product context for conversations, listening, insights, research and actions. Conversations and Saved also support All products. There is no in-app plan comparison or explanatory plan copy.
 
 Set `TRACKER_ACTIONS_ENABLED=false` to disable action generation and draft editing on a listening-only server. This is a server capability gate; billing and account-level subscriptions are not integrated. Existing v1 profiles, keywords and collectors remain usable.
 
@@ -266,8 +266,8 @@ Set `TRACKER_ACTIONS_ENABLED=false` to disable action generation and draft editi
 | 3. Collect | Original excerpts, authors, thread identity, dates, URLs, closed/crosspost flags and query provenance | Existing bounded collection worker |
 | 4. Qualify | Topical relevance, direct fit, need category, exact author quote, resolution and offering references | Up to 30 pending conversations per batch |
 | 5. Find insights | Repeated questions, complaints, workarounds and unmet needs, with dated source links | Generate from current qualified evidence |
-| 6. Recommend actions | Useful answer, fresh guide, clearer information, offering improvement or observe | Review in Actions & drafts (ActOnWhispers) |
-| 7. Prepare drafts | Editable, copyable posts and replies using advice-first language | Human review and publication |
+| 6. Recommend actions | Useful answer, fresh guide, clearer information, offering improvement or observe | Review in Actions (ActOnWhispers) |
+| 7. Prepare drafts | Editable, copyable posts and replies using advice-first language | Review in Actions (posts) or Auto-draft replies; human publication |
 
 `profileVersion` selects the business breakdown; `listeningVersion` independently selects v1 or v2 search/qualification. Generated stage-2 output is a draft. Activating a reviewed `searchPlanV2` does not overwrite v1 keywords, communities or X queries. Switching back restores their use. Changing the business profile or enabled sources can make the active plan stale; v2 collection then pauses until a new plan is reviewed. Saved conversations, notes and drafts remain.
 

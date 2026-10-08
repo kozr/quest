@@ -7,9 +7,13 @@ import {toast} from 'sonner';
 
 const labels={search_plan:'Generate search plan',qualify:'Qualify next batch',insights:'Find insights',actions:'Recommend actions',drafts:'Prepare drafts'};
 export function PipelineWorkspace({state,view,productId,action,busy,buffers,setBuffer}){
+ if(view==='content')return <div className="pipeline-workspace"><section className="pipeline-section"><h2>Template videos with captions</h2><p className="view-note">Coming soon.</p></section></div>;
  const product=state.products.find(p=>p.id===productId);
  if(!product)return <p className="view-note">Add a business and review its v2 profile to start.</p>;
  const records=state.pipeline?.stages?.[product.id]||{},summary=state.pipeline?.products?.[product.id]||{};
+ const draftView=['actions','replies'].includes(view),draftType=view==='replies'?'answer':'fresh_post';
+ const draftActions=(records.actions?.data.actions||[]).filter(a=>a.type===draftType);
+ const draftIds=new Set(draftActions.map(a=>a.id));
  const reviewed=product.profileVersion==='v2'&&product.businessProfileV2?.reviewed;
  const run=stage=>action(`stage-${stage}`,()=>api(`/products/${product.id}/stages/${stage}`,{method:'POST',body:{refresh:Boolean(records[stage])}}),`${stage==='qualify'?'Qualification':stage.replaceAll('_',' ')} saved`);
  const button=(stage,disabled=false)=><Button variant="outline" disabled={!!busy||!state.pipeline?.available||disabled} onClick={()=>run(stage)}>{busy===`stage-${stage}`?'Working…':labels[stage]}</Button>;
@@ -40,14 +44,17 @@ export function PipelineWorkspace({state,view,productId,action,busy,buffers,setB
    {records.insights?.data.insights?.map(insight=><article className="insight-card" key={insight.id}><small>{insight.kind.replaceAll('_',' ')}{insight.community?` · r/${insight.community}`:''}</small><h3>{insight.title}</h3><p>{insight.outcome}</p><p>{insight.explanation}</p>{insight.independentThreadCount!==undefined&&<p className="muted">{insight.independentThreadCount} independent threads in this sample · {date(insight.firstSeen)} – {date(insight.lastSeen)}</p>}<div className="insight-sources">{(insight.sources||insight.evidenceIds.map(id=>summary.conversations?.find(r=>r.id===id)).filter(Boolean).map(r=>({...r,quote:r.text}))).map(source=><div key={source.id}><a href={safeURL(source.url)} target="_blank" rel="noreferrer">{source.title}</a><p className="muted">{date(source.publishedAt)}{source.author?` · ${source.author}`:''}{source.discussionClosed?' · Closed discussion':''}</p><blockquote>{source.quote}</blockquote></div>)}</div><NotesList values={insight.unknowns}/></article>)}
    <NotesList values={records.insights?.data.limitations}/>
   </section>}
-  {view==='actions'&&<>
+  {['actions','replies','content'].includes(view)&&<>
    {!state.pipeline?.actionsEnabled?<p>The action tier is disabled on this server.</p>:<>
-    <section className="pipeline-section"><div className="pipeline-section-heading"><div><small>Stage 6</small><h2>Choose a useful contribution</h2><p>A fresh guide, a relevant answer, clearer information, or an offering improvement.</p></div>{button('actions',!records.insights||records.insights.stale)}</div><RecordStatus record={records.actions}/>
+    {view==='actions'&&<section className="pipeline-section"><div className="pipeline-section-heading"><div><small>Stage 6</small><h2>Choose a useful contribution</h2><p>A fresh guide, a relevant answer, clearer information, or an offering improvement.</p></div>{button('actions',!records.insights||records.insights.stale)}</div><RecordStatus record={records.actions}/>
+     {!records.actions&&<p className="view-note">Find insights first, then recommend useful actions.</p>}
      {records.actions?.data.actions?.map(a=><article className="insight-card" key={a.id}><small>{a.type.replaceAll('_',' ')}</small><h3>{a.title}</h3><p>{a.reason}</p><p><strong>What to add:</strong> {a.usefulAddition}</p>{a.affiliation&&<p className="muted">Disclosure: {a.affiliation}</p>}{a.targetURL&&<a href={safeURL(a.targetURL)} target="_blank" rel="noreferrer">Open target conversation</a>}</article>)}<NotesList values={records.actions?.data.limitations}/>
-    </section>
-    <section className="pipeline-section"><div className="pipeline-section-heading"><div><small>Stage 7</small><h2>Prepare posts and replies</h2><p>Practical advice first, with a disclosed business mention only when it fits.</p></div>{button('drafts',!!buffers[`drafts:${product.id}`]||!records.actions||records.actions.stale||!records.actions.data.actions?.some(a=>['fresh_post','answer'].includes(a.type)))}</div><RecordStatus record={records.drafts}/>
-     {records.drafts&&<DraftEditor key={`${product.id}:${records.drafts.generatedAt}:${records.drafts.editedAt}`} product={product} record={records.drafts} action={action} busy={busy} buffered={buffers[`drafts:${product.id}`]} setBuffered={value=>setBuffer(`drafts:${product.id}`,value)}/>}
-    </section>
+    </section>}
+    {draftView&&(view==='replies'||draftActions.length>0)&&<section className="pipeline-section"><div className="pipeline-section-heading"><div><small>Stage 7</small><h2>{view==='replies'?'Replies to conversations':'Post drafts'}</h2><p>{view==='replies'?'Generate editable replies for recent, open conversations.':'Generate editable posts from the needs and questions in your insights.'}</p></div>{button('drafts',!!buffers[`drafts:${product.id}`]||!records.actions||records.actions.stale||!draftActions.length)}</div><RecordStatus record={records.drafts}/>
+     {!draftActions.length&&<p className="view-note">{view==='replies'?'No reply actions yet. Recommend actions for recent, open conversations first.':'No content actions yet. Recommend actions to find useful post ideas first.'} <a href="#actions">Open Actions</a></p>}
+     {draftActions.length>0&&!records.drafts&&<p className="view-note">Prepare drafts from your recommended actions, then review and edit them here.</p>}
+     {records.drafts&&<DraftEditor key={`${product.id}:${view}:${records.drafts.generatedAt}:${records.drafts.editedAt}`} product={product} record={records.drafts} visibleIds={draftIds} action={action} busy={busy} buffered={buffers[`drafts:${product.id}`]} setBuffered={value=>setBuffer(`drafts:${product.id}`,value)}/>}
+    </section>}
    </>}
   </>}
  </div>;
@@ -72,10 +79,10 @@ function SearchPlanEditor({product,generated,action,busy,buffered,setBuffered}){
   <div className="pipeline-controls">{buffered&&<Button variant="ghost" disabled={!!busy} onClick={()=>{updatePlan(initial?structuredClone(initial):null);setBuffered(undefined);}}>Discard edits</Button>}<Button disabled={!!busy||!plan.reviewed} onClick={()=>save('v2')}>Activate v2 listening</Button><Button variant="outline" disabled={!!busy} onClick={()=>save('v1')}>Save plan and use v1</Button></div>
  </div>;
 }
-function DraftEditor({product,record,action,busy,buffered,setBuffered}){
+function DraftEditor({product,record,visibleIds,action,busy,buffered,setBuffered}){
  const [drafts,setDrafts]=useState(buffered||record.data.drafts),[dirty,setDirty]=useState(Boolean(buffered));
  function edit(i,patch){const next=drafts.map((r,n)=>n===i?{...r,...patch}:r);setDrafts(next);setBuffered(next);setDirty(true);}
- return <div>{drafts.map((r,i)=><article className="insight-card" key={r.actionId}>{record.data.drafts[i].title!==''&&<label>Post title<Input value={r.title} maxLength={180} onChange={e=>edit(i,{title:e.target.value})}/></label>}<label>Draft<Textarea value={r.body} maxLength={3500} onChange={e=>edit(i,{body:e.target.value})} className="pipeline-draft"/></label><NotesList values={r.reviewNotes}/><Button variant="outline" onClick={async()=>{try{await navigator.clipboard.writeText([r.title,r.body].filter(Boolean).join('\n\n'));toast.success('Draft copied');}catch{toast.error('Select the draft text and copy it.');}}}>Copy draft</Button></article>)}<Button disabled={!!busy||!dirty||record.stale} onClick={()=>action('draft-save',async()=>{const r=await api(`/products/${product.id}/stages/drafts`,{method:'PUT',body:{drafts}});setBuffered(undefined);return r;},'Draft edits saved')}>Save draft edits</Button>{dirty&&<Button variant="ghost" disabled={!!busy} onClick={()=>{setDrafts(record.data.drafts);setDirty(false);setBuffered(undefined);}}>Discard draft edits</Button>}</div>;
+ return <div>{drafts.map((r,i)=>visibleIds.has(r.actionId)&&<article className="insight-card" key={r.actionId}>{r.targetURL&&<p><a href={safeURL(r.targetURL)} target="_blank" rel="noreferrer">Open target conversation</a></p>}{record.data.drafts[i].title!==''&&<label>Post title<Input value={r.title} maxLength={180} onChange={e=>edit(i,{title:e.target.value})}/></label>}<label>Draft<Textarea value={r.body} maxLength={3500} onChange={e=>edit(i,{body:e.target.value})} className="pipeline-draft"/></label><NotesList values={r.reviewNotes}/><Button variant="outline" onClick={async()=>{try{await navigator.clipboard.writeText([r.title,r.body].filter(Boolean).join('\n\n'));toast.success('Draft copied');}catch{toast.error('Select the draft text and copy it.');}}}>Copy draft</Button></article>)}{drafts.some(r=>visibleIds.has(r.actionId))&&<Button disabled={!!busy||!dirty||record.stale} onClick={()=>action('draft-save',async()=>{const r=await api(`/products/${product.id}/stages/drafts`,{method:'PUT',body:{drafts}});setBuffered(undefined);return r;},'Draft edits saved')}>Save draft edits</Button>}{dirty&&<Button variant="ghost" disabled={!!busy} onClick={()=>{setDrafts(record.data.drafts);setDirty(false);setBuffered(undefined);}}>Discard draft edits</Button>}</div>;
 }
 
 function PhraseList({label,values,onChange}){const [text,setText]=useState(values.join('\n'));useEffect(()=>setText(values.join('\n')),[values.join('\n')]);return <label>{label}<Textarea value={text} maxLength={1500} onChange={e=>{setText(e.target.value);onChange(lines(e.target.value));}}/></label>;}
