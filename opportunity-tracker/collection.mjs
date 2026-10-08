@@ -1,3 +1,4 @@
+import {commentThreadPriority} from './conversation-purpose.mjs';
 import {activeSearchPlan,plannedQueries,compileRedditQuery,listeningReady} from './search-plan.mjs';
 import {captureEvidence,reviewQueueBlock} from './conversation-evidence.mjs';
 import {createBackfill,backfillBlock,applyBackfillPage,backfillError,backfillPublic,finishBackfill} from './backfill.mjs';
@@ -10,7 +11,7 @@ export const COLLECTION_VERSION = 'experiment-v1';
 export const COLLECTION_INTERVAL_MS = 2 * 3600000;
 const OVERLAP = 15 * 60000, DAY = 86400000, PACE = 15000;
 const digest = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
-const profileKey = p => digest({communities:p.communities,keywords:p.keywords,x:p.x,xQueries:p.xQueries,capabilities:p.capabilities,exclusions:p.exclusions,...(p.listeningVersion?{listeningVersion:p.listeningVersion,searchPlan:p.searchPlanV2}:{})});
+const profileKey = p => digest({discoveryVersion:'purpose-discovery-v1',communities:p.communities,keywords:p.keywords,aliases:p.aliases,competitorNames:p.competitorNames,x:p.x,xQueries:p.xQueries,capabilities:p.capabilities,exclusions:p.exclusions,...(p.listeningVersion?{listeningVersion:p.listeningVersion,searchPlan:p.searchPlanV2}:{})});
 const iso = now => new Date(now).toISOString();
 export function collectionSettings(env = process.env) {
   return {enabled:env.TRACKER_COLLECTION_PIPELINE === COLLECTION_VERSION,
@@ -55,7 +56,7 @@ export function beginCollection(data, productId, trigger, now = Date.now()) {
   if(prior?.status==='running')return structuredClone(prior);
   if(trigger==='scheduled' && (!product.monitoring || prior && now-Date.parse(prior.startedAt)<COLLECTION_INTERVAL_MS))return null;
   const plan=activeSearchPlan(product);
-  const queue=[...(plan?plannedQueries(product,'reddit').map(q=>({kind:'search',query:compileRedditQuery(q),queryId:q.id,name:q.community,page:1,sort:'new',includeClosed:true})):(product.communities || []).map(name=>({kind:'listing',name,page:1}))),...xQueries(product).map(query=>({kind:'x',query,page:1}))];
+  const queue=[...(plan?plannedQueries(product,'reddit').map(q=>({kind:'search',query:compileRedditQuery(q),queryId:q.id,purposes:q.purposes,name:q.community,page:1,sort:'new',includeClosed:true})):(product.communities || []).map(name=>({kind:'listing',name,page:1}))),...xQueries(product).map(query=>({kind:'x',query,page:1}))];
   for(const task of queue) {
     const mark=s.watermarks[sourceKey(productId,task)] || (task.kind==='listing'?data.searches[productId]?.lastChecks?.reddit:null);
     task.cutoff=mark?Date.parse(mark)-OVERLAP:now-DAY;
@@ -70,17 +71,15 @@ function planThreads(data, cycle, now) {
   if(cycle.threadsPlanned)return;
   cycle.threadsPlanned=true;
   const s=state(data), product=data.products.find(p=>p.id===cycle.productId);
-  const terms=[...(product?.keywords || []),...(product?.aliases || [])].map(t=>t.toLowerCase());
-  const need=/\?|how|where|track|checklist|wish.?list|workaround|dupli|missing|organis|organiz|spreadsheet|app\b/i;
   const candidates=[...new Map(cycle.posts.map(row=>[row.sourceId,row])).values()].filter(row=> {
-    if(row.commentCount===0 || Date.parse(row.publishedAt)<now-7*DAY)return false;
-    const text=`${row.title} ${row.snippet}`;
-    return need.test(text) || terms.some(term=>text.toLowerCase().includes(term));
+    if(row.commentCount===0)return false;
+    const priority=commentThreadPriority(product,row,row.discoveryPurposes||[]);
+    return priority>0&&(Date.parse(row.publishedAt)>=now-7*DAY||priority>=3);
   }).filter(row=> {
     const prior=s.threads[`${cycle.productId}:${row.sourceId}`];
     // A daily refresh covers edits that do not change the count.
     return !prior || row.commentCount===null || prior.commentCount!==row.commentCount || now-Date.parse(prior.checkedAt)>=DAY;
-  }).sort((a,b)=>(Date.parse(s.threads[`${cycle.productId}:${a.sourceId}`]?.checkedAt || '') || 0)-(Date.parse(s.threads[`${cycle.productId}:${b.sourceId}`]?.checkedAt || '') || 0) || Date.parse(b.publishedAt)-Date.parse(a.publishedAt));
+  }).sort((a,b)=>commentThreadPriority(product,b,b.discoveryPurposes||[])-commentThreadPriority(product,a,a.discoveryPurposes||[])||(Date.parse(s.threads[`${cycle.productId}:${a.sourceId}`]?.checkedAt || '') || 0)-(Date.parse(s.threads[`${cycle.productId}:${b.sourceId}`]?.checkedAt || '') || 0) || Date.parse(b.publishedAt)-Date.parse(a.publishedAt));
   cycle.queue.push(...candidates.slice(0,4).map(post=>({kind:'comments',post,includeClosed:product.listeningVersion==='v2'})));
 }
 function taskURL(task) {
@@ -136,7 +135,7 @@ function applyPage(data,cycle,task,result,now) {
   if(cycle.mode==='backfill')return applyBackfillPage(data,cycle,task,result,now);
   const s=state(data),product=data.products.find(p=>p.id===cycle.productId);if(!product)return;
   const rows=(result.rows || []).map(row=>({...row,snippet:row.snippet.slice(0,3000)}));cycle.rows+=rows.length;
-  if(['listing','search'].includes(task.kind))cycle.posts.push(...rows);
+  if(['listing','search'].includes(task.kind))cycle.posts.push(...rows.map(row=>({...row,discoveryPurposes:task.purposes||[]})));
   const candidates=rows.filter(row=>!(product.exclusions || []).some(term=>`${row.title} ${row.snippet}`.toLowerCase().includes(term.toLowerCase()))).map(row=>({...row,...(task.queryId?{queryId:task.queryId}:{}),pipeline:COLLECTION_VERSION,...(task.kind==='comments'?{context:`${task.post.title}\n${task.post.snippet}`.slice(0,1500)}:{pipelineCutoff:iso(task.cutoff)})}));
   const eligible=candidates.slice(0,Math.max(0,60-cycle.staged));
   captureEvidence(data,product,candidates,iso(now));

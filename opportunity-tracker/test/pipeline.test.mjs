@@ -39,7 +39,7 @@ test('public progress counts the whole queue and current v2 fit preserves saved 
  let visible=await state();assert.equal(visible.pipeline.products[f.p.id].pending,75);assert.equal(stageContext(f.store.snapshot(),f.p.id,'qualify').input.evidence.length,30);assert.equal(visible.items.find(i=>i.id==='legacy-saved').currentOpportunityFit,false);
  await f.runStage(f.p.id,'qualify');visible=await state();assert.equal(visible.pipeline.products[f.p.id].pending,45);
  const saved=visible.items.find(i=>i.id==='legacy-saved');assert.equal(saved.currentOpportunityFit,false);assert.equal(saved.status,'saved');assert.equal(saved.note,'My research note');assert.equal(saved.draft,'My draft');
- const accepted=visible.items.find(i=>i.qualification?.directFit===true);assert.equal(accepted.currentOpportunityFit,true);assert(accepted.qualification.profileHash);
+ const accepted=visible.items.find(i=>i.currentOpportunityFit===true);assert.equal(accepted.currentOpportunityFit,true);assert(accepted.qualification.profileHash);
  const retained=f.store.snapshot();retained.conversationEvidence[f.p.id]=retained.conversationEvidence[f.p.id].filter(r=>r.url!==accepted.url);f.store.commit(retained);
  assert.equal((await state()).items.find(i=>i.id===accepted.id).currentOpportunityFit,true);
  f.store.saveSearchPlan(f.p.id,null,'v1');assert.equal((await state()).items.find(i=>i.id==='legacy-saved').currentOpportunityFit,undefined);

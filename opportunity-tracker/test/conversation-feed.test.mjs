@@ -24,7 +24,7 @@ test('all relevant conversations become reviewable without duplicating or losing
   assert.equal(saved.historical,true);assert.equal(saved.kind,'conversation');assert.equal(saved.status,'saved');assert.equal(saved.note,'Keep my note');assert.equal(saved.draft,'Keep my draft');assert.equal(saved.foundAt,'2025-12-01T00:00:00Z');
   const visible=data.items.map(item=>({...item,...conversationCurrentState(data,item)}));
   assert.equal(visible.filter(item=>matchesConversation(item)).length,4);
-  assert.equal(visible.filter(item=>matchesConversation(item,{relevance:'direct'})).length,3);
+  assert.equal(visible.filter(item=>matchesConversation(item,{relevance:'direct'})).length,2);
   syncConversationItems(data,product);assert.equal(data.items.length,4);
 });
 
@@ -51,7 +51,7 @@ test('qualified relevant records survive sample eviction; legacy mentions remain
   assert.equal(conversationCurrentState(data,item).currentConversationRelevant,true);
   const mention={id:'mention',productId:product.id,kind:'mention',status:'new',url:'https://www.reddit.com/r/vancouver/comments/brand/'};
   const visible={...mention,...conversationCurrentState(data,mention)};
-  assert.equal(matchesConversation(visible),true);assert.equal(matchesConversation(visible,{relevance:'direct'}),false);assert.equal(matchesConversation(visible,{relevance:'mentions'}),true);
+  assert.equal(matchesConversation(visible),true);assert.equal(matchesConversation(visible,{relevance:'direct'}),false);assert.equal(matchesConversation(visible,{relevance:'mentions'}),false,'A legacy kind without source proof does not establish a qualified mention');
   assert.equal(matchesConversation({...item,status:'dismissed'}),false);
 });
 
@@ -72,7 +72,8 @@ test('purpose views share review records and keep feedback separate from direct 
 
 test('purpose views use recorded market feedback and explicit competitor evidence',()=>{
  const item={kind:'conversation',status:'new',currentConversationRelevant:true,currentOpportunityFit:false,qualification:{relevant:true,directFit:false,category:'complaint'}};
- assert.equal(matchesConversation(item,{relevance:'feedback'}),true);
+ assert.equal(matchesConversation(item,{relevance:'feedback'}),false,'A generic complaint is not qualified feedback');
+ assert.equal(matchesConversation({...item,conversationSignals:[{purpose:'feedback'}]},{relevance:'feedback'}),true);
  assert.equal(matchesConversation(item,{relevance:'direct'}),false);
  assert.equal(matchesConversation({...item,currentConversationRelevant:false},{relevance:'feedback'}),false);
  assert.equal(matchesConversation({...item,qualification:{relevant:true,category:'promotion'}},{relevance:'feedback'}),false);

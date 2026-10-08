@@ -1,11 +1,12 @@
+import {conversationSignals,commentThreadPriority} from './conversation-purpose.mjs';
 import {hash,problem,string,array,oneOf} from './pipeline-contract.mjs';
 import {publicUrl} from './metadata.mjs';
 
 export const EVIDENCE_LIMIT=120;
 export const REVIEW_QUEUE_LIMIT=150,REVIEW_WORKSPACE_LIMIT=600;
-export const QUALIFY_PIPELINE_VERSION='listening-qualification-v2';
-export const qualificationInputHash=product=>hash([QUALIFY_PIPELINE_VERSION,product.businessProfileV2,product.searchPlanV2]);
-export function qualificationEvidence(row){return Object.fromEntries(['id','url','title','text','author','community','threadId','type','source','publishedAt','discussionClosed','crosspost'].map(k=>[k,row[k]]));}
+export const QUALIFY_PIPELINE_VERSION='listening-qualification-v3';
+export const qualificationInputHash=product=>hash([QUALIFY_PIPELINE_VERSION,product.businessProfileV2,product.searchPlanV2,product.aliases||[],product.competitorNames||[]]);
+export function qualificationEvidence(row){return Object.fromEntries(['id','url','title','text','author','community','threadId','type','source','publishedAt','discussionClosed','crosspost','context'].map(k=>[k,row[k]]));}
 export function captureEvidence(data,product,rows,at){
   if(product.listeningVersion!=='v2')return;
   data.conversationEvidence ||= {};
@@ -26,11 +27,12 @@ export function captureEvidence(data,product,rows,at){
     const thread=url.pathname.match(/\/comments\/([a-z0-9]+)/i)?.[1];
     const author=typeof row.author==='string'?row.author.slice(0,120):null;
     const title=String(row.title||'').slice(0,500),text=String(row.snippet||'').slice(0,2200);
-    const id=hash([product.id,url.href]).slice(0,24),prior=findEvidence(data,product,id),contentHash=hash([title,text]);
+    const context=typeof row.context==='string'?row.context.slice(0,1500):'';
+    const id=hash([product.id,url.href]).slice(0,24),prior=findEvidence(data,product,id),contentHash=hash(context?[title,text,context]:[title,text]);
     const receipt=data.conversationReviewReceipts?.[product.id]?.[id],item=data.items.find(i=>i.productId===product.id&&canonicalSourceUrl(i.url)===url.href);
     const previous=prior?.qualification||receipt?.qualification||item?.qualification;
     const previousHash=prior?.qualification?prior.contentHash:receipt?.contentHash||item?.qualification?.contentHash;
-    const record={id,url:url.href,title,text,author,community:url.pathname.match(/\/r\/([^/]+)/i)?.[1]?.toLowerCase()||String(row.community||row.subreddit||'').replace(/^r\//,'').toLowerCase().slice(0,21)||null,
+    const record={id,url:url.href,title,text,...(context?{context}:{}),author,community:url.pathname.match(/\/r\/([^/]+)/i)?.[1]?.toLowerCase()||String(row.community||row.subreddit||'').replace(/^r\//,'').toLowerCase().slice(0,21)||null,
       threadId:thread?`reddit:${thread}`:String(row.postId||row.parentId||url.href),type:row.type==='comment'?'comment':'post',source:String(row.source||'').slice(0,80),publishedAt:Number.isFinite(Date.parse(row.publishedAt))?new Date(row.publishedAt).toISOString():null,
       collectedAt:at,historical:row.historical===true||prior?.historical===true,discussionClosed:row.discussionClosed===true,crosspost:row.crosspost===true||Boolean(row.crosspostParent||row.crosspost_parent),contentHash,
       queryIds:[...new Set([...(prior?.queryIds||[]),...(row.queryId?[row.queryId]:[])])].slice(0,12),
@@ -52,7 +54,7 @@ function trimEvidence(data){
 }
 export function evidenceFor(data,product){return data.conversationEvidence?.[product.id]||[];}
 export function findEvidence(data,product,id){return data.conversationReviewQueue?.[product.id]?.find(r=>r.id===id)||evidenceFor(data,product).find(r=>r.id===id);}
-function unqualifiedEvidence(data,product){const h=qualificationInputHash(product),rows=new Map();for(const r of [...(data.conversationReviewQueue?.[product.id]||[]),...evidenceFor(data,product)])if(r.qualification?.profileHash!==h&&!rows.has(r.id))rows.set(r.id,r);return [...rows.values()].sort((a,b)=>a.collectedAt.localeCompare(b.collectedAt)||a.id.localeCompare(b.id));}
+function unqualifiedEvidence(data,product){const h=qualificationInputHash(product),rows=new Map();for(const r of [...(data.conversationReviewQueue?.[product.id]||[]),...evidenceFor(data,product)])if(r.qualification?.profileHash!==h&&!rows.has(r.id))rows.set(r.id,r);const priority=row=>Math.max(commentThreadPriority(product,row),row.type==='comment'&&row.context&&commentThreadPriority(product,{text:row.context})>=3?3:0);return [...rows.values()].sort((a,b)=>priority(b)-priority(a)||a.collectedAt.localeCompare(b.collectedAt)||a.id.localeCompare(b.id));}
 export function pendingEvidence(data,product){return unqualifiedEvidence(data,product).slice(0,30);}
 export function pendingEvidenceCount(data,product){return unqualifiedEvidence(data,product).length;}
 export function reviewQueueBlock(data,product){
@@ -79,9 +81,9 @@ export function saveConversationReview(data,product,row,decision,at,model){
   for(const r of receipts){if(count<=1500&&Buffer.byteLength(JSON.stringify(data.conversationReviewReceipts))<=2000000)break;delete data.conversationReviewReceipts[r.p][r.id];count--;}
   const existing=data.items.find(i=>i.productId===product.id&&canonicalSourceUrl(i.url)===canonicalSourceUrl(row.url));
   if(decision.relevant){
-    const item={...existing,id:existing?.id||hash([product.id,row.url]).slice(0,24),productId:product.id,url:row.url,title:row.title,snippet:row.text,author:row.author,source:row.source,type:row.type,publishedAt:row.publishedAt,historical:row.historical,discussionClosed:row.discussionClosed,kind:existing?.kind==='mention'?'mention':decision.directFit?'opportunity':'conversation',status:existing?.status||'new',note:existing?.note||'',draft:existing?.draft||'',foundAt:existing?.foundAt||at,lastSeenAt:at,reason:decision.reason,matchedTerms:decision.offeringIds.map(id=>product.businessProfileV2.offerings.find(o=>o.id===id).label),qualification:{model,promptVersion:QUALIFY_PIPELINE_VERSION,contentHash:row.contentHash,...row.qualification}};
+    const item={...existing,id:existing?.id||hash([product.id,row.url]).slice(0,24),productId:product.id,url:row.url,title:row.title,snippet:row.text,context:row.context||'',author:row.author,source:row.source,type:row.type,publishedAt:row.publishedAt,historical:row.historical,discussionClosed:row.discussionClosed,kind:existing?.kind==='mention'?'mention':decision.directFit?'opportunity':'conversation',status:existing?.status||'new',note:existing?.note||'',draft:existing?.draft||'',foundAt:existing?.foundAt||at,lastSeenAt:at,reason:decision.reason,matchedTerms:decision.offeringIds.map(id=>product.businessProfileV2.offerings.find(o=>o.id===id).label),qualification:{model,promptVersion:QUALIFY_PIPELINE_VERSION,contentHash:row.contentHash,...row.qualification}};
     data.items=[item,...data.items.filter(i=>i.id!==item.id)];
-  }else if(existing?.qualification?.promptVersion===QUALIFY_PIPELINE_VERSION)existing.qualification={...existing.qualification,...row.qualification};
+  }else if(existing?.qualification)existing.qualification={...existing.qualification,model,promptVersion:QUALIFY_PIPELINE_VERSION,contentHash:row.contentHash,...row.qualification};
 }
 export function canonicalSourceUrl(value){try{const url=new URL(value);url.search='';url.hash='';return url.href;}catch{return value;}}
 export function currentConversationRelevant(data,item){
@@ -93,10 +95,9 @@ export function currentConversationRelevant(data,item){
 }
 export function currentOpportunityFit(data,item){
   const product=data.products.find(p=>p.id===item.productId);
-  if(!product||product.listeningVersion!=='v2'||item.kind!=='opportunity')return true;
-  const profileHash=qualificationInputHash(product),row=evidenceFor(data,product).find(r=>r.url===item.url);
-  if(row)return row.qualification?.profileHash===profileHash&&row.qualification.directFit===true;
-  return item.qualification?.promptVersion==='listening-qualification-v2'&&item.qualification.profileHash===profileHash&&item.qualification.directFit===true;
+  if(!product||product.listeningVersion!=='v2')return true;
+  const row=findEvidence(data,product,hash([product.id,canonicalSourceUrl(item.url)]).slice(0,24)),decision=row?row.qualification:item.qualification;
+  return conversationSignals(product,row||item,decision,{current:decision?.profileHash===qualificationInputHash(product)}).some(signal=>signal.purpose==='potential_customer');
 }
 export function relevantEvidence(data,product){const h=qualificationInputHash(product);return evidenceFor(data,product).filter(x=>x.qualification?.profileHash===h&&x.qualification.relevant);}
 export function validateEvidence(value,products,{limit=EVIDENCE_LIMIT,totalLimit=600}={}){
@@ -108,9 +109,9 @@ export function validateEvidence(value,products,{limit=EVIDENCE_LIMIT,totalLimit
     result[product.id]=rows.map(r=>{
       const url=publicUrl(r.url).href;
       if(!/^[a-f0-9]{24}$/.test(r.id)||!Number.isFinite(Date.parse(r.collectedAt)))problem('Invalid conversation evidence.');
-      const title=string(r.title,500,0),text=string(r.text,2200,0);
+      const title=string(r.title,500,0),text=string(r.text,2200,0),context=string(r.context||'',1500,0);
       // Imported classification is deliberately re-run against the active business.
-      return {id:r.id,url,title,text,author:r.author===null?null:string(r.author,120,0),community:r.community===null?null:string(r.community,21,0),threadId:string(r.threadId,2048),type:oneOf(r.type,['post','comment']),source:string(r.source,80,0),publishedAt:Number.isFinite(Date.parse(r.publishedAt))?r.publishedAt:null,collectedAt:r.collectedAt,historical:r.historical===true,discussionClosed:r.discussionClosed===true,crosspost:r.crosspost===true,contentHash:hash([title,text]),queryIds:array(r.queryIds||[],12).map(x=>string(x,20))};
+      return {id:r.id,url,title,text,...(context?{context}:{}),author:r.author===null?null:string(r.author,120,0),community:r.community===null?null:string(r.community,21,0),threadId:string(r.threadId,2048),type:oneOf(r.type,['post','comment']),source:string(r.source,80,0),publishedAt:Number.isFinite(Date.parse(r.publishedAt))?r.publishedAt:null,collectedAt:r.collectedAt,historical:r.historical===true,discussionClosed:r.discussionClosed===true,crosspost:r.crosspost===true,contentHash:hash(context?[title,text,context]:[title,text]),queryIds:array(r.queryIds||[],12).map(x=>string(x,20))};
     });
     if(new Set(result[product.id].map(x=>x.id)).size!==rows.length)problem('Duplicate conversation evidence.');
   }

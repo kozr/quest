@@ -1,3 +1,4 @@
+import {commentThreadPriority} from './conversation-purpose.mjs';
 import {plannedQueries,compileRedditQuery} from './search-plan.mjs';
 import {captureEvidence} from './conversation-evidence.mjs';
 import {randomUUID} from 'node:crypto';
@@ -24,7 +25,7 @@ export function historicalQueries(product) {
 }
 export function backfillPlan(product,queries,now) {
   const cutoff=now-365*DAY;
-  if(product.listeningVersion==='v2')return [...plannedQueries(product,'reddit').map(q=>({kind:'search',query:compileRedditQuery(q),queryId:q.id,name:q.community,sort:'relevance'})),...queries.map(query=>({kind:'x',query}))].map((task,index)=>({...task,page:1,cutoff,until:now,historical:true,branch:String(index)}));
+  if(product.listeningVersion==='v2')return [...plannedQueries(product,'reddit').map(q=>({kind:'search',query:compileRedditQuery(q),queryId:q.id,purposes:q.purposes,name:q.community,sort:'relevance'})),...queries.map(query=>({kind:'x',query}))].map((task,index)=>({...task,page:1,cutoff,until:now,historical:true,branch:String(index)}));
   const {phrases,families}=historicalQueries(product);
   const reddit=[...families,...phrases.slice(0,2).map(quote)].flatMap(q=>(product.communities||[]).map(name=>({kind:'search',query:`subreddit:${name} AND ${q}`,name,page:1,cutoff,until:now,sort:'relevance'})));
   // Keywords retain topical context when searching outside the saved communities.
@@ -93,7 +94,7 @@ export function applyBackfillPage(data,job,task,result,now) {
   job.staged+=staged.pending;job.duplicates+=staged.duplicates||0;
   job.unassessed+=candidates.length-eligible.length+(staged.unassessed||0);
   if(task.kind==='search' && Object.keys(job.threads).length<BACKFILL_LIMITS.threads) {
-    const post=candidates.find(row=>row.commentCount!==0&&!job.threads[row.sourceId]&&/\?|how|where|help|recommend|track|wish.?list|checklist|workaround|missing|dupli/i.test(`${row.title} ${row.snippet}`));
+    const post=candidates.filter(row=>row.commentCount!==0&&!job.threads[row.sourceId]&&commentThreadPriority(product,row,task.purposes||[])>0).sort((a,b)=>commentThreadPriority(product,b,task.purposes||[])-commentThreadPriority(product,a,task.purposes||[]))[0];
     if(post){job.threads[post.sourceId]=true;job.queue.push({kind:'comments',post,historical:true,cutoff:Date.parse(job.from),until:Date.parse(job.to)});}
   }
   if(task.kind!=='comments') {

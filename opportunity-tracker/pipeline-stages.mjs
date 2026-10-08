@@ -1,3 +1,4 @@
+import {QUALIFY_PIPELINE_VERSION} from './conversation-evidence.mjs';
 import {hash,problem,PIPELINE_VERSION} from './pipeline-contract.mjs';
 import {searchPlanInput,SEARCH_PLAN_SCHEMA,SEARCH_PLAN_PROMPT,validateSearchPlan,reviewedBusiness} from './search-plan.mjs';
 import {qualificationInput,QUALIFY_V2_SCHEMA,QUALIFY_V2_PROMPT,validateV2Qualification} from './listening-qualification.mjs';
@@ -10,8 +11,8 @@ function currentRecord(data,p,stage){
   return row.data;
 }
 export const STAGE_DEFINITIONS={
-  search_plan:{number:2,promptVersion:'search-plan-v1',prompt:SEARCH_PLAN_PROMPT,schema:SEARCH_PLAN_SCHEMA,maxOutput:5000,input:(data,p)=>searchPlanInput(p),validate:(value,p,input)=>validateSearchPlan(value,p)},
-  qualify:{number:4,promptVersion:'listening-qualification-v2',prompt:QUALIFY_V2_PROMPT,schema:QUALIFY_V2_SCHEMA,maxOutput:8000,input:qualificationInput,validate:validateV2Qualification},
+  search_plan:{number:2,promptVersion:'purpose-search-plan-v2',prompt:SEARCH_PLAN_PROMPT,schema:SEARCH_PLAN_SCHEMA,maxOutput:5000,input:(data,p)=>searchPlanInput(p),validate:(value,p,input)=>validateSearchPlan(value,p)},
+  qualify:{number:4,promptVersion:QUALIFY_PIPELINE_VERSION,prompt:QUALIFY_V2_PROMPT,schema:QUALIFY_V2_SCHEMA,maxOutput:8000,input:qualificationInput,validate:validateV2Qualification},
   insights:{number:5,promptVersion:'listening-insights-v1',prompt:INSIGHTS_PROMPT,schema:INSIGHTS_SCHEMA,maxOutput:5000,input:insightsInput,validate:validateInsights},
   actions:{number:6,promptVersion:'actions-v2',prompt:ACTION_PROMPT,schema:ACTION_SCHEMA,maxOutput:5000,input:(data,p)=>({business:reviewedBusiness(p),insights:currentRecord(data,p,'insights').insights,asOf:new Date().toISOString().slice(0,10)}),validate:validateActions},
   drafts:{number:7,promptVersion:'advice-first-drafts-v1',prompt:DRAFT_PROMPT,schema:DRAFT_SCHEMA,maxOutput:7000,input:(data,p)=>{
@@ -41,7 +42,7 @@ function declared(value,schema){
   if(type==='string'){if(typeof value!=='string'||value.length>(schema.maxLength||5000))problem('Invalid imported stage text.');return value;}
   if(type==='boolean'){if(typeof value!=='boolean')problem('Invalid imported stage value.');return value;}
   if(type==='array'){if(!Array.isArray(value)||value.length>(schema.maxItems||120)||value.length<(schema.minItems||0))problem('Invalid imported stage entries.');return value.map(v=>declared(v,schema.items));}
-  if(type==='object'){if(!value||typeof value!=='object'||Array.isArray(value))problem('Invalid imported stage output.');return Object.fromEntries(Object.entries(schema.properties).map(([k,s])=>[k,declared(value[k],s)]));}
+  if(type==='object'){if(!value||typeof value!=='object'||Array.isArray(value))problem('Invalid imported stage output.');return Object.fromEntries(Object.entries(schema.properties).map(([k,s])=>[k,declared(value[k]===undefined&&k==='purposes'?(s.items.type==='string'?['potential_customer']:[]):value[k],s)]));}
   problem('Invalid imported stage schema.');
 }
 export function validateStageRecords(value,products){

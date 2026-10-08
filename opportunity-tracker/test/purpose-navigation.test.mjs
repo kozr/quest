@@ -25,8 +25,8 @@ test('mention monitoring never presents market research as brand-mention evidenc
 
 function fixture(){
  const conversations=[
-  {id:'fit',url:'https://www.reddit.com/r/example/comments/fit/',classificationCurrent:true,qualification:{relevant:true,directFit:true,category:'question',resolved:'unknown'}},
-  {id:'market',url:'https://www.reddit.com/r/example/comments/market/',classificationCurrent:true,qualification:{relevant:true,directFit:false,category:'complaint',resolved:'unknown'}}
+  {id:'fit',url:'https://www.reddit.com/r/example/comments/fit/',classificationCurrent:true,qualification:{relevant:true,directFit:true,category:'question',resolved:'unknown',purposes:[{purpose:'feedback'}]}},
+  {id:'market',url:'https://www.reddit.com/r/example/comments/market/',classificationCurrent:true,qualification:{relevant:true,directFit:false,category:'complaint',resolved:'unknown',purposes:[{purpose:'feedback'}]}}
  ];
  const insights=[{id:'fit-pattern',evidenceIds:['fit'],independentThreadCount:3},{id:'mixed-pattern',evidenceIds:['fit','market'],independentThreadCount:4},{id:'unsupported',evidenceIds:['missing'],independentThreadCount:99}];
  return {items:[],pipeline:{products:{p:{conversations}},stages:{p:{insights:{data:{insights}}}}}};

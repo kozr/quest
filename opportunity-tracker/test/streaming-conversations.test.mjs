@@ -54,7 +54,7 @@ test('queue preserves in-flight rows past the 120-record sample and receipts avo
  assert.equal(pendingEvidenceCount(f.store.snapshot(),f.p),1);
  assert.equal(conversationCurrentState(f.store.snapshot(),f.store.snapshot().items.find(i=>i.id===item.id)).currentConversationRelevant,false);
  const pending=f.store.claimStage(f.p.id,'qualify',null,false,now+32),value=stageValue('qualify',pending.input);
- value.results[0]={...value.results[0],relevant:false,directFit:false,offeringIds:[],need:'',quote:'',reason:'This changed source is no longer relevant.'};
+ value.results[0]={...value.results[0],relevant:false,directFit:false,offeringIds:[],purposes:[],need:'',quote:'',reason:'This changed source is no longer relevant.'};
  f.store.finishStage(pending.lease,{value,model:'fixture'},now+33);
  const saved=f.store.snapshot().items.find(i=>i.id===item.id);
  assert.equal(saved.note,'Keep my note');assert.equal(saved.draft,'Unsent text');assert.equal(saved.status,'saved');
