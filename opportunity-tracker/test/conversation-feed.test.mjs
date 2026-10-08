@@ -17,11 +17,11 @@ function reviewed(){
 
 test('all relevant conversations become reviewable without duplicating or losing older review records',()=>{
   const {data,product}=reviewed(),complaint=data.conversationEvidence.cafe.find(row=>!row.qualification.directFit);
-  data.items=[{id:'old-review',productId:product.id,url:complaint.url+'?source=old',kind:'opportunity',status:'saved',note:'Keep my note',draft:'Keep my draft',foundAt:'2025-12-01T00:00:00Z'}];
+  data.items=[{id:'old-review',productId:product.id,url:complaint.url+'?source=old',kind:'opportunity',status:'saved',note:'Keep my note',draft:'Keep my draft',historical:true,foundAt:'2025-12-01T00:00:00Z'}];
   syncConversationItems(data,product);
   assert.equal(data.items.length,4);
   const saved=data.items.find(item=>item.id==='old-review');
-  assert.equal(saved.kind,'conversation');assert.equal(saved.status,'saved');assert.equal(saved.note,'Keep my note');assert.equal(saved.draft,'Keep my draft');assert.equal(saved.foundAt,'2025-12-01T00:00:00Z');
+  assert.equal(saved.historical,true);assert.equal(saved.kind,'conversation');assert.equal(saved.status,'saved');assert.equal(saved.note,'Keep my note');assert.equal(saved.draft,'Keep my draft');assert.equal(saved.foundAt,'2025-12-01T00:00:00Z');
   const visible=data.items.map(item=>({...item,...conversationCurrentState(data,item)}));
   assert.equal(visible.filter(item=>matchesConversation(item)).length,4);
   assert.equal(visible.filter(item=>matchesConversation(item,{relevance:'direct'})).length,3);

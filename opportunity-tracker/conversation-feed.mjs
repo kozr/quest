@@ -14,7 +14,7 @@ export function syncConversationItems(data,product){
     const existing=data.items.find(item=>item.productId===product.id&&sourceURL(item.url)===sourceURL(row.url));
     const qualification={...existing?.qualification,model:existing?.qualification?.model||data.pipelineStages?.[product.id]?.qualify?.model,promptVersion:QUALIFY_PIPELINE_VERSION,contentHash:row.contentHash,...decision};
     if(!decision.relevant){if(existing)existing.qualification=qualification;continue;}
-    const item={...existing,id:existing?.id||hash([product.id,row.url]).slice(0,24),productId:product.id,url:row.url,title:row.title,snippet:row.text,author:row.author,source:row.source,type:row.type,publishedAt:row.publishedAt,historical:row.historical===true,discussionClosed:row.discussionClosed,
+    const item={...existing,id:existing?.id||hash([product.id,row.url]).slice(0,24),productId:product.id,url:row.url,title:row.title,snippet:row.text,author:row.author,source:row.source,type:row.type,publishedAt:row.publishedAt,historical:row.historical===true||existing?.historical===true,discussionClosed:row.discussionClosed,
       kind:existing?.kind==='mention'?'mention':decision.directFit?'opportunity':'conversation',...(existing?{}:{status:'new',note:'',draft:'',foundAt:decision.qualifiedAt||row.collectedAt}),lastSeenAt:row.collectedAt,reason:decision.reason,
       matchedTerms:(decision.offeringIds||[]).flatMap(id=>{const offering=product.businessProfileV2.offerings.find(o=>o.id===id);return offering?[offering.label]:[];}),qualification};
     data.items=[item,...data.items.filter(previous=>previous.id!==item.id)];
