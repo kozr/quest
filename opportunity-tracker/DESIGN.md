@@ -2,23 +2,23 @@
 name: HearWhispers Review Desk
 description: A private workspace for reviewing source conversations and preparing considered responses.
 colors:
-  background: "#fefdfc"
-  foreground: "#262523"
-  primary: "#28675f"
+  background: "#ffffff"
+  foreground: "#0a0a0a"
+  primary: "#171717"
   primary-foreground: "#fff"
-  sidebar: "#f8f7f5"
-  sidebar-accent: "#eeebe7"
-  selected-row: "#edf5f3"
-  row-hover: "#f4f8f6"
-  active-platform-text: "#1f554e"
-  text-selection: "#d3e7e1"
-  muted: "#f5f4f2"
-  muted-foreground: "#686661"
-  border: "#e4e0db"
-  input: "#dedad5"
-  secondary: "#eef3f1"
-  secondary-foreground: "#2e403b"
-  accent: "#eaf2ef"
+  sidebar: "#fafafa"
+  sidebar-accent: "#f0f0f0"
+  selected-row: "#f1f1f1"
+  row-hover: "#f7f7f7"
+  active-platform-text: "#171717"
+  text-selection: "#dedede"
+  muted: "#f5f5f5"
+  muted-foreground: "#666666"
+  border: "#e5e5e5"
+  input: "#dedede"
+  secondary: "#f5f5f5"
+  secondary-foreground: "#171717"
+  accent: "#f5f5f5"
   error-text: "#9c342c"
 typography:
   headline: {fontFamily: '"Geist Variable", sans-serif', fontSize: "32px", fontWeight: 650, lineHeight: 1.2, letterSpacing: "-1.1px"}
@@ -42,21 +42,21 @@ components:
 
 **Creative North Star: "Review Desk"**
 
-The user-selected option 3 uses warm neutral surfaces, fine rules, compact navigation, and space for source evidence beside a response draft. It implements the approved `prototypes/hearwhispers-web/evidence/review-desk/desktop-final.png` with real shadcn/Radix sidebar-07 components and Lucide SVG icons. Geist is self-hosted; no shipping raster assets are used. This record supersedes the obsolete plain-CSS/password guidance and applies only to this web tracker. Product truth is in `opportunity-tracker/README.md`; the repository-root PRODUCT.md belongs to the separate iPhone app.
+The user-selected option 3 uses neutral white and gray surfaces, fine rules, compact navigation, and space for source evidence beside a response draft. It implements the approved `prototypes/hearwhispers-web/evidence/review-desk/desktop-final.png` with real shadcn/Radix sidebar-07 components and Lucide SVG icons. Geist is self-hosted; no shipping raster assets are used. This record supersedes the obsolete plain-CSS/password guidance and applies only to this web tracker. Product truth is in `opportunity-tracker/README.md`; the repository-root PRODUCT.md belongs to the separate iPhone app.
 
 **Key Characteristics:**
 
-- Warm paper, a quiet sidebar, and a muted teal accent.
+- White canvas, a quiet sidebar, and a charcoal action color.
 - A compact queue above source evidence and an editable draft.
 - Explicit save states and focused mobile conversation review.
 
-The finish reviewer returned **ship**, with no material fixes. Evidence is in `opportunity-tracker/.impeccable/review/{desktop,mobile,mobile-detail,login-mobile}.png`. Workspace captures use local fixture data; the login capture uses a fixture Google button, not the production provider rendering.
+The earlier layout finish reviewer returned **ship**, with no material fixes. That review predates the monochrome palette update. Evidence is in `opportunity-tracker/.impeccable/review/{desktop,mobile,mobile-detail,login-mobile}.png`. Workspace captures use local fixture data; the login capture uses a fixture Google button, not the production provider rendering.
 
 ## Colors
 
-On October 8, 2026, the user rejected the reddish clay accent shown in the Conversations screen. The implementation now uses muted teal for actions, active tabs, focus, carets, and selected-row rules, with pale teal selection and hover fills. This supersedes the original clay palette while preserving the Review Desk layout and neutral surfaces.
+On October 8, 2026, the user rejected both reddish clay and teal, and asked for colors grounded in HearWhispers’ brand. The existing landing page (`prototypes/hearwhispers-web/src/LandingPage.jsx` and its unscoped theme in `src/styles.css`) is the color reference: white, black/charcoal actions and typography, and soft gray borders and artwork. The tracker now follows that monochrome palette, retaining the Review Desk layout. Neither clay nor teal is an approved brand color.
 
-The frontmatter records the implemented palette. The scoped Review Desk overrides in `opportunity-tracker/ui/src/styles.css` are authoritative. Teal marks the source action, source quote, selected-row rule, focus, and caret. Paper and warm sidebar separate work from navigation; muted fills and warm borders separate controls and metadata. Selected rows use pale teal. Error text stays distinct. **The Selected Direction Rule.** The source and selected-row left rules belong to the user-pinned design and are explicit exceptions to the generic detector's side-tab ban.
+The frontmatter records the implemented palette. The scoped Review Desk overrides in `opportunity-tracker/ui/src/styles.css` are authoritative. Charcoal marks the source action, source quote, selected-row rule, focus, and caret. White canvas and light gray sidebar separate work from navigation; muted fills and gray borders separate controls and metadata. Selected rows use light gray. Error text stays distinct. **The Selected Direction Rule.** The source and selected-row left rules belong to the user-pinned design and are explicit exceptions to the generic detector's side-tab ban.
 
 ## Typography
 
@@ -70,7 +70,7 @@ At 1350px the toolbar wraps and detail tracks become equal. At 1100px detail pan
 
 ## Elevation & Depth
 
-Content stays flat with tonal separation and fine rules. Outline buttons and inputs retain shadcn extra-small shadows; active status tabs have small shadows. The draft removes its shadow; dialogs and mobile sheets retain overlay elevation and a half-black backdrop. Teal outlines and component focus rings remain visible. Row hover transitions take 120ms and sidebar transitions 200ms linear; reduced motion reduces animation/transition duration to 0.01ms.
+Content stays flat with tonal separation and fine rules. Outline buttons and inputs retain shadcn extra-small shadows; active status tabs have small shadows. The draft removes its shadow; dialogs and mobile sheets retain overlay elevation and a half-black backdrop. Charcoal outlines and component focus rings remain visible. Row hover transitions take 120ms and sidebar transitions 200ms linear; reduced motion reduces animation/transition duration to 0.01ms.
 
 ## Shapes
 
@@ -78,7 +78,7 @@ Desk controls have 6px corners, tab trays 7px, tabs 5px, and brand/product icon 
 
 ## Components
 
-The sidebar has **HearWhispers** and **ActOnWhispers** groups. HearWhispers contains Conversations, Saved, Products, Listening, Insights and Research; ActOnWhispers contains Actions & drafts. Settings stays in the footer. A product switcher below the brand replaces the lower product shortcut list and duplicate selectors in individual views, maintaining one selected product across the tools. The header names the current group. No plan explanations or comparison page appear in the app. Semantic queue buttons expose selection and saved bookmarks. Platform filters cover Reddit, X, LinkedIn, and Other when present. Status tabs separate All active, New, and Dismissed; saved decisions also have a dedicated view. The filled teal action opens the original source; outline controls save/copy drafts; saved decisions use secondary fill; Dismiss and Check now use ghost controls.
+The sidebar has **HearWhispers** and **ActOnWhispers** groups. HearWhispers contains Conversations, Saved, Products, Listening, Insights and Research; ActOnWhispers contains Actions & drafts. Settings stays in the footer. A product switcher below the brand replaces the lower product shortcut list and duplicate selectors in individual views, maintaining one selected product across the tools. The header names the current group. No plan explanations or comparison page appear in the app. Semantic queue buttons expose selection and saved bookmarks. Platform filters cover Reddit, X, LinkedIn, and Other when present. Status tabs separate All active, New, and Dismissed; saved decisions also have a dedicated view. The filled charcoal action opens the original source; outline controls save/copy drafts; saved decisions use secondary fill; Dismiss and Check now use ghost controls.
 
 Source context retains author/source/date, literal evidence, optional parent context, historical/closed status, and Potential fit. Draft status reads Not started, Unsaved changes, Saving…, Saved to your workspace, or Saved locally. Save draft explicitly persists via the item API and confirms with a Draft saved toast; failures appear inline. Notes have a separate Save note action. Unsaved draft/note buffers survive conversation and view switches in the mounted workspace; page exit warns and sign-out asks before discarding them. They are not guaranteed to survive refresh, browser termination, or session loss. Copy draft and Use this draft do not save or post responses. Nothing posts automatically.
 

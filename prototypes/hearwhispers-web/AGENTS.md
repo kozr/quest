@@ -1,5 +1,9 @@
 # Prototype Instructions
 
+## Color preference — October 8, 2026
+
+- The user rejected reddish clay and teal and requested a palette grounded in HearWhispers’ brand. The landing page’s existing white, black/charcoal, and soft gray palette is the reference for dashboard colors. This supersedes the older clay-color guidance below; preserve the selected Review Desk layout.
+
 ## HearWhispers direction — October 7, 2026
 
 - The product name is **HearWhispers**, exactly this capitalization. The project folder is `prototypes/hearwhispers-web`; code and storage use `hearwhispers`. Preserve existing preview data through `src/lib/preview-storage.js`, where legacy identifiers are retained only for migration.
