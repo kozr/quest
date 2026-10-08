@@ -3,6 +3,7 @@ import {hash,problem,string,array,oneOf} from './pipeline-contract.mjs';
 import {publicUrl} from './metadata.mjs';
 
 export const EVIDENCE_LIMIT=120;
+export const REVIEW_BATCH_LIMIT=12;
 export const REVIEW_QUEUE_LIMIT=150,REVIEW_WORKSPACE_LIMIT=600;
 export const QUALIFY_PIPELINE_VERSION='listening-qualification-v3';
 export const qualificationInputHash=product=>hash([QUALIFY_PIPELINE_VERSION,product.businessProfileV2,product.searchPlanV2,product.aliases||[],product.competitorNames||[]]);
@@ -55,7 +56,7 @@ function trimEvidence(data){
 export function evidenceFor(data,product){return data.conversationEvidence?.[product.id]||[];}
 export function findEvidence(data,product,id){return data.conversationReviewQueue?.[product.id]?.find(r=>r.id===id)||evidenceFor(data,product).find(r=>r.id===id);}
 function unqualifiedEvidence(data,product){const h=qualificationInputHash(product),rows=new Map();for(const r of [...(data.conversationReviewQueue?.[product.id]||[]),...evidenceFor(data,product)])if(r.qualification?.profileHash!==h&&!rows.has(r.id))rows.set(r.id,r);const priority=row=>Math.max(commentThreadPriority(product,row),row.type==='comment'&&row.context&&commentThreadPriority(product,{text:row.context})>=3?3:0);return [...rows.values()].sort((a,b)=>priority(b)-priority(a)||a.collectedAt.localeCompare(b.collectedAt)||a.id.localeCompare(b.id));}
-export function pendingEvidence(data,product){return unqualifiedEvidence(data,product).slice(0,30);}
+export function pendingEvidence(data,product){return unqualifiedEvidence(data,product).slice(0,REVIEW_BATCH_LIMIT);}
 export function pendingEvidenceCount(data,product){return unqualifiedEvidence(data,product).length;}
 export function reviewQueueBlock(data,product){
   if(product.listeningVersion!=='v2')return null;
@@ -66,7 +67,7 @@ export function reviewQueueBlock(data,product){
 export function qualificationDue(data,product,now=Date.now()){
   const rows=unqualifiedEvidence(data,product);if(!rows.length)return false;
   const collecting=[data.collection?.cycles?.[product.id],data.collection?.backfills?.[product.id]].some(j=>j?.status==='running'&&!j.blocked);
-  return rows.length>=30||!collecting||now-Date.parse(rows[0].collectedAt)>=60000;
+  return rows.length>=REVIEW_BATCH_LIMIT||!collecting||now-Date.parse(rows[0].collectedAt)>=60000;
 }
 export function saveConversationReview(data,product,row,decision,at,model){
   row.qualification={...decision,profileHash:qualificationInputHash(product),qualifiedAt:at};

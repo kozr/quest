@@ -27,14 +27,14 @@ const search=(f,rs,at=Date.now())=>f.store.recordSearch(f.p.id,{semantic:true,it
 const review=(f,now)=>{const claim=f.store.claimStage(f.p.id,'qualify',null,false,now);return f.store.finishStage(claim.lease,{value:stageValue('qualify',claim.input),model:'fixture-sol'},now+1);};
 
 test('a completed batch reaches the customer while the backfill is still running',async t=>{
- const f=await fixture(t),now=Date.now();f.store.beginBackfill(f.p.id,now);search(f,rows(35),now);review(f,now+1);
+ const f=await fixture(t),now=Date.now();f.store.beginBackfill(f.p.id,now);const initial=rows(35);initial[3].title=f.p.name+' lunch delivery is frustrating';search(f,initial,now);review(f,now+1);
  assert.equal(f.store.snapshot().collection.backfills[f.p.id].status,'running');
  const server=f.app.listen(0,'127.0.0.1');await once(server,'listening');t.after(()=>new Promise(resolve=>server.close(resolve)));
  const state=await (await fetch(`http://127.0.0.1:${server.address().port}/api/state`)).json();
- assert.equal(state.pipeline.products[f.p.id].pending,5);assert.equal(state.discovery[f.p.id].phase,'finding');
- assert.equal(state.items.filter(i=>matchesConversation(i)).length,30);
+ assert.equal(state.pipeline.products[f.p.id].pending,23);assert.equal(state.discovery[f.p.id].phase,'finding');
+ assert.equal(state.items.filter(i=>matchesConversation(i)).length,12);
  assert(state.items.some(i=>i.kind==='conversation'&&i.currentConversationRelevant&&!i.currentOpportunityFit));
- const status=feedProgress(state,[f.p],now+1);assert.match(status.message,/30 conversations ready to review · Finding more conversations/);
+ const status=feedProgress(state,[f.p],now+1);assert.match(status.message,/12 conversations ready to review · Finding more conversations/);
 });
 
 test('queue preserves in-flight rows past the 120-record sample and receipts avoid duplicate review',async t=>{
@@ -43,10 +43,10 @@ test('queue preserves in-flight rows past the 120-record sample and receipts avo
  assert.equal(f.store.snapshot().conversationEvidence[f.p.id].length,120);
  assert.equal(pendingEvidenceCount(f.store.snapshot(),f.p),150);
  f.store.finishStage(claim.lease,{value:stageValue('qualify',claim.input),model:'fixture'},now+2);
- for(let i=0;i<4;i++)review(f,now+3+i);
+ for(let i=0;i<12;i++)review(f,now+3+i);
  assert.equal(pendingEvidenceCount(f.store.snapshot(),f.p),0);assert.equal(f.store.snapshot().items.length,150);
  const earliest=claim.input.evidence[0],item=f.store.snapshot().items.find(i=>i.url===earliest.url);f.store.updateItem(item.id,{status:'saved',note:'Keep my note',draft:'Unsent text'});
- search(f,rows(120,150),now+20);for(let i=0;i<4;i++)review(f,now+21+i);
+ search(f,rows(120,150),now+20);for(let i=0;i<10;i++)review(f,now+21+i);
  assert.equal(f.store.snapshot().conversationEvidence[f.p.id].some(r=>r.id===earliest.id),false);
  assert.equal(conversationCurrentState(f.store.snapshot(),f.store.snapshot().items.find(i=>i.id===item.id)).currentConversationRelevant,true);
  search(f,[initial.find(r=>r.url===earliest.url)],now+30);assert.equal(pendingEvidenceCount(f.store.snapshot(),f.p),0);

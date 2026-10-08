@@ -23,12 +23,16 @@ export function qualificationSettings(env = process.env, now = Date.now()) {
   const mode = env.TRACKER_AI_MODE === undefined ? 'ongoing' : ['test','ongoing'].includes(env.TRACKER_AI_MODE) ? env.TRACKER_AI_MODE : null;
   const dollars = Number(env.TRACKER_AI_DAILY_BUDGET_USD || 0), maxCalls = Number(env.TRACKER_AI_DAILY_MAX_CALLS || 2000);
   const until = Date.parse(env.TRACKER_AI_BUDGET_UNTIL || '');
-  // The owner's approved tracker allowance is $2 per Pacific day. A larger
-  // environment value cannot raise it. Homiegraph has no access to this ledger.
-  const budgetReady = mode && Number.isFinite(dollars) && dollars > 0 && dollars <= 2 && Number.isSafeInteger(maxCalls) && maxCalls > 0 && maxCalls <= 2000 && (!env.TRACKER_AI_BUDGET_UNTIL || Number.isFinite(until) && until > now);
+  // The recurring allowance stays at $2 per Pacific day. A dated owner-approved
+  // top-up applies only on that Pacific day, without resetting recorded usage.
+  const extraDay = env.TRACKER_AI_EXTRA_BUDGET_DAY;
+  const extraDollars = Number(env.TRACKER_AI_EXTRA_BUDGET_USD || 0);
+  const extraReady = Number.isFinite(extraDollars) && extraDollars >= 0 && extraDollars <= 3 && (!extraDollars || /^\d{4}-\d{2}-\d{2}$/.test(extraDay || ''));
+  const extraToday = extraReady && extraDay === budgetDay(now) ? extraDollars : 0;
+  const budgetReady = extraReady && mode && Number.isFinite(dollars) && dollars > 0 && dollars <= 2 && Number.isSafeInteger(maxCalls) && maxCalls > 0 && maxCalls <= 2000 && (!env.TRACKER_AI_BUDGET_UNTIL || Number.isFinite(until) && until > now);
   const configured = Boolean(env.TRACKER_OPENAI_API_KEY) && budgetReady;
   return {enabled, configured, active:enabled && configured, mode, model:QUALIFICATION_MODEL,
-    budgetMicroUsd: Math.floor(dollars * 1e6), maxCalls, until: Number.isFinite(until) ? until : Infinity,
+    budgetMicroUsd: Math.floor((dollars + extraToday) * 1e6), maxCalls, until: Number.isFinite(until) ? until : Infinity,
     dailyMaxCalls:maxCalls, reason:!enabled?'disabled':!env.TRACKER_OPENAI_API_KEY?'key_required':!budgetReady?'budget_required':null};
 }
 

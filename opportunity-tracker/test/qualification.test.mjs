@@ -185,3 +185,15 @@ test('real Firestore CAS prevents duplicate paid dispatch across independent ins
   await assert.rejects(()=>b.importData({version:1,products:[],items:[],searches:{}}),/running AI/);release();assert.equal((await first).status,'rejected');
   assert.equal((await new FirestoreStore(new FirestoreBackend(db,workspace)).snapshot()).aiBudget.spentMicroUsd,200);
 });
+
+ test('dated $3 top-up adds allowance without raising tomorrow’s recurring budget',async t=>{
+  const boosted={...env,TRACKER_AI_EXTRA_BUDGET_USD:'3',TRACKER_AI_EXTRA_BUDGET_DAY:'2026-10-08'};
+  const now=Date.parse('2026-10-09T06:59:59Z'),settings=qualificationSettings(boosted,now);
+  assert.equal(settings.active,true);assert.equal(settings.budgetMicroUsd,5_000_000);
+  assert.equal(qualificationSettings(boosted,now+1000).budgetMicroUsd,2_000_000);
+  assert.equal(qualificationSettings({...boosted,TRACKER_AI_EXTRA_BUDGET_USD:'4'},now).active,false);
+  assert.equal(qualificationSettings({...boosted,TRACKER_AI_EXTRA_BUDGET_DAY:''},now).active,false);
+  const {store,p}=await fixture(t);stage(store,p,[row()]);
+  const data=store.snapshot();data.aiBudget={spentMicroUsd:1_994_822,reservedMicroUsd:0,calls:68,daily:{},dailyUsage:{[budgetDay(now)]:{spentMicroUsd:1_994_822,reservedMicroUsd:0,calls:68}}};store.commit(data);
+  const claim=store.claimQualification(settings,now,p.id);assert(claim);assert.equal(store.snapshot().aiBudget.dailyUsage[budgetDay(now)].spentMicroUsd,1_994_822);
+ });
