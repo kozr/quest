@@ -1,4 +1,4 @@
-import { AtSign, AudioLines, ChartNoAxesCombined, ChevronsUpDown, Clapperboard, ListTodo, MessageSquareText, MessagesSquare, Package2, Plus, ScanLine, Search, Settings2, Users } from "lucide-react";
+import { AtSign, ChevronsUpDown, Clapperboard, ListTodo, MessageSquareText, MessagesSquare, Package2, Plus, ScanLine, Settings2, Users } from "lucide-react";
 import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarRail, useSidebar } from "@/components/ui/sidebar";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
@@ -7,9 +7,10 @@ import { BrandIcon } from "@/components/brand-icon";
 import {defaultPurposes,purposes,loadActivePurpose} from "@/purposes.mjs";
 const purposeIcons={mentions:AtSign,opportunities:Users,feedback:MessagesSquare,competitors:ScanLine};
 
-export function AppSidebar({ view, navigate, products, productId, allowAllProducts, onProduct, onAdd, storage, enabledPurposes=defaultPurposes, onPurposes }) {
+export function AppSidebar({ view, navigate, products, productId, allowAllProducts, onProduct, onAdd, onEdit, storage, enabledPurposes=defaultPurposes, onPurposes }) {
   const { isMobile, setOpenMobile } = useSidebar();
-  const productName = products.find(product => product.id === productId)?.name || (products.length ? "All products" : "Choose a product");
+  const selectedProduct = products.find(product => product.id === productId);
+  const productName = selectedProduct?.name || (products.length ? "All products" : "Choose a product");
   function go(next) { navigate(next); setOpenMobile(false); }
   function item(id, label, Icon) {
     const active=view===id;
@@ -33,6 +34,7 @@ export function AppSidebar({ view, navigate, products, productId, allowAllProduc
               {products.map(product => <DropdownMenuRadioItem key={product.id} value={product.id}>{product.name}</DropdownMenuRadioItem>)}
             </DropdownMenuRadioGroup>
             <DropdownMenuSeparator />
+            {selectedProduct&&<DropdownMenuItem onSelect={()=>{setOpenMobile(false);onEdit(selectedProduct);}}><Settings2/>Product details</DropdownMenuItem>}
             <DropdownMenuItem onSelect={() => {setOpenMobile(false); onAdd();}}><Plus />Add product</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -44,7 +46,6 @@ export function AppSidebar({ view, navigate, products, productId, allowAllProduc
         <SidebarGroupContent><SidebarMenu>
           {purposes.filter(purpose=>enabledPurposes.includes(purpose.id)).map(purpose=>item(purpose.id,purpose.label,purposeIcons[purpose.id]))}
           <SidebarMenuItem><SidebarMenuButton className="text-muted-foreground" tooltip={enabledPurposes.length<purposes.length?"Add purpose":"Manage purposes"} onClick={()=>{setOpenMobile(false);onPurposes();}}><Plus/><span>{enabledPurposes.length<purposes.length?"Add purpose":"Manage purposes"}</span></SidebarMenuButton></SidebarMenuItem>
-          {[{id:"products",label:"Products",icon:Package2},{id:"listening",label:"Listening",icon:AudioLines},{id:"insights",label:"Insights",icon:ChartNoAxesCombined},{id:"research",label:"Research",icon:Search}].map(({id,label,icon:Icon})=>item(id,label,Icon))}
         </SidebarMenu></SidebarGroupContent>
       </SidebarGroup>
       <SidebarGroup>

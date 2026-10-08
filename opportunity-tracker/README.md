@@ -1,5 +1,7 @@
 # HearWhispers product tracker
 
+Current dashboard chats use this canonical release checkout and the fixture preview at **http://127.0.0.1:50740/**. Read `../AGENTS.md` for shared source, UI decisions, and coordination. The generic startup instructions below do not identify the shared review process. Production is [product-opportunity-tracker.vercel.app](https://product-opportunity-tracker.vercel.app/).
+
 A standalone personal web tracker (HearWhispers) for products you build. Add a website or App Store link, confirm the product details and the problems it solves, then find public opportunities and mentions. On-demand analysis adds Problems, Landscape, People, match-fit assessments, and reply suggestions adapted from Tavern. The interface uses the selected Review Desk design, with React, shadcn components, and warm neutral colors. There are no sales, purchase, billing, or game features.
 
 ## Run
@@ -187,7 +189,7 @@ The UI separates platforms with a filter and shows collection progress, partial 
 
 ## Swappable v2 business profile (stage 1)
 
-In the product editor's **Tracking profile** step, select **Detailed breakdown (v2)** and generate a business breakdown. This first v2 stage separates supported offerings, potential audiences, customer needs, documented constraints, and important unknowns. It works with local businesses and physical offerings as well as software. The separate Listening view provides the v2 search plan, collection and qualification stages described below.
+In the product editor's **Tracking profile** step, select **Detailed breakdown (v2)** and generate a business breakdown. This first v2 stage separates supported offerings, potential audiences, customer needs, documented constraints, and important unknowns. It works with local businesses and physical offerings as well as software. Settings → Monitoring provides the v2 search plan, collection and qualification stages described below.
 
 The breakdown reads the supplied description and one official website/App Store page. It records their provenance and observation date, labels inferred audiences/needs as hypotheses, validates every source quote against the retrieved text, and reports inaccessible or truncated pages. It does not perform a complete website crawl. Quote validation establishes attribution, not the truth of an interpretation: review the breakdown, remove unsupported entries, and select the review checkbox before saving. Removing an offering also removes references to it. A changed business name, URL, or description requires regenerating the active v2 profile.
 
@@ -255,17 +257,17 @@ Each first pass is bounded to 200 provider requests, 2,000 new review candidates
 
 ## V2 listening and action stages
 
-HearWhispers contains stages 1–5. ActOnWhispers contains action recommendations and drafts in stages 6–7 within the same app and workspace. The sidebar groups tools under **HearWhispers** and **ActOnWhispers**. ActOnWhispers has Actions, Auto-draft replies and Videos & captions entries. Replies show answer drafts; Actions retains post drafts and guides. Saving edits in either view preserves the other drafts. Videos & captions is a placeholder for a future video template and caption tool. A product switcher at the top selects the shared product context for conversations, listening, insights, research and actions. Conversations and Saved also support All products. There is no in-app plan comparison or explanatory plan copy.
+HearWhispers contains stages 1–5. ActOnWhispers contains action recommendations and drafts in stages 6–7 within the same app and workspace. The sidebar groups tools under **HearWhispers** and **ActOnWhispers**. ActOnWhispers has Actions, Auto-draft replies and Videos & captions entries. Replies show answer drafts; Actions retains post drafts and guides. Saving edits in either view preserves the other drafts. Videos & captions is a placeholder for a future video template and caption tool. A product switcher at the top selects the shared product context for purpose conversations, patterns, exploration, monitoring and actions. Purpose conversation queues also support All products. There is no in-app plan comparison or explanatory plan copy.
 
 Set `TRACKER_ACTIONS_ENABLED=false` to disable action generation and draft editing on a listening-only server. This is a server capability gate; billing and account-level subscriptions are not integrated. Existing v1 profiles, keywords and collectors remain usable.
 
 | Stage | Saved output | Review or next step |
 | --- | --- | --- |
-| 1. Understand the business | Sourced offerings, audience/need hypotheses, constraints and unknowns | Review in Products → Edit |
-| 2. Plan listening | Offering-linked themes, keywords, long-tail questions and up to 12 executable queries | Edit and explicitly activate in Listening |
+| 1. Understand the business | Sourced offerings, audience/need hypotheses, constraints and unknowns | Review in the product selector → Product details |
+| 2. Plan listening | Offering-linked themes, keywords, long-tail questions and up to 12 executable queries | Edit and explicitly activate in Settings → Monitoring |
 | 3. Collect | Original excerpts, authors, thread identity, dates, URLs, closed/crosspost flags and query provenance | Existing bounded collection worker |
 | 4. Qualify | Topical relevance, direct fit, need category, exact author quote, resolution and offering references | Up to 30 pending conversations per batch |
-| 5. Find insights | Repeated questions, complaints, workarounds and unmet needs, with dated source links | Generate from current qualified evidence |
+| 5. Find patterns | Repeated questions, complaints, workarounds and unmet needs, with dated source links | Generate in a purpose’s Patterns tab from current qualified evidence |
 | 6. Recommend actions | Useful answer, fresh guide, clearer information, offering improvement or observe | Review in Actions (ActOnWhispers) |
 | 7. Prepare drafts | Editable, copyable posts and replies using advice-first language | Review in Actions (posts) or Auto-draft replies; human publication |
 
@@ -273,7 +275,7 @@ Set `TRACKER_ACTIONS_ENABLED=false` to disable action generation and draft editi
 
 V2 collection requires `TRACKER_COLLECTION_PIPELINE=experiment-v1` and the existing server-only `SCRAPEBADGER_API_KEY`. It executes the reviewed Reddit/X queries through the existing durable queue, pacing, cursor cache and daily scraper budget. LinkedIn uses the reviewed queries through its existing configured adapter and independent schedule. The past-year search uses the same plan, with bounded pages. A finished historical scan can be started again after a plan change; repeated starts for the same plan do not replay it. Scheduled monitoring can qualify pending v2 evidence; insights, recommendations and drafts are explicit on-demand stages.
 
-Relevant complaints are retained even when the offering does not fit. Direct fits also appear in Conversations. The evidence store holds at most 120 conversations per business, 600 across the workspace, and 2 MB of collected evidence, keeping the most recently observed records. Excerpts are capped at 2,200 characters. These are sampled search results, not an exhaustive archive. Insights receive collected replies when available; missing replies never establish that a question is unanswered. A repeated-question claim requires three known distinct authors in three distinct threads within one subreddit. Identical substantial bodies, crossposts, unknown authors and promotions do not add independent observations. Dates, counts, links and selected quotes are assembled or checked in code. Semantic grouping and fit still need human review.
+Relevant complaints are retained even when the offering does not fit. Direct fits also appear in the Potential customers purpose. The evidence store holds at most 120 conversations per business, 600 across the workspace, and 2 MB of collected evidence, keeping the most recently observed records. Excerpts are capped at 2,200 characters. These are sampled search results, not an exhaustive archive. Insights receive collected replies when available; missing replies never establish that a question is unanswered. A repeated-question claim requires three known distinct authors in three distinct threads within one subreddit. Identical substantial bodies, crossposts, unknown authors and promotions do not add independent observations. Dates, counts, links and selected quotes are assembled or checked in code. Semantic grouping and fit still need human review.
 
 All AI stages use Sol medium, strict JSON schemas, source/ID validation, per-stage input hashes and the existing shared `TRACKER_AI_*` allowance and analysis request limit. Stages reserve their worst-case allowance before dispatch; unknown failures consume the reservation and are not automatically retried. File and Firestore storage share the same atomic stage methods. Ordinary collection refreshes do not invalidate unchanged source text; a changed business or changed evidence prevents a stale model response from being committed. Outputs are cached for 30 days when their inputs are unchanged. Action recommendations also include a daily freshness boundary for reply eligibility. Generating a downstream stage never silently regenerates upstream stages.
 
@@ -286,3 +288,8 @@ The action layer uses a Tavern-style advice-first contract: practical help first
 - `/api/state` exposes `pipeline.stages` and per-business evidence/progress. Exports include all saved stages and retained evidence. Restored model outputs are marked historical, and conversations require requalification before those results can drive new downstream stages. This prevents a backup from injecting trusted fit decisions; user-edited draft text remains available to copy.
 
 Validation: `node --test test/*.test.mjs` and `npm run build:ui`. `node test/pipeline-preview.mjs` starts a disposable cafe fixture for UI review without external model or scraper requests. Tests cover stage isolation, v1 switching, collection query/watermark identity, closed evidence, non-fit complaints, independent-thread counting, quote attribution, stale-result rejection, shared spending, cloud CAS concurrency, export/restore and the action capability gate. Live provider output quality is not established by fixture tests.
+
+
+## Purpose-only workspace navigation
+
+HearWhispers navigation contains selected purposes and Add/Manage purpose. Product details are edited from the product selector. Search plans, collection and qualification controls are under Settings → Monitoring. Patterns and Explore are tabs inside a purpose, rather than standalone Insights and Research pages. Patterns display only summaries whose supporting conversations all match that purpose, preserving the original source links and counts. Explore displays Problems for Feedback, Landscape for Competitors and People for Potential customers, with web-search provenance kept separate from collected conversations. Mention views do not reuse market research as brand mentions. Existing saved records, APIs, notes, drafts and review decisions remain shared. Legacy routes redirect to the corresponding purpose or settings view.

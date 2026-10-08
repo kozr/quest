@@ -5,7 +5,7 @@ import {ConversationsDesk} from './ConversationsDesk';
 import {PurposePicker} from '@/components/purpose-picker';
 import {loadActivePurpose,loadPurposes,purposes,saveActivePurpose,savePurposes} from './purposes.mjs';
 import {useCallback,useEffect,useMemo,useRef,useState} from 'react';
-import {Copy,Package2,Plus} from 'lucide-react';
+import {Copy} from 'lucide-react';
 import {toast} from 'sonner';
 import {AppSidebar} from '@/components/hearwhispers-sidebar';
 import {SidebarInset,SidebarProvider,SidebarTrigger} from '@/components/ui/sidebar';
@@ -14,18 +14,16 @@ import {Breadcrumb,BreadcrumbItem,BreadcrumbList,BreadcrumbPage,BreadcrumbSepara
 import {Textarea} from '@/components/ui/textarea';
 import {Separator} from '@/components/ui/separator';
 import {Toaster} from '@/components/ui/sonner';
-import {api,platform,safeURL,setToken,sourceLabel} from './api';
+import {api,platform,setToken,sourceLabel} from './api';
 import {Login} from './Login';
 import {WorkspaceStartup} from './WorkspaceStartup';
 import {ProductEditor} from './ProductEditor';
-import {Settings,Research} from './WorkspaceViews';
-import {PageHeading,WorkspaceEmpty} from './WorkspacePage';
-const views={...Object.fromEntries(purposes.map(purpose=>[purpose.id,purpose.label])),products:'Products',research:'Research',listening:'Listening',insights:'Insights',actions:'Actions',replies:'Auto-draft replies',content:'Videos & captions',settings:'Settings'};
-const route=(enabled=loadPurposes())=>{
- const requested=location.hash.slice(1);
- if(purposes.some(purpose=>purpose.id===requested))return enabled.includes(requested)?requested:loadActivePurpose(enabled);
- return Object.hasOwn(views,requested)?requested:loadActivePurpose(enabled);
-};
+import {Settings} from './WorkspaceViews';
+import {PurposeAnalysis} from './PurposeAnalysis';
+import {workspaceViews as views,resolveWorkspaceRoute} from './navigation.mjs';
+import {Tabs,TabsList,TabsTrigger,TabsContent} from '@/components/ui/tabs';
+import {PageHeading} from './WorkspacePage';
+const route=(enabled=loadPurposes())=>resolveWorkspaceRoute(location.hash,enabled,loadActivePurpose(enabled));
 
 export function App(){
  const [state,setState]=useState(null),[auth,setAuth]=useState(null),[error,setError]=useState(''),generation=useRef(0);
@@ -41,29 +39,32 @@ export function App(){
 }
 
 function Dashboard({state,reload,logout,error}){
- const [view,setView]=useState(route),[query,setQuery]=useState(''),[productFilter,setProductFilter]=useState('all'),[platformFilter,setPlatformFilter]=useState('all'),[statusFilter,setStatusFilter]=useState('active'),[selectedId,setSelectedId]=useState(null),[page,setPage]=useState(0),[mobileDetail,setMobileDetail]=useState(false),[editing,setEditing]=useState(null),[formOpen,setFormOpen]=useState(false),[busy,setBusy]=useState('');
+ const [path,setPath]=useState(()=>route()),[query,setQuery]=useState(''),[productFilter,setProductFilter]=useState('all'),[platformFilter,setPlatformFilter]=useState('all'),[statusFilter,setStatusFilter]=useState('active'),[selectedId,setSelectedId]=useState(null),[page,setPage]=useState(0),[mobileDetail,setMobileDetail]=useState(false),[editing,setEditing]=useState(null),[formOpen,setFormOpen]=useState(false),[busy,setBusy]=useState('');
+ const [view,subview='conversations']=path.split('/');
  const [draftEdits,setDraftEdits]=useState({}),[noteEdits,setNoteEdits]=useState({}),[pipelineEdits,setPipelineEdits]=useState({});
  const setBuffer=(setter,id,value)=>setter(old=>{const next={...old};if(value===undefined)delete next[id];else next[id]=value;return next;});
  const unsaved=Object.keys(draftEdits).length+Object.keys(noteEdits).length+Object.keys(pipelineEdits).length>0;
  useEffect(()=>{if(!unsaved)return;const warn=e=>{e.preventDefault();e.returnValue='';};window.addEventListener('beforeunload',warn);return()=>window.removeEventListener('beforeunload',warn);},[unsaved]);
  const [enabledPurposes,setEnabledPurposes]=useState(loadPurposes),[purposesOpen,setPurposesOpen]=useState(false);
  const purpose=purposes.find(purpose=>purpose.id===view);
- const heading=useRef(null);const isFeed=Boolean(purpose);
- const singleProduct=['listening','insights','actions','replies','content','research'].includes(view);
+ const heading=useRef(null);const isPurpose=Boolean(purpose),isFeed=isPurpose&&subview==='conversations';
+ const singleProduct=['actions','replies','content'].includes(view)||isPurpose&&!isFeed||view==='settings'&&subview==='monitoring';
  const productId=state.products.some(p=>p.id===productFilter)?productFilter:singleProduct?(state.products[0]?.id||'all'):'all';
  const productName=state.products.find(p=>p.id===productId)?.name||(state.products.length?'All products':'Choose a product');
  const section=['actions','replies','content'].includes(view)?'ActOnWhispers':'HearWhispers';
- useEffect(()=>{const change=()=>{if(location.hash==='#main-content')return;const next=route(enabledPurposes);if(location.hash!==`#${next}`)history.replaceState(null,'',`#${next}`);setView(next);setMobileDetail(false);};window.addEventListener('hashchange',change);return()=>window.removeEventListener('hashchange',change);},[enabledPurposes]);
- useEffect(()=>{document.title=`${views[view]} · ${section}`;},[view,section]);
- useEffect(()=>{if(purpose)saveActivePurpose(view);if(location.hash!=='#main-content'&&location.hash!==`#${view}`)history.replaceState(null,'',`#${view}`);},[view]);
- useEffect(()=>{setPage(0);setMobileDetail(false);},[query,productFilter,platformFilter,statusFilter,view]);
+ const currentLabel=view==='settings'&&subview==='monitoring'?'Monitoring settings':views[view];
+ useEffect(()=>{const change=()=>{if(location.hash==='#main-content')return;const next=route(enabledPurposes);if(location.hash!==`#${next}`)history.replaceState(null,'',`#${next}`);setPath(next);setMobileDetail(false);};window.addEventListener('hashchange',change);return()=>window.removeEventListener('hashchange',change);},[enabledPurposes]);
+ useEffect(()=>{document.title=`${currentLabel}${isPurpose&&!isFeed?` · ${subview==='patterns'?'Patterns':'Explore'}`:''} · ${section}`;},[path,currentLabel,section]);
+ useEffect(()=>{if(purpose)saveActivePurpose(view);if(location.hash!=='#main-content'&&location.hash!==`#${path}`)history.replaceState(null,'',`#${path}`);},[path]);
+ useEffect(()=>{setPage(0);setMobileDetail(false);},[query,productFilter,platformFilter,statusFilter,path]);
  useEffect(()=>{if(productFilter!==productId)setProductFilter(productId);},[productFilter,productId]);
  useEffect(()=>{if(!isFeed&&mobileDetail&&matchMedia('(max-width: 900px)').matches)heading.current?.focus();},[mobileDetail,selectedId,isFeed]);
  const filtered=useMemo(()=>state.items.filter(i=>(productFilter==='all'||i.productId===productFilter)&&(platformFilter==='all'||platform(i)===platformFilter)&&matchesConversation(i,{status:statusFilter,relevance:purpose?.relevance})&&(!query||`${i.title} ${i.snippet} ${i.reason} ${sourceLabel(i)}`.toLowerCase().includes(query.toLowerCase()))).sort((a,b)=>(Date.parse(b.publishedAt||b.foundAt)||0)-(Date.parse(a.publishedAt||a.foundAt)||0)),[state.items,productFilter,platformFilter,statusFilter,query,purpose]);
  const pageSize=5,pageIndex=Math.min(page,Math.max(0,Math.ceil(filtered.length/pageSize)-1)),visible=filtered.slice(pageIndex*pageSize,(pageIndex+1)*pageSize),selected=filtered.find(i=>i.id===selectedId)||visible[0];
  useEffect(()=>{if(selected&&selected.id!==selectedId)setSelectedId(selected.id);},[selected?.id,selectedId]);
- function navigate(next){location.hash=next;setView(next);setMobileDetail(false);}
+ function navigate(next,enabled=enabledPurposes){const resolved=resolveWorkspaceRoute(next,enabled,loadActivePurpose(enabled));location.hash=resolved;setPath(resolved);setMobileDetail(false);}
  function addProduct(){setEditing(null);setFormOpen(true);}
+ function editProduct(product){setEditing(product);setFormOpen(true);}
  async function action(key,operation,success){if(busy)return;setBusy(key);try{await operation();await reload();if(success)toast.success(success);}catch(e){toast.error(e.message);}finally{setBusy('');}}
  async function patch(item,update){const result=await api(`/items/${item.id}`,{method:'PATCH',body:update});await reload();return result.item;}
  function updateReview(item,status){action('review',()=>patch(item,{status}),status==='saved'?'Conversation saved':status==='dismissed'?'Conversation dismissed':'Conversation restored');}
@@ -71,9 +72,9 @@ function Dashboard({state,reload,logout,error}){
  const find=()=>action('collection',async()=>{for(const p of selectedProducts)await api(`/products/${p.id}/search`,{method:'POST',body:{}});},'Finding conversations. Results will appear here.');
  const progress=feedProgress(state,selectedProducts);
  const showPlaceholders=isFeed&&progress.phase==='finding'&&!filtered.length&&!query&&platformFilter==='all'&&statusFilter==='active';
- return <SidebarProvider className={`review-desk ${isFeed?'conversations-layout':''}`} style={{'--sidebar-width':'15rem'}}>
+ return <SidebarProvider className={`review-desk ${isPurpose?'conversations-layout':''}`} style={{'--sidebar-width':'15rem'}}>
   <a className="skip-link" href="#main-content">Skip to content</a>
-  <AppSidebar view={view} navigate={navigate} products={state.products} productId={productId} allowAllProducts={!singleProduct} storage={state.storage} enabledPurposes={enabledPurposes} onPurposes={()=>setPurposesOpen(true)} onAdd={addProduct} onProduct={id=>{setProductFilter(id);setStatusFilter('active');setQuery('');setMobileDetail(false);}}/>
+  <AppSidebar view={view} navigate={navigate} products={state.products} productId={productId} allowAllProducts={!singleProduct} storage={state.storage} enabledPurposes={enabledPurposes} onPurposes={()=>setPurposesOpen(true)} onAdd={addProduct} onEdit={editProduct} onProduct={id=>{setProductFilter(id);setStatusFilter('active');setQuery('');setMobileDetail(false);}}/>
   <SidebarInset className="min-w-0">
    <header className="workspace-header">
     <SidebarTrigger/><Separator orientation="vertical" className="data-[orientation=vertical]:h-4"/>
@@ -83,37 +84,39 @@ function Dashboard({state,reload,logout,error}){
       <BreadcrumbSeparator>/</BreadcrumbSeparator>
       <BreadcrumbItem className="workspace-breadcrumb-section"><span>{section}</span></BreadcrumbItem>
       <BreadcrumbSeparator className="workspace-breadcrumb-section">/</BreadcrumbSeparator>
-      <BreadcrumbItem><BreadcrumbPage className="truncate" title={views[view]}>{views[view]}</BreadcrumbPage></BreadcrumbItem>
+      <BreadcrumbItem><BreadcrumbPage className="truncate" title={currentLabel}>{currentLabel}</BreadcrumbPage></BreadcrumbItem>
      </BreadcrumbList>
     </Breadcrumb>
     <span className="workspace-account">{state.storage==='cloud'?'Private workspace':'Local workspace'}</span>
    </header>
-   <main id="main-content" className={`workspace-main ${isFeed?'conversation-page':''}`} tabIndex={-1}>
-    {isFeed&&<>
+   <main id="main-content" className={`workspace-main ${isPurpose?'conversation-page':''}`} tabIndex={-1}>
+    {isPurpose&&<Tabs value={subview} onValueChange={tab=>navigate(tab==='conversations'?view:`${view}/${tab}`)} className="purpose-workspace">
+     <div className="purpose-tabs"><TabsList aria-label={`${purpose.label} views`}><TabsTrigger value="conversations">Conversations</TabsTrigger><TabsTrigger value="patterns">Patterns</TabsTrigger>{purpose.id!=='mentions'&&<TabsTrigger value="explore">Explore</TabsTrigger>}</TabsList></div>
+     <TabsContent value={subview} className="purpose-panel">
      {error&&<p className="form-error" role="alert">Refresh failed: {error} <button onClick={()=>reload().catch(e=>toast.error(e.message))}>Try again</button></p>}
-     <ConversationsDesk key={view} title={purpose.label} state={state} filtered={filtered} visible={visible} selected={selected} pageIndex={pageIndex} pageSize={pageSize}
+     {isFeed&&<ConversationsDesk key={view} title={purpose.label} state={state} filtered={filtered} visible={visible} selected={selected} pageIndex={pageIndex} pageSize={pageSize}
       onPage={index=>{setPage(index);setSelectedId(null);}}
       onSelect={item=>{setSelectedId(item.id);setPage(Math.floor(filtered.findIndex(row=>row.id===item.id)/pageSize));setMobileDetail(true);}}
       mobileDetail={mobileDetail} onMobileDetail={setMobileDetail} detailHeading={heading}
       query={query} onQuery={setQuery} platformFilter={platformFilter} onPlatform={setPlatformFilter} statusFilter={statusFilter} onStatus={setStatusFilter}
       products={selectedProducts} busy={busy} find={find} action={action} updateReview={updateReview} showPlaceholders={showPlaceholders} addProduct={addProduct}
       renderNotes={item=><Notes key={item.id} item={item} patch={patch} buffered={noteEdits[item.id]} setBuffered={value=>setBuffer(setNoteEdits,item.id,value)}/>}
-      renderDraft={item=><Draft key={item.id} item={item} paneLayout patch={patch} state={state} busy={busy} buffered={draftEdits[item.id]} setBuffered={value=>setBuffer(setDraftEdits,item.id,value)} analyze={()=>action('analysis',()=>api(`/items/${item.id}/analysis`,{method:'POST',body:{refresh:Boolean(item.analysis)}}),'Reply suggestions saved')}/>}/>
-    </>}
-    {!isFeed&&<>
+      renderDraft={item=><Draft key={item.id} item={item} paneLayout patch={patch} state={state} busy={busy} buffered={draftEdits[item.id]} setBuffered={value=>setBuffer(setDraftEdits,item.id,value)} analyze={()=>action('analysis',()=>api(`/items/${item.id}/analysis`,{method:'POST',body:{refresh:Boolean(item.analysis)}}),'Reply suggestions saved')}/>}/>}
+     {!isFeed&&<div className="purpose-analysis-scroll"><PurposeAnalysis state={state} purpose={purpose} mode={subview} productId={productId} action={action} busy={busy} onAdd={addProduct} onEdit={editProduct}/></div>}
+     </TabsContent>
+    </Tabs>}
+    {!isPurpose&&<>
     <div className="workspace-page">
-    {view!=='research'&&<PageHeading title={views[view]} description={view==='products'?`${state.products.length} ${state.products.length===1?'product':'products'} in your workspace`:{listening:'Manage your search plan, collection and conversation review.',insights:'Find recurring needs in the conversations you collect.',actions:'Turn insights into useful contributions.',replies:'Prepare and review replies before sharing them.',content:'Create videos from templates with captions.',settings:'Manage your workspace, preferences and allowances.'}[view]} action={view==='products'&&state.products.length>0?<Button onClick={addProduct}><Plus/>Add product</Button>:null}/>}
+    <PageHeading title={currentLabel} description={{actions:'Turn conversation patterns into useful contributions.',replies:'Prepare and review replies before sharing them.',content:'Create videos from templates with captions.',settings:subview==='monitoring'?'Choose where and how to find conversations.':'Manage your workspace, preferences and allowances.'}[view]}/>
     {error&&<p className="form-error" role="alert">Refresh failed: {error} <button onClick={()=>reload().catch(e=>toast.error(e.message))}>Try again</button></p>}
-    {view==='products'&&<div className="products-view"><div className="product-table-heading"><span>Product</span><span>Website</span><span/></div>{state.products.map(p=><div className="product-record" key={p.id}><div className="product-name"><div className="product-icon"><Package2/></div><div><strong>{p.name}</strong><span>{p.monitoring?'Monitoring every two hours':'Regular monitoring paused'}</span></div></div><a className="product-website" href={safeURL(p.url)} target="_blank" rel="noopener noreferrer">{new URL(p.url).hostname}</a><Button variant="outline" size="sm" onClick={()=>{setEditing(p);setFormOpen(true);}}>Edit</Button></div>)}{!state.products.length&&<WorkspaceEmpty title="Add your first product" description="Set up a business profile to start finding relevant conversations."><Button onClick={addProduct}><Plus/>Add product</Button></WorkspaceEmpty>}</div>}
-    {['listening','insights','actions','replies','content'].includes(view)&&<PipelineWorkspace state={state} view={view} productId={productId} action={action} busy={busy} buffers={pipelineEdits} setBuffer={(id,value)=>setBuffer(setPipelineEdits,id,value)} onAdd={addProduct} onEdit={product=>{setEditing(product);setFormOpen(true);}}/>}
-    {view==='settings'&&<Settings onPurposes={()=>setPurposesOpen(true)} state={state} logout={async()=>{if(unsaved&&!confirm('Sign out and discard unsaved drafts and notes?'))return;await logout();}} reload={reload} action={action} busy={busy}/>}
-    {view==='research'&&<Research state={state} productFilter={productId} action={action} busy={busy} onAdd={addProduct}/>}
+    {['actions','replies','content'].includes(view)&&<PipelineWorkspace state={state} view={view} productId={productId} action={action} busy={busy} buffers={pipelineEdits} setBuffer={(id,value)=>setBuffer(setPipelineEdits,id,value)} onAdd={addProduct} onEdit={editProduct}/>}
+    {view==='settings'&&(subview==='monitoring'?<><Button variant="ghost" asChild className="monitoring-back"><a href="#settings">Back to Settings</a></Button><PipelineWorkspace state={state} view="listening" productId={productId} action={action} busy={busy} buffers={pipelineEdits} setBuffer={(id,value)=>setBuffer(setPipelineEdits,id,value)} onAdd={addProduct} onEdit={editProduct}/></>:<Settings onPurposes={()=>setPurposesOpen(true)} state={state} logout={async()=>{if(unsaved&&!confirm('Sign out and discard unsaved drafts and notes?'))return;await logout();}} reload={reload} action={action} busy={busy}/>)}
     </div>
     </>}
    </main>
   </SidebarInset>
   {formOpen&&<ProductEditor key={editing?.id||'new'} open={formOpen} onOpenChange={setFormOpen} product={editing} state={state} onSaved={async p=>{await reload();setFormOpen(false);setProductFilter(p.id);navigate(loadActivePurpose(enabledPurposes));toast.success(editing?'Product updated':'Product added. Its past-year search will run in the background.');}} onDeleted={async()=>{await reload();setFormOpen(false);toast.success('Product deleted');}}/>}
-  <PurposePicker key={purposesOpen?'open':'closed'} open={purposesOpen} onOpenChange={setPurposesOpen} selected={enabledPurposes} onSave={chosen=>{setEnabledPurposes(chosen);setPurposesOpen(false);if(!savePurposes(chosen))toast('Purposes updated. This browser could not save your preference.');if(purpose&&!chosen.includes(purpose.id))navigate(chosen[0]);}}/>
+  <PurposePicker key={purposesOpen?'open':'closed'} open={purposesOpen} onOpenChange={setPurposesOpen} selected={enabledPurposes} onSave={chosen=>{setEnabledPurposes(chosen);setPurposesOpen(false);if(!savePurposes(chosen))toast('Purposes updated. This browser could not save your preference.');if(purpose&&!chosen.includes(purpose.id))navigate(chosen[0],chosen);}}/>
   <Toaster position="bottom-right" theme="light"/>
  </SidebarProvider>;
 }
