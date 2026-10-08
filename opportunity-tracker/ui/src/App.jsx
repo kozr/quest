@@ -1,6 +1,9 @@
 import {matchesConversation} from './feed.mjs';
 import {feedProgress} from './progress.mjs';
 import {PipelineWorkspace} from './PipelineWorkspace';
+import {ConversationsDesk} from './ConversationsDesk';
+import {PurposePicker} from '@/components/purpose-picker';
+import {loadPurposes,purposes,savePurposes} from './purposes.mjs';
 import {useCallback,useEffect,useMemo,useRef,useState} from 'react';
 import {ArrowLeft,ArrowUpRight,Bookmark,Check,ChevronLeft,ChevronRight,Copy,Inbox,Package2,Plus,RefreshCw,Search,X} from 'lucide-react';
 import {toast} from 'sonner';
@@ -39,6 +42,8 @@ function Dashboard({state,reload,logout,error}){
  const setBuffer=(setter,id,value)=>setter(old=>{const next={...old};if(value===undefined)delete next[id];else next[id]=value;return next;});
  const unsaved=Object.keys(draftEdits).length+Object.keys(noteEdits).length+Object.keys(pipelineEdits).length>0;
  useEffect(()=>{if(!unsaved)return;const warn=e=>{e.preventDefault();e.returnValue='';};window.addEventListener('beforeunload',warn);return()=>window.removeEventListener('beforeunload',warn);},[unsaved]);
+ const [enabledPurposes,setEnabledPurposes]=useState(loadPurposes),[purposesOpen,setPurposesOpen]=useState(false);
+ const purpose=purposes.find(purpose=>purpose.relevance===relevanceFilter);
  const heading=useRef(null);const isFeed=['conversations','saved'].includes(view);
  const singleProduct=['listening','insights','actions','replies','content','research'].includes(view);
  const productId=state.products.some(p=>p.id===productFilter)?productFilter:singleProduct?(state.products[0]?.id||'all'):'all';
@@ -47,7 +52,7 @@ function Dashboard({state,reload,logout,error}){
  useEffect(()=>{document.title=`${views[view]} · ${section}`;},[view,section]);
  useEffect(()=>{setPage(0);setMobileDetail(false);},[query,productFilter,platformFilter,statusFilter,relevanceFilter,view]);
  useEffect(()=>{if(productFilter!==productId)setProductFilter(productId);},[productFilter,productId]);
- useEffect(()=>{if(mobileDetail&&matchMedia('(max-width: 900px)').matches)heading.current?.focus();},[mobileDetail,selectedId]);
+ useEffect(()=>{if(view!=='conversations'&&mobileDetail&&matchMedia('(max-width: 900px)').matches)heading.current?.focus();},[mobileDetail,selectedId,view]);
  const filtered=useMemo(()=>state.items.filter(i=>(productFilter==='all'||i.productId===productFilter)&&(platformFilter==='all'||platform(i)===platformFilter)&&matchesConversation(i,{view,status:statusFilter,relevance:relevanceFilter})&&(!query||`${i.title} ${i.snippet} ${i.reason} ${sourceLabel(i)}`.toLowerCase().includes(query.toLowerCase()))).sort((a,b)=>(Date.parse(b.publishedAt||b.foundAt)||0)-(Date.parse(a.publishedAt||a.foundAt)||0)),[state.items,productFilter,platformFilter,statusFilter,relevanceFilter,query,view]);
  const pageSize=5,pageIndex=Math.min(page,Math.max(0,Math.ceil(filtered.length/pageSize)-1)),visible=filtered.slice(pageIndex*pageSize,(pageIndex+1)*pageSize),selected=filtered.find(i=>i.id===selectedId)||visible[0];
  useEffect(()=>{if(selected&&selected.id!==selectedId)setSelectedId(selected.id);},[selected?.id,selectedId]);
@@ -60,12 +65,24 @@ function Dashboard({state,reload,logout,error}){
  const find=()=>action('collection',async()=>{for(const p of selectedProducts)await api(`/products/${p.id}/search`,{method:'POST',body:{}});},'Finding conversations. Results will appear here.');
  const progress=feedProgress(state,selectedProducts);
  const showPlaceholders=view==='conversations'&&progress.phase==='finding'&&progress.ready===0&&!query&&platformFilter==='all'&&statusFilter==='active'&&relevanceFilter==='all';
- return <SidebarProvider className="review-desk" style={{'--sidebar-width':'15rem'}}>
+ return <SidebarProvider className={`review-desk ${view==='conversations'?'conversations-layout':''}`} style={{'--sidebar-width':'15rem'}}>
   <a className="skip-link" href="#main-content">Skip to content</a>
-  <AppSidebar view={view} navigate={navigate} products={state.products} productId={productId} allowAllProducts={!singleProduct} storage={state.storage} onAdd={addProduct} onProduct={id=>{setProductFilter(id);setStatusFilter('active');setQuery('');setMobileDetail(false);}}/>
+  <AppSidebar view={view} navigate={navigate} products={state.products} productId={productId} allowAllProducts={!singleProduct} storage={state.storage} enabledPurposes={enabledPurposes} purposeFilter={relevanceFilter} onPurpose={setRelevanceFilter} onPurposes={()=>setPurposesOpen(true)} onAdd={addProduct} onProduct={id=>{setProductFilter(id);setStatusFilter('active');setQuery('');setMobileDetail(false);}}/>
   <SidebarInset className="min-w-0">
    <header className="workspace-header"><SidebarTrigger/><Separator orientation="vertical" className="mr-1 data-[orientation=vertical]:h-4"/><span className="text-sm text-muted-foreground hidden sm:inline">{section}</span><span className="text-muted-foreground/50 hidden sm:inline">/</span><span className="text-sm">{views[view]}</span><span className="workspace-account">{state.storage==='cloud'?'Private workspace':'Local workspace'}</span></header>
-   <main id="main-content" className="workspace-main" tabIndex={-1}>
+   <main id="main-content" className={`workspace-main ${view==='conversations'?'conversation-page':''}`} tabIndex={-1}>
+    {view==='conversations'&&<>
+     {error&&<p className="form-error" role="alert">Refresh failed: {error} <button onClick={()=>reload().catch(e=>toast.error(e.message))}>Try again</button></p>}
+     <ConversationsDesk key={relevanceFilter} title={purpose?.label||"Conversations"} state={state} filtered={filtered} visible={visible} selected={selected} pageIndex={pageIndex} pageSize={pageSize}
+      onPage={index=>{setPage(index);setSelectedId(null);}}
+      onSelect={item=>{setSelectedId(item.id);setPage(Math.floor(filtered.findIndex(row=>row.id===item.id)/pageSize));setMobileDetail(true);}}
+      mobileDetail={mobileDetail} onMobileDetail={setMobileDetail} detailHeading={heading}
+      query={query} onQuery={setQuery} platformFilter={platformFilter} onPlatform={setPlatformFilter} statusFilter={statusFilter} onStatus={setStatusFilter} relevanceFilter={relevanceFilter} onRelevance={setRelevanceFilter}
+      products={selectedProducts} busy={busy} find={find} action={action} updateReview={updateReview} showPlaceholders={showPlaceholders} addProduct={addProduct}
+      renderNotes={item=><Notes key={item.id} item={item} patch={patch} buffered={noteEdits[item.id]} setBuffered={value=>setBuffer(setNoteEdits,item.id,value)}/>}
+      renderDraft={item=><Draft key={item.id} item={item} paneLayout patch={patch} state={state} busy={busy} buffered={draftEdits[item.id]} setBuffered={value=>setBuffer(setDraftEdits,item.id,value)} analyze={()=>action('analysis',()=>api(`/items/${item.id}/analysis`,{method:'POST',body:{refresh:Boolean(item.analysis)}}),'Reply suggestions saved')}/>}/>
+    </>}
+    {view!=='conversations'&&<>
     <div className="page-heading"><div className="page-title"><h1>{views[view]}</h1>{isFeed&&<p className="feed-disclosure" role="status">{filtered.length} {filtered.length===1?'conversation':'conversations'}<span aria-hidden="true"> · </span>Reddit and X monitoring every two hours</p>}</div>
      <div className="feed-toolbar"><Button onClick={addProduct} variant="outline" className="add-product"><Plus/>Add product</Button>{isFeed&&<div className="search-field"><Search aria-hidden="true"/><Input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search conversations" aria-label="Search conversations"/></div>}</div>
     </div>
@@ -93,11 +110,13 @@ function Dashboard({state,reload,logout,error}){
     </div></>}
     {view==='products'&&<div className="products-view"><div className="product-table-heading"><span>Product</span><span>Website</span><span/></div>{state.products.map(p=><div className="product-record" key={p.id}><div className="product-name"><div className="product-icon"><Package2/></div><div><strong>{p.name}</strong><span>{p.monitoring?'Monitoring every two hours':'Regular monitoring paused'}</span></div></div><a className="product-website" href={safeURL(p.url)} target="_blank" rel="noopener noreferrer">{new URL(p.url).hostname}</a><Button variant="outline" size="sm" onClick={()=>{setEditing(p);setFormOpen(true);}}>Edit</Button></div>)}{!state.products.length&&<p className="view-note">Add a product to begin its past-year search.</p>}</div>}
     {['listening','insights','actions','replies','content'].includes(view)&&<PipelineWorkspace state={state} view={view} productId={productId} action={action} busy={busy} buffers={pipelineEdits} setBuffer={(id,value)=>setBuffer(setPipelineEdits,id,value)}/>}
-    {view==='settings'&&<Settings state={state} logout={async()=>{if(unsaved&&!confirm('Sign out and discard unsaved drafts and notes?'))return;await logout();}} reload={reload} action={action} busy={busy}/>}
+    {view==='settings'&&<Settings onPurposes={()=>setPurposesOpen(true)} state={state} logout={async()=>{if(unsaved&&!confirm('Sign out and discard unsaved drafts and notes?'))return;await logout();}} reload={reload} action={action} busy={busy}/>}
     {view==='research'&&<Research state={state} productFilter={productId} action={action} busy={busy}/>}
+    </>}
    </main>
   </SidebarInset>
   {formOpen&&<ProductEditor key={editing?.id||'new'} open={formOpen} onOpenChange={setFormOpen} product={editing} state={state} onSaved={async p=>{await reload();setFormOpen(false);setProductFilter(p.id);navigate('conversations');toast.success(editing?'Product updated':'Product added. Its past-year search will run in the background.');}} onDeleted={async()=>{await reload();setFormOpen(false);toast.success('Product deleted');}}/>}
+  <PurposePicker key={purposesOpen?'open':'closed'} open={purposesOpen} onOpenChange={setPurposesOpen} selected={enabledPurposes} onSave={chosen=>{setEnabledPurposes(chosen);setPurposesOpen(false);if(!savePurposes(chosen))toast('Purposes updated. This browser could not save your preference.');if(purpose&&!chosen.includes(purpose.id))setRelevanceFilter('all');}}/>
   <Toaster position="bottom-right" theme="light"/>
  </SidebarProvider>;
 }
@@ -107,11 +126,14 @@ function Notes({item,patch,buffered,setBuffered}){
  const dirty=value!==(item.note||'');
  return <details className="notes-editor"><summary>{item.note?'Your notes':'Add a note'}</summary><label htmlFor={`note-${item.id}`} className="sr-only">Your note</label><Textarea id={`note-${item.id}`} value={value} onChange={e=>{setValue(e.target.value);setBuffered(e.target.value===(item.note||'')?undefined:e.target.value);}} maxLength={3000} disabled={saving}/><Button variant="outline" size="sm" disabled={!dirty||saving} onClick={async()=>{setSaving(true);setError('');try{await patch(item,{note:value});setBuffered(undefined);toast.success('Note saved');}catch(e){setError(e.message);}finally{setSaving(false);}}}>{saving?'Saving…':'Save note'}</Button>{error&&<p role="alert" className="form-error">{error}</p>}</details>;
 }
-function Draft({item,patch,state,busy,analyze,buffered,setBuffered}){
+function Draft({item,patch,state,busy,analyze,buffered,setBuffered,paneLayout=false}){
  const [value,setValue]=useState(buffered??item.draft??''),[saving,setSaving]=useState(false),[error,setError]=useState('');const dirty=value!==(item.draft||'');
  useEffect(()=>{if(!dirty)return;const warn=e=>{e.preventDefault();e.returnValue='';};window.addEventListener('beforeunload',warn);return()=>window.removeEventListener('beforeunload',warn);},[dirty]);
  async function save(){setSaving(true);setError('');try{await patch(item,{draft:value});setBuffered(undefined);toast.success('Draft saved');}catch(e){setError(e.message);}finally{setSaving(false);}}
- return <section className="draft-section" aria-labelledby="draft-heading"><div className="draft-heading"><h2 id="draft-heading"><label htmlFor={`draft-${item.id}`}>Draft response</label></h2><span role="status">{saving?'Saving…':dirty?'Unsaved changes':item.draft?state.storage==='cloud'?'Saved to your workspace':'Saved locally':'Not started'}</span></div><Textarea id={`draft-${item.id}`} value={value} onChange={e=>{setValue(e.target.value);setBuffered(e.target.value===(item.draft||'')?undefined:e.target.value);}} disabled={saving} maxLength={5000} placeholder="Write a helpful response…" className="draft-input"/>{error&&<p role="alert" className="form-error">{error}</p>}<div className="draft-footer"><span>Review your draft before posting on {platform(item)==='reddit'?'Reddit':item.source||'the original site'}.</span><Button variant="outline" disabled={!dirty||saving} onClick={save}>Save draft</Button><Button variant="outline" disabled={!value.trim()} onClick={async()=>{try{await navigator.clipboard.writeText(value);toast.success('Draft copied');}catch{document.getElementById(`draft-${item.id}`)?.select();toast('Select and copy the draft from the text field.');}}}><Copy/>Copy draft</Button></div>
-  <details className="reply-suggestions"><summary>Fit assessment & reply suggestions</summary><p className="muted">Generate suggestions using the collected excerpt and your confirmed product features.</p><Button variant="outline" disabled={!!busy||!state.analysis?.available} onClick={analyze}>{busy==='analysis'?'Analyzing…':item.analysis?'Refresh suggestions':'Analyze fit & replies'}</Button>{!state.analysis?.available&&<p className="muted">AI analysis is unavailable.</p>}{item.analysis&&<><p className="analysis-summary">{item.analysis.summary}</p><p className="muted">{item.analysis.limitations}</p>{item.analysis.replies?.map((r,index)=><div className="suggested-reply" key={index}><h3>{r.approach==='helpful'?'Helpful reply':'Reply with a product mention'}</h3><p>{r.body}</p><Button variant="ghost" onClick={()=>{if(dirty&&!confirm('Replace the unsaved draft with this suggestion?'))return;setValue(r.body);setBuffered(r.body===(item.draft||'')?undefined:r.body);}}>Use this draft</Button></div>)}</>}</details>
- </section>;
+ const header=<div className="draft-heading"><h2 id="draft-heading" tabIndex={paneLayout?-1:undefined}><label htmlFor={`draft-${item.id}`}>Draft response</label></h2><span role="status">{saving?'Saving…':dirty?'Unsaved changes':item.draft?state.storage==='cloud'?'Saved to your workspace':'Saved locally':'Not started'}</span></div>;
+ const editor=<Textarea id={`draft-${item.id}`} value={value} onChange={e=>{setValue(e.target.value);setBuffered(e.target.value===(item.draft||'')?undefined:e.target.value);}} disabled={saving} maxLength={5000} placeholder="Write a helpful response…" className="draft-input"/>;
+ const help=<span>Review your draft before posting on {platform(item)==='reddit'?'Reddit':item.source||'the original site'}.</span>;
+ const buttons=<><Button variant="outline" disabled={!dirty||saving} onClick={save}>Save draft</Button><Button variant={paneLayout?'default':'outline'} disabled={!value.trim()} onClick={async()=>{try{await navigator.clipboard.writeText(value);toast.success('Draft copied');}catch{document.getElementById(`draft-${item.id}`)?.select();toast('Select and copy the draft from the text field.');}}}><Copy/>Copy draft</Button></>;
+ const suggestions=<details className="reply-suggestions"><summary>Fit assessment & reply suggestions</summary><p className="muted">Generate suggestions using the collected excerpt and your confirmed product features.</p><Button variant="outline" disabled={!!busy||!state.analysis?.available} onClick={analyze}>{busy==='analysis'?'Analyzing…':item.analysis?'Refresh suggestions':'Analyze fit & replies'}</Button>{!state.analysis?.available&&<p className="muted">AI analysis is unavailable.</p>}{item.analysis&&<><p className="analysis-summary">{item.analysis.summary}</p><p className="muted">{item.analysis.limitations}</p>{item.analysis.replies?.map((r,index)=><div className="suggested-reply" key={index}><h3>{r.approach==='helpful'?'Helpful reply':'Reply with a product mention'}</h3><p>{r.body}</p><Button variant="ghost" onClick={()=>{if(dirty&&!confirm('Replace the unsaved draft with this suggestion?'))return;setValue(r.body);setBuffered(r.body===(item.draft||'')?undefined:r.body);}}>Use this draft</Button></div>)}</>}</details>;
+ return <section className="draft-section" aria-labelledby="draft-heading">{paneLayout?<><div className="desk-draft-scroll">{header}{editor}{error&&<p role="alert" className="form-error">{error}</p>}{suggestions}<p className="desk-draft-help">{help}</p></div><div className="draft-footer">{buttons}</div></>:<>{header}{editor}{error&&<p role="alert" className="form-error">{error}</p>}<div className="draft-footer">{help}{buttons}</div>{suggestions}</>}</section>;
 }

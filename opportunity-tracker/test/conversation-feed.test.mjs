@@ -54,3 +54,28 @@ test('qualified relevant records survive sample eviction; legacy mentions remain
   assert.equal(matchesConversation(visible),true);assert.equal(matchesConversation(visible,{relevance:'direct'}),false);assert.equal(matchesConversation(visible,{relevance:'mentions'}),true);
   assert.equal(matchesConversation({...item,status:'dismissed'}),false);
 });
+
+
+test('purpose views share review records and keep feedback separate from direct fits',()=>{
+ const item={id:'shared',status:'saved',kind:'conversation',note:'Keep this note',draft:'Keep this draft',currentConversationRelevant:true,currentOpportunityFit:false,conversationSignals:[{purpose:'mention'},{purpose:'feedback'}]};
+ const before=structuredClone(item);
+ assert.equal(matchesConversation(item),true);
+ assert.equal(matchesConversation(item,{relevance:'mentions'}),true);
+ assert.equal(matchesConversation(item,{relevance:'feedback'}),true);
+ assert.equal(matchesConversation(item,{relevance:'direct'}),false);
+ assert.equal(matchesConversation(item,{relevance:'competitors'}),false);
+ assert.equal(matchesConversation({...item,currentConversationRelevant:false},{view:'saved'}),true);
+ assert.equal(matchesConversation({...item,status:'dismissed'},{relevance:'feedback'}),false);
+ assert.equal(matchesConversation({...item,status:'dismissed'},{status:'dismissed',relevance:'feedback'}),true);
+ assert.deepEqual(item,before);
+});
+
+test('purpose views use recorded market feedback and explicit competitor evidence',()=>{
+ const item={kind:'conversation',status:'new',currentConversationRelevant:true,currentOpportunityFit:false,qualification:{relevant:true,directFit:false,category:'complaint'}};
+ assert.equal(matchesConversation(item,{relevance:'feedback'}),true);
+ assert.equal(matchesConversation(item,{relevance:'direct'}),false);
+ assert.equal(matchesConversation({...item,currentConversationRelevant:false},{relevance:'feedback'}),false);
+ assert.equal(matchesConversation({...item,qualification:{relevant:true,category:'promotion'}},{relevance:'feedback'}),false);
+ assert.equal(matchesConversation({...item,conversationSignals:[{purpose:'competitor'}]},{relevance:'competitors'}),true);
+ assert.equal(matchesConversation(item,{relevance:'competitors'}),false);
+});

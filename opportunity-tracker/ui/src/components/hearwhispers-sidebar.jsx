@@ -1,13 +1,17 @@
-import { AudioLines, Bookmark, ChartNoAxesCombined, ChevronsUpDown, Clapperboard, Inbox, ListTodo, MessageSquareText, Package2, Plus, Search, Settings2, SquareStack } from "lucide-react";
+import { AtSign, AudioLines, Bookmark, ChartNoAxesCombined, ChevronsUpDown, Clapperboard, Inbox, ListTodo, MessageSquareText, MessagesSquare, Package2, Plus, ScanLine, Search, Settings2, SquareStack, Users } from "lucide-react";
 import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarRail, useSidebar } from "@/components/ui/sidebar";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
-export function AppSidebar({ view, navigate, products, productId, allowAllProducts, onProduct, onAdd, storage }) {
+import {defaultPurposes,purposes} from "@/purposes.mjs";
+const purposeIcons={mentions:AtSign,opportunities:Users,feedback:MessagesSquare,competitors:ScanLine};
+
+export function AppSidebar({ view, navigate, products, productId, allowAllProducts, onProduct, onAdd, storage, enabledPurposes=defaultPurposes, purposeFilter="all", onPurpose, onPurposes }) {
   const { isMobile, setOpenMobile } = useSidebar();
   const productName = products.find(product => product.id === productId)?.name || (products.length ? "All products" : "Choose a product");
-  function go(next) { navigate(next); setOpenMobile(false); }
+  function go(next) { if(next==="conversations")onPurpose("all"); navigate(next); setOpenMobile(false); }
   function item(id, label, Icon) {
-    return <SidebarMenuItem key={id}><SidebarMenuButton isActive={view === id} tooltip={label} onClick={() => go(id)} aria-current={view === id ? "page" : undefined}><Icon /><span>{label}</span></SidebarMenuButton></SidebarMenuItem>;
+    const active=view===id&&(id!=="conversations"||purposeFilter==="all");
+    return <SidebarMenuItem key={id}><SidebarMenuButton isActive={active} tooltip={label} onClick={() => go(id)} aria-current={active ? "page" : undefined}><Icon /><span>{label}</span></SidebarMenuButton></SidebarMenuItem>;
   }
   return <Sidebar collapsible="icon">
     <SidebarHeader>
@@ -36,7 +40,13 @@ export function AppSidebar({ view, navigate, products, productId, allowAllProduc
       <SidebarGroup>
         <SidebarGroupLabel>HearWhispers</SidebarGroupLabel>
         <SidebarGroupContent><SidebarMenu>
-          {[{id:"conversations", label:"Conversations", icon:Inbox},{id:"saved",label:"Saved",icon:Bookmark},{id:"products",label:"Products",icon:Package2},{id:"listening",label:"Listening",icon:AudioLines},{id:"insights",label:"Insights",icon:ChartNoAxesCombined},{id:"research",label:"Research",icon:Search}].map(({id,label,icon:Icon}) => item(id,label,Icon))}
+          {item("conversations","Conversations",Inbox)}
+          {purposes.filter(purpose=>enabledPurposes.includes(purpose.id)).map(purpose=>{
+            const Icon=purposeIcons[purpose.id],active=view==="conversations"&&purposeFilter===purpose.relevance;
+            return <SidebarMenuItem key={purpose.id}><SidebarMenuButton isActive={active} tooltip={purpose.label} aria-current={active?"page":undefined} onClick={()=>{onPurpose(purpose.relevance);navigate("conversations");setOpenMobile(false);}}><Icon/><span>{purpose.label}</span></SidebarMenuButton></SidebarMenuItem>;
+          })}
+          <SidebarMenuItem><SidebarMenuButton className="text-muted-foreground" tooltip={enabledPurposes.length<purposes.length?"Add purpose":"Manage purposes"} onClick={()=>{setOpenMobile(false);onPurposes();}}><Plus/><span>{enabledPurposes.length<purposes.length?"Add purpose":"Manage purposes"}</span></SidebarMenuButton></SidebarMenuItem>
+          {[{id:"saved",label:"Saved",icon:Bookmark},{id:"products",label:"Products",icon:Package2},{id:"listening",label:"Listening",icon:AudioLines},{id:"insights",label:"Insights",icon:ChartNoAxesCombined},{id:"research",label:"Research",icon:Search}].map(({id,label,icon:Icon})=>item(id,label,Icon))}
         </SidebarMenu></SidebarGroupContent>
       </SidebarGroup>
       <SidebarGroup>
