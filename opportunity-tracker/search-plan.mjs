@@ -27,6 +27,7 @@ export function validateSearchPlan(value,product,{requireCurrent=true,input:stor
       if(/https?:|\b(?:site|subreddit|since|until|from|to|filter):|\b(?:AND|OR|NOT)\b|[\r\n\x00-\x1f]/.test(query))problem('Use ordinary search words; the collector adds platform filters.');
       const community=row.community===null?null:string(row.community,21).replace(/^r\//i,'').toLowerCase();
       if(community&&(!/^[a-z0-9_]{2,21}$/.test(community)||platform!=='reddit'))problem('Only Reddit queries can target a subreddit.');
+      if(platform==='reddit'&&compileRedditQuery({query,community}).length>200)problem('Use shorter Reddit search terms; the compiled query must fit the provider limit.');
       const key=`${platform}:${community||''}:${query.toLowerCase()}`;if(queryKeys.has(key))problem('Remove duplicate search queries.');queryKeys.add(key);
       return {id:qid,platform,community,query};
     });
@@ -49,7 +50,12 @@ export function activeSearchPlan(product){
 }
 export function listeningReady(product){try{return product.listeningVersion!=='v2'||Boolean(activeSearchPlan(product));}catch{return false;}}
 export function plannedQueries(product,platform){return activeSearchPlan(product)?.themes.flatMap(theme=>theme.queries.filter(q=>q.platform===platform).map(q=>({...q,themeId:theme.id,purposes:theme.purposes})))||[];}
-export function compileRedditQuery(row){return `${row.community?`subreddit:${row.community} AND `:''}${row.query}`;}
+export function compileRedditQuery(row){
+  // Reddit's ordinary multi-word search can match only some words. Require the
+  // reviewed task and location together, while keeping quoted names intact.
+  const terms=row.query.match(/"(?:\\.|[^"\\])*"|\S+/g)||[];
+  return `${row.community?`subreddit:${row.community} AND `:''}${terms.join(' AND ')}`;
+}
 export function validateListeningSettings(value){
   if(value.listeningVersion===undefined&&value.searchPlanV2===undefined)return {};
   const listeningVersion=oneOf(value.listeningVersion||'v1',['v1','v2']);

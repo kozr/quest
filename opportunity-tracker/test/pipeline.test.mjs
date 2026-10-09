@@ -61,7 +61,7 @@ test('v2 plan is reviewed, swappable and independent of legacy keyword settings'
 
 test('collector executes active queries with distinct watermarks, preserves closed evidence and leaves v1 jobs untouched',async t=>{
  const f=await fixture(t);await activate(f);const now=Date.now(),settings=collectionSettings(env);
- let c=f.store.beginCollection(f.p.id,'manual',now);assert.equal(c.queue[0].kind,'search');assert.equal(c.queue[0].query,'subreddit:vancouver AND croissant sandwich');
+ let c=f.store.beginCollection(f.p.id,'manual',now);assert.equal(c.queue[0].kind,'search');assert.equal(c.queue[0].query,'subreddit:vancouver AND croissant AND sandwich');
  const req=f.store.claimCollection(settings,f.p.id,now);assert.match(new URL(req.url).searchParams.get('q'),/croissant/);assert.equal(req.task.includeClosed,true);
  f.store.finishCollection(req.token,{credits:5,result:{rows:conversations(),cursor:null}},now+1);
  assert.equal(f.store.snapshot().conversationEvidence[f.p.id].length,4);assert.equal(Object.keys(f.store.snapshot().qualifications||{}).length,0);

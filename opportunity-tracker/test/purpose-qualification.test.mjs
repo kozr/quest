@@ -4,7 +4,7 @@ import {captureEvidence,pendingEvidence,qualificationInputHash,qualificationEvid
 import {conversationCurrentState} from '../conversation-feed.mjs';
 import {conversationSignals,namedReference,commentThreadPriority} from '../conversation-purpose.mjs';
 import {validateV2Qualification} from '../listening-qualification.mjs';
-import {searchPlanInput,validateSearchPlan,plannedQueries} from '../search-plan.mjs';
+import {searchPlanInput,validateSearchPlan,plannedQueries,compileRedditQuery} from '../search-plan.mjs';
 import {applyBackfillPage} from '../backfill.mjs';
 import {beginCollection,claimCollection,finishCollection,collectionSettings} from '../collection.mjs';
 import {matchesConversation} from '../ui/src/feed.mjs';
@@ -147,4 +147,15 @@ test('a named alternative announcement supports attributed competitor research w
  const {p,data}=fixture();captureEvidence(data,p,[source('I run Other Cafe and we offer croissant sandwich pickup.')],at);const e=data.conversationEvidence[p.id][0];
  const q=classify(p,e,decision(e,{category:'promotion',purposes:[signal('competitor',e.text,{reference:'Other Cafe',reason:'The provider advertises a comparable pickup offering; this is a vendor claim, not an independent review.'})]}));
  assert.equal(q.directFit,false);assert.equal(q.purposes[0].purpose,'competitor');assert.throws(()=>classify(p,e,{...q,directFit:true,need:'Find lunch',offeringIds:['o1']}),/Promotional posts/);
+});
+
+
+test('Reddit collection keeps local context mandatory and preserves exact quoted business names',()=>{
+ assert.equal(compileRedditQuery({query:'mousse desserts Vancouver',community:null}),'mousse AND desserts AND Vancouver');
+ assert.equal(compileRedditQuery({query:'"Wren Café" Yaletown',community:null}),'"Wren Café" AND Yaletown');
+ const {p,data}=fixture();p.searchPlanV2=validateSearchPlan({...plan(),themes:[{...plan().themes[0],queries:[{id:'local',platform:'reddit',community:'vancouver',query:'downtown brunch'}]}],reviewed:true},p);
+ beginCollection(data,p.id,'manual',now);
+ assert.equal(data.collection.cycles[p.id].queue[0].query,'subreddit:vancouver AND downtown AND brunch');
+ const long='word '.repeat(30).trim();
+ assert.throws(()=>validateSearchPlan({...plan(),themes:[{...plan().themes[0],queries:[{id:'long',platform:'reddit',community:'vancouver',query:long}]}]},p),/compiled query/);
 });
