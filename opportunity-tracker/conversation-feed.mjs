@@ -1,3 +1,4 @@
+import {keywordMentionEvidence} from './keyword-mention.mjs';
 import {conversationSignals} from './conversation-purpose.mjs';
 import {hash} from './pipeline-contract.mjs';
 import {evidenceFor,qualificationInputHash,QUALIFY_PIPELINE_VERSION} from './conversation-evidence.mjs';
@@ -25,11 +26,12 @@ export function syncConversationItems(data,product){
 export function conversationCurrentState(data,item){
   const product=data.products.find(p=>p.id===item.productId);
   if(!product)return {};
-  if(product.listeningVersion!=='v2')return {};
-  const row=evidenceForItem(data,product,item),decision=row?row.qualification:item.qualification;
+  const row=evidenceForItem(data,product,item),keywordMention=keywordMentionEvidence(product,row||item);
+  if(product.listeningVersion!=='v2')return {keywordMention};
+  const decision=row?row.qualification:item.qualification;
   const current=decision?.profileHash===qualificationInputHash(product);
   // Retain older brand mentions, clearly separate from qualified direct fits.
   const legacyMention=item.kind==='mention'&&!row&&!item.qualification;
   const signals=conversationSignals(product,row||item,decision,{current});
-  return {conversationSignals:signals,currentConversationRelevant:legacyMention||(current&&decision.relevant===true),currentOpportunityFit:signals.some(signal=>signal.purpose==='potential_customer')};
+  return {keywordMention,conversationSignals:signals,currentConversationRelevant:legacyMention||(current&&decision.relevant===true),currentOpportunityFit:signals.some(signal=>signal.purpose==='potential_customer')};
 }

@@ -61,7 +61,7 @@ test('cloud instances preserve LinkedIn settings, source coverage, identity and 
   const scheduled = await a.saveProduct({...product, communities: ['productivity'], linkedin: true, monitoring: true});
   assert.deepEqual((await a.markMonitorAttempt(scheduled.id, morning)).sources, ['reddit', 'linkedin']);
   assert.equal(await b.markMonitorAttempt(scheduled.id, morning + 60000), null);
-  assert.deepEqual((await b.markMonitorAttempt(scheduled.id, morning + 3600000)).sources, ['reddit']);
+  assert.deepEqual((await b.markMonitorAttempt(scheduled.id, morning + 2 * 3600000)).sources, ['reddit']);
   assert.deepEqual((await new FirestoreStore(create()).markMonitorAttempt(scheduled.id, evening)).sources, ['reddit', 'linkedin']);
   assert.equal((await a.snapshot()).products.find(row => row.id === scheduled.id).monitorAttempts.linkedin, new Date(evening).toISOString());
 });
@@ -127,7 +127,10 @@ test('Firestore stores snapshots larger than one document and atomically removes
   const {create}=await backend(t);const a=new FirestoreStore(create()),b=new FirestoreStore(create());
   const data={version:1,products:[{...product,id:'large'}],items:Array.from({length:160},(_,i)=>({id:String(i),productId:'large',snippet:'界'.repeat(3000),matchedTerms:[['nested arrays are serialized safely']]})),searches:{}};
   await a.importData(data);
-  assert.deepEqual(await b.snapshot(),data);
+  const restored=await b.snapshot();
+  for(const key of ['version','products','items','searches'])assert.deepEqual(restored[key],data[key]);
+  assert.deepEqual(restored.analysisUsage,{});
+  assert.deepEqual(restored.conversationReviewReceipts,{});
   const database=b.backend;
   assert.ok((await database.document.get()).data().chunks>1);
   await b.importData({version:1,products:[],items:[],searches:{}});

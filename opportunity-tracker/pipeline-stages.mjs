@@ -1,6 +1,6 @@
 import {QUALIFY_PIPELINE_VERSION} from './conversation-evidence.mjs';
 import {hash,problem,PIPELINE_VERSION} from './pipeline-contract.mjs';
-import {searchPlanInput,SEARCH_PLAN_SCHEMA,SEARCH_PLAN_PROMPT,validateSearchPlan,reviewedBusiness} from './search-plan.mjs';
+import {searchPlanGenerationInput,SEARCH_PLAN_SCHEMA,SEARCH_PLAN_PROMPT,validateSearchPlan,reviewedBusiness} from './search-plan.mjs';
 import {qualificationInput,QUALIFY_V2_SCHEMA,QUALIFY_V2_PROMPT,validateV2Qualification} from './listening-qualification.mjs';
 import {insightsInput,INSIGHTS_SCHEMA,INSIGHTS_PROMPT,validateInsights} from './listening-insights.mjs';
 import {ACTION_SCHEMA,ACTION_PROMPT,validateActions,DRAFT_SCHEMA,DRAFT_PROMPT,validateDrafts} from './action-stages.mjs';
@@ -11,7 +11,7 @@ function currentRecord(data,p,stage){
   return row.data;
 }
 export const STAGE_DEFINITIONS={
-  search_plan:{number:2,promptVersion:'purpose-search-plan-v2',prompt:SEARCH_PLAN_PROMPT,schema:SEARCH_PLAN_SCHEMA,maxOutput:5000,input:(data,p)=>searchPlanInput(p),validate:(value,p,input)=>validateSearchPlan(value,p)},
+  search_plan:{number:2,promptVersion:'purpose-search-plan-v3-loops',prompt:SEARCH_PLAN_PROMPT,schema:SEARCH_PLAN_SCHEMA,maxOutput:12000,input:searchPlanGenerationInput,validate:(value,p,input)=>validateSearchPlan({...value,reviewed:false},p,{input})},
   qualify:{number:4,promptVersion:QUALIFY_PIPELINE_VERSION,prompt:QUALIFY_V2_PROMPT,schema:QUALIFY_V2_SCHEMA,maxOutput:8000,input:qualificationInput,validate:validateV2Qualification},
   insights:{number:5,promptVersion:'listening-insights-v1',prompt:INSIGHTS_PROMPT,schema:INSIGHTS_SCHEMA,maxOutput:5000,input:insightsInput,validate:validateInsights},
   actions:{number:6,promptVersion:'actions-v2',prompt:ACTION_PROMPT,schema:ACTION_SCHEMA,maxOutput:5000,input:(data,p)=>({business:reviewedBusiness(p),insights:currentRecord(data,p,'insights').insights,asOf:new Date().toISOString().slice(0,10)}),validate:validateActions},
@@ -55,7 +55,10 @@ export function validateStageRecords(value,products){
     records[product.id]={};
     for(const [stage,row] of Object.entries(saved)){
       if(!STAGE_DEFINITIONS[stage]||row.version!==PIPELINE_VERSION||row.stage!==stage||!/^[a-f0-9]{64}$/.test(row.inputHash)||!Number.isFinite(Date.parse(row.generatedAt))||JSON.stringify(row).length>100000)problem('Invalid saved stage record.');
-      records[product.id][stage]={version:PIPELINE_VERSION,stage,inputHash:row.inputHash,generatedAt:row.generatedAt,model:String(row.model||'imported').slice(0,80),data:declared(row.data,STAGE_DEFINITIONS[stage].schema),imported:true};
+      // Old exported search-plan stage outputs predate executable loop families.
+      // Normalize only this stage before applying the current generated schema.
+      const output=stage==='search_plan'&&Array.isArray(row.data?.themes)?{...row.data,themes:row.data.themes.map(theme=>({...theme,...(Array.isArray(theme.queries)?{queries:theme.queries.map(query=>({...query,loop:query.loop===undefined?'keyword':query.loop}))}:{})}))}:row.data;
+      records[product.id][stage]={version:PIPELINE_VERSION,stage,inputHash:row.inputHash,generatedAt:row.generatedAt,model:String(row.model||'imported').slice(0,80),data:declared(output,STAGE_DEFINITIONS[stage].schema),imported:true};
     }
   }return records;
 }

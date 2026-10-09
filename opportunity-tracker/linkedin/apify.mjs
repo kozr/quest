@@ -20,13 +20,13 @@ function linkedinURL(value) {
 
 /** Only the top-level post's own content/author is evidence. Reposts, comments
  * and profile details are never concatenated or attributed to that author. */
-export function normalizeApifyLinkedInPost(value, collectedAt) {
+export function normalizeApifyLinkedInPost(value, collectedAt, {preserveText = false} = {}) {
   if (!value || value.type !== 'post' || typeof value.id !== 'string' || !/^\d{10,20}$/.test(value.id)) return null;
   const url = linkedinURL(value.linkedinUrl), authorURL = linkedinURL(value.author?.linkedinUrl);
   const post = url?.pathname.match(/^\/posts\/([a-z0-9%._-]+)_[a-z0-9%._-]+-(\d{10,20})-[a-z0-9_-]+$/i);
   const profile = authorURL?.pathname.match(/^\/(?:in|company)\/([a-z0-9%._-]+)$/i);
   const content = clean(value.content), author = clean(value.author?.name);
-  if (!post || post[2] !== value.id || !profile || !url.pathname.toLowerCase().startsWith(`/posts/${profile[1].toLowerCase()}_`) || !author || !content || content.length > 50_000) return null;
+  if (!post || post[2] !== value.id || !profile || !url.pathname.toLowerCase().startsWith(`/posts/${profile[1].toLowerCase()}_`) || !author || !content || !preserveText && content.length > 50_000) return null;
   let publishedAt = null;
   if (value.postedAt?.date != null || value.postedAt?.timestamp != null) {
     if (value.postedAt.date != null && typeof value.postedAt.date !== 'string') return null;
@@ -37,7 +37,7 @@ export function normalizeApifyLinkedInPost(value, collectedAt) {
     publishedAt = new Date(ms).toISOString();
   }
   return {source:'LinkedIn',provider:'linkedin-apify',sourceId:`li_${value.id}`,postId:value.id,parentId:null,type:'post',
-    url:url.href,author,title:content.split('\n')[0].slice(0,500),snippet:content.slice(0,8000),publishedAt,collectedAt};
+    url:url.href,author,title:content.split('\n')[0].slice(0,500),snippet:preserveText?content:content.slice(0,8000),publishedAt,collectedAt};
 }
 
 export class ApifyLinkedInAdapter {
@@ -76,7 +76,7 @@ export class ApifyLinkedInAdapter {
       run.defaultDatasetId != null && (typeof run.defaultDatasetId !== 'string' || !runID.test(run.defaultDatasetId))) throw new CollectionError('linkedin_schema_changed');
     return run;
   }
-  async collect({query,limit,datePosted,signal}) {
+  async collect({query,limit,datePosted,cutoff,signal,preserveText=false}) {
     let run, acquired = false;
     try {
       await this.acquire(signal); acquired = true; signal.throwIfAborted();
@@ -84,7 +84,7 @@ export class ApifyLinkedInAdapter {
       // started. Never retry that POST or ask Apify to restart failed runs.
       run = this.run(await this.json(`actors/${LINKEDIN_ACTOR}/runs?timeout=45&maxTotalChargeUsd=0.10&restartOnError=false`,{
         method:'POST',signal,timeout:8_000,body:{searchQueries:[query],maxPosts:limit,sortBy:'date',
-          postedLimit:datePosted === 'past-month' ? 'month' : 'any',profileScraperMode:'short',
+          postedLimit:datePosted === 'past-month' ? 'month' : 'any',...(cutoff!=null?{postedLimitDate:new Date(cutoff).toISOString()}:{}),profileScraperMode:'short',
           scrapeComments:false,scrapeReactions:false,postNestedComments:false,postNestedReactions:false}}));
       for (let poll = 0; !terminal.has(run.status) && poll < 6; poll++) {
         run = this.run(await this.json(`actor-runs/${run.id}?waitForFinish=10`,{signal}),run.id);
@@ -97,14 +97,14 @@ export class ApifyLinkedInAdapter {
       if (!Array.isArray(items) || items.length > limit) throw new CollectionError('linkedin_schema_changed');
       const collectedAt = new Date(this.now()).toISOString(), unique = new Map();
       for (const item of items) {
-        const row = normalizeApifyLinkedInPost(item,collectedAt);
+        const row = normalizeApifyLinkedInPost(item,collectedAt,{preserveText});
         if (row && !unique.has(row.sourceId)) unique.set(row.sourceId,row);
       }
-      const rows = [...unique.values()];
-      if (items.length && !rows.length) throw new CollectionError('linkedin_schema_changed');
+      const normalized=[...unique.values()],rows=normalized.filter(row=>cutoff==null||!row.publishedAt||Date.parse(row.publishedAt)>=cutoff);
+      if (items.length && !normalized.length) throw new CollectionError('linkedin_schema_changed');
       if (failure && !rows.length) throw new CollectionError(failure);
       return {rows,coverage:{provider:this.id,actor:'harvestapi/linkedin-post-search',partial:true,complete:false,
-        observedPosts:items.length,skippedPosts:items.length-rows.length,comments:'not_collected',dates:'provider_reported',
+        observedPosts:items.length,skippedPosts:items.length-normalized.length,olderPosts:normalized.length-rows.length,comments:'not_collected',dates:'provider_reported',
         undatedPosts:rows.filter(row => !row.publishedAt).length,maxPosts:limit,runStatus:run.status,
         maxChargeUsd:0.10,reportedCostUsd:Number.isFinite(run.usageTotalUsd) ? run.usageTotalUsd : null,costFinal:false,
         errors:failure ? [failure] : [],cacheHit:false}};
@@ -116,16 +116,16 @@ export class ApifyLinkedInAdapter {
       throw error instanceof CollectionError ? error : new CollectionError('linkedin_provider_failed');
     } finally {if (acquired) this.release();}
   }
-  async search({query,signal,limit = 30,datePosted = null}) {
+  async search({query,signal,limit = 30,datePosted = null,cutoff = null,preserveText = false}) {
     if (typeof query !== 'string' || !query.trim() || query.trim().length > 500 || !Number.isInteger(limit) || limit < 1 || limit > 30 ||
-      ![null,'past-month'].includes(datePosted)) throw new CollectionError('invalid_request',400);
+      ![null,'past-month'].includes(datePosted)||cutoff!=null&&(!Number.isFinite(cutoff)||cutoff<=0)) throw new CollectionError('invalid_request',400);
     signal?.throwIfAborted();
-    const key = JSON.stringify([query.trim(),limit,datePosted]);
+    const key = JSON.stringify([query.trim(),limit,datePosted,cutoff,preserveText === true]);
     const cached = this.cache.get(key);
     if (cached && cached.expires > this.now()) return structuredClone({...cached.value,coverage:{...cached.value.coverage,cacheHit:true}});
     if (this.pending.has(key)) return structuredClone(await this.pending.get(key));
     const deadline = AbortSignal.any([...(signal ? [signal] : []),AbortSignal.timeout(50_000)]);
-    const operation = this.collect({query:query.trim(),limit,datePosted,signal:deadline});
+    const operation = this.collect({query:query.trim(),limit,datePosted,cutoff,signal:deadline,preserveText});
     this.pending.set(key,operation);
     try {
       const value = await operation;

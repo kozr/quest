@@ -3,6 +3,9 @@ import {publicSourceURL} from './discovery.mjs';
 import {readText} from './reddit/http.mjs';
 import {TAVERN_QUALIFICATION_PROMPT,TAVERN_COMMENT_INSTRUCTIONS} from './qualification-policy.mjs';
 import {businessConstraints} from './business-profile.mjs';
+import {analysisCandidate,claimAnalysisCycleBatch,finishAnalysisCycleBatch,releaseAnalysisCycleBatch,analysisCycleState,analysisCycleDue} from './analysis-cycles.mjs';
+import {findEvidence,recordReviewFailure,qualificationInputHash,qualificationEvidence} from './conversation-evidence.mjs';
+import {assertPilotBudget,pilotBudgetBlock} from './pilot-budget.mjs';
 
 export const QUALIFICATION_MODEL = 'gpt-6.1-sol';
 export const QUALIFICATION_VERSION = 'tracker-tavern-evidence-v3';
@@ -131,6 +134,7 @@ export function resolveBatch(value,jobs) {
   }));
 }
 export function claimQualificationBatch(data,settings,now,productId) {
+  if(data.subscription)return claimProvisionedLegacy(data,settings,now,productId,true);
   if(!settings.active || settings.until<=now)return null;
   retireAnalysis(data,now);const budget=ledger(data);for(const job of Object.values(data.qualifications))retireRunning(data,job,now);
   if(budget.overrun || Object.values(data.qualifications).some(j=>j.status==='running'))return null;
@@ -147,7 +151,7 @@ export function claimQualificationBatch(data,settings,now,productId) {
   const day=budgetDay(now),usage=budget.dailyUsage[day] ||= {spentMicroUsd:0,reservedMicroUsd:0,calls:0};
   let reserve;
   // Shrink a batch near the cap instead of exceeding or raising the allowance.
-  while(jobs.length){reserve=Math.ceil((Buffer.byteLength(JSON.stringify(batchRequest(jobs)))+4096)*2.5+4096*10);if(usage.spentMicroUsd+usage.reservedMicroUsd+reserve<=settings.budgetMicroUsd)break;jobs.pop();}
+  while(jobs.length){reserve=Math.ceil((Buffer.byteLength(JSON.stringify(batchRequest(jobs)))+4096)*2.5+4096*10);if(usage.spentMicroUsd+usage.reservedMicroUsd+reserve<=settings.budgetMicroUsd&&!pilotBudgetBlock(data,'aiMicroUsd',reserve))break;jobs.pop();}
   if(!jobs.length || usage.calls>=settings.dailyMaxCalls)return null;
   const token=randomUUID();budget.calls++;budget.daily[day]=(budget.daily[day]||0)+1;budget.reservedMicroUsd+=reserve;
   usage.calls++;usage.reservedMicroUsd+=reserve;
@@ -158,6 +162,7 @@ export function finishQualificationBatch(data,batch,outcome,now) {
   if(batch.jobs.some(job=>data.qualifications[job.key]?.token!==batch.token || data.qualifications[job.key]?.status!=='running'))return null;
   const cost=Number.isSafeInteger(outcome.costMicroUsd)&&outcome.costMicroUsd>=0?outcome.costMicroUsd:batch.reservationMicroUsd;
   const statuses=batch.jobs.map((job,index)=>finishQualification(data,job.key,batch.token,{assessment:outcome.assessments?.[job.key],costMicroUsd:index===0?cost:0,...(index===0&&outcome.usage?{usage:outcome.usage}:{}),requestId:outcome.requestId},now));
+  if(batch.analysisCycleBatchId)finishAnalysisCycleBatch(data,batch.jobs[0].productId,batch.analysisCycleBatchId,Object.fromEntries(batch.jobs.map(job=>[job.key,{status:outcome.assessments?.[job.key]?'success':'uncertain',...(outcome.assessments?.[job.key]?{result:{assessment:outcome.assessments[job.key],model:QUALIFICATION_MODEL}}:{})}])),{now});
   return {status:outcome.assessments?'processed':'uncertain',assessed:statuses.length};
 }
 
@@ -180,6 +185,7 @@ export function reserveAnalysis(data, lease, settings, now) {
   const reservation = lease.kind==='pipeline-stage' ? lease.stageReservationMicroUsd : lease.kind==='business-profile' ? lease.profileReservationMicroUsd : lease.itemId ? 20000 : 1100000;
   if(!Number.isSafeInteger(reservation) || reservation<=0 || reservation>2000000)fail('Invalid analysis reservation.',400);
   if (budget.overrun || usage.calls >= settings.dailyMaxCalls || usage.spentMicroUsd + usage.reservedMicroUsd + reservation > settings.budgetMicroUsd) fail('There is not enough daily AI allowance for this analysis. Try again tomorrow (Pacific time).', 429);
+  assertPilotBudget(data,'aiMicroUsd',reservation);
   budget.calls++; budget.daily[day] = (budget.daily[day] || 0) + 1; budget.reservedMicroUsd += reservation;
   usage.calls++; usage.reservedMicroUsd += reservation;
   Object.assign(lease, {budgetDay:day,dispatchedAt:iso(now),reservationMicroUsd:reservation});
@@ -191,6 +197,13 @@ export function settleAnalysis(data, lease, cost = lease.reservationMicroUsd) {
 }
 export function retireAnalysis(data, now) {
   for (const [token, lease] of Object.entries(data.analysisLeases || {})) if (lease.expiresAt <= now) {
+    if(lease.analysisCycleBatchId){
+      if(lease.stage==='qualify'){
+        const product=data.products.find(row=>row.id===lease.productId);
+        if(product&&qualificationInputHash(product)===lease.qualificationProfileHash)for(const old of lease.qualificationInput.evidence){const row=findEvidence(data,product,old.id);if(row&&digest(JSON.stringify(qualificationEvidence(row)))===digest(JSON.stringify(old)))recordReviewFailure(data,product,row,'The analysis request expired with an uncertain provider outcome.',iso(now));}
+      }
+      finishAnalysisCycleBatch(data,lease.productId,lease.analysisCycleBatchId,{}, {now});
+    }
     settleAnalysis(data, lease); delete data.analysisLeases[token];
   }
 }
@@ -222,7 +235,7 @@ export function stageQualifications(data, product, rows, searchedAt, trigger) {
     if(prior && !(isBackfill && prior.status==='historical_skipped')) {if(isBackfill)prior.backfillId=historicalJob.id;skipped++;duplicates++;continue;}
     const legacy=data.qualifications[qualificationKey(product.id,identity.identity)];
     if(isBackfill && legacy?.status==='legacy_processed') {legacy.backfillId=historicalJob.id;skipped++;duplicates++;continue;}
-    if(Object.keys(data.qualifications).length>=10000) {historyFull=true;skipped++;unassessed++;continue;}
+    if(!data.subscription&&Object.keys(data.qualifications).length>=10000) {historyFull=true;skipped++;unassessed++;continue;}
     const published=Date.parse(value.publishedAt||''), cutoff=Date.parse(migration.redditBefore||'');
     const hasPreviousVersion=contentHash && Object.values(data.qualifications).some(j=>j.productId===product.id&&j.identity===identity.identity&&j.contentHash);
     const pipelineHistorical=contentHash && !hasPreviousVersion && Date.parse(value.publishedAt)<Date.parse(value.pipelineCutoff || '');
@@ -238,10 +251,45 @@ export function stageQualifications(data, product, rows, searchedAt, trigger) {
 }
 function retireRunning(data, job, now) {
   if(job.status!=='running' || job.leaseUntil>now)return;
+  if(job.analysisCycleBatchId)finishAnalysisCycleBatch(data,job.productId,job.analysisCycleBatchId,{}, {now});
   charge(data,job,job.reservationMicroUsd);
   Object.assign(job,{status:'uncertain',reason:'expired_dispatch',processedAt:iso(now),chargedMicroUsd:job.reservationMicroUsd});delete job.token;delete job.row;delete job.profile;
 }
+function claimProvisionedLegacy(data,settings,now,productId,batched){
+  retireAnalysis(data,now);const budget=ledger(data);
+  for(const job of Object.values(data.qualifications))retireRunning(data,job,now);
+  if(Object.values(data.qualifications).some(job=>job.status==='running'))return {status:'running'};
+  const eligible=Object.values(data.qualifications).filter(job=>{
+    if(job.status!=='pending'||productId&&job.productId!==productId)return false;
+    const product=data.products.find(p=>p.id===job.productId);
+    if(!product||job.profileHash!==profileHash(product)){job.status='profile_changed';job.processedAt=iso(now);delete job.row;delete job.profile;return false;}
+    return !(job.trigger==='scheduled'&&!product.monitoring||settings.mode==='test'&&!productId);
+  }).sort((a,b)=>a.createdAt.localeCompare(b.createdAt));
+  if(!eligible.length)return {status:'idle'};
+  const selectedId=productId||[...new Set(eligible.map(job=>job.productId))].find(id=>analysisCycleDue(data,id,now))||eligible[0].productId,same=eligible.filter(job=>job.productId===selectedId),product=data.products.find(p=>p.id===selectedId);
+  const candidates=same.map(job=>analysisCandidate({...job.row,historical:Boolean(job.backfillId),backfillId:job.backfillId,contentHash:job.contentHash},{id:job.key,profileHash:job.profileHash,version:QUALIFICATION_VERSION}));
+  const day=budgetDay(now),usage=budget.dailyUsage[day] ||= {spentMicroUsd:0,reservedMicroUsd:0,calls:0};
+  let maxBatch=batched?Math.min(10,same.length):1;
+  while(maxBatch>1){const estimate=Math.ceil((Buffer.byteLength(JSON.stringify(batchRequest(same.slice(0,maxBatch))))+4096)*2.5+4096*10);if(usage.spentMicroUsd+usage.reservedMicroUsd+estimate<=settings.budgetMicroUsd&&!pilotBudgetBlock(data,'aiMicroUsd',estimate))break;maxBatch--;}
+  const claim=claimAnalysisCycleBatch(data,selectedId,{candidates,profileHash:profileHash(product),version:QUALIFICATION_VERSION,now,maxBatch,manual:true});
+  for(const cached of claim.cached||[]){
+    const job=data.qualifications[cached.candidate.id];
+    if(job?.status==='pending'&&cached.result?.assessment){Object.assign(job,{status:'running',token:randomUUID(),reservationMicroUsd:0,model:cached.result.model||QUALIFICATION_MODEL,promptVersion:QUALIFICATION_VERSION});finishQualification(data,job.key,job.token,{assessment:cached.result.assessment,costMicroUsd:0,fromCache:true},now);}
+  }
+  if(!claim.batch)return {status:claim.status,blocked:claim.blocked||null,nextRunAt:claim.nextRunAt||claim.cycle?.nextRunAt||null,cycle:claim.cycle||null};
+  const jobs=claim.batch.candidates.map(candidate=>data.qualifications[candidate.id]);
+  const reserve=batched?Math.ceil((Buffer.byteLength(JSON.stringify(batchRequest(jobs)))+4096)*2.5+4096*10):reservationMicroUsd(jobs[0]);
+  const pilotBlock=pilotBudgetBlock(data,'aiMicroUsd',reserve);
+  if(pilotBlock||!settings.active||settings.until<=now||budget.overrun||usage.calls>=settings.dailyMaxCalls||usage.spentMicroUsd+usage.reservedMicroUsd+reserve>settings.budgetMicroUsd){
+    const error=pilotBlock||Object.assign(new Error('There is not enough daily AI provider allowance for this batch. The analysis cycle will resume when allowance is available.'),{status:429,code:'daily_ai_provider_budget'});
+    const cycle=releaseAnalysisCycleBatch(data,selectedId,claim.batch.id,error,{now});return {status:'blocked',blocked:cycle?.blocked,cycle};
+  }
+  const token=randomUUID();budget.calls++;budget.daily[day]=(budget.daily[day]||0)+1;budget.reservedMicroUsd+=reserve;usage.calls++;usage.reservedMicroUsd+=reserve;
+  jobs.forEach((job,index)=>Object.assign(job,{status:'running',token,leaseUntil:now+LEASE_MS,dispatchedAt:iso(now),budgetDay:day,reservationMicroUsd:index===0?reserve:0,model:QUALIFICATION_MODEL,promptVersion:QUALIFICATION_VERSION,analysisCycleBatchId:claim.batch.id,analysisCycleGroup:batched}));
+  return batched?{token,jobs:structuredClone(jobs),reservationMicroUsd:reserve,analysisCycleBatchId:claim.batch.id}:structuredClone(jobs[0]);
+}
 export function claimQualification(data, settings, now, productId) {
+  if(data.subscription)return claimProvisionedLegacy(data,settings,now,productId,false);
   if(!settings.active || settings.until<=now)return null;
   retireAnalysis(data, now);
   const budget=ledger(data);for(const job of Object.values(data.qualifications))retireRunning(data,job,now);
@@ -254,7 +302,7 @@ export function claimQualification(data, settings, now, productId) {
     if(!product || job.profileHash!==profileHash(product)) {Object.assign(job,{status:'profile_changed',processedAt:iso(now)});delete job.row;delete job.profile;continue;}
     if(job.trigger==='scheduled' && !product.monitoring || settings.mode==='test'&&!productId)continue;
     const reservation=reservationMicroUsd(job);
-    if(usage.spentMicroUsd+usage.reservedMicroUsd+reservation>settings.budgetMicroUsd)return null;
+    if(usage.spentMicroUsd+usage.reservedMicroUsd+reservation>settings.budgetMicroUsd||pilotBudgetBlock(data,'aiMicroUsd',reservation))return null;
     budget.calls++;budget.daily[day]=(budget.daily[day]||0)+1;budget.reservedMicroUsd+=reservation;
     usage.calls++;usage.reservedMicroUsd+=reservation;
     Object.assign(job,{status:'running',token:randomUUID(),leaseUntil:now+LEASE_MS,dispatchedAt:iso(now),budgetDay:day,reservationMicroUsd:reservation,model:QUALIFICATION_MODEL,promptVersion:QUALIFICATION_VERSION});
@@ -265,7 +313,7 @@ export function claimQualification(data, settings, now, productId) {
 export function finishQualification(data, key, token, outcome, now) {
   const job=data.qualifications?.[key];if(!job || job.status!=='running' || job.token!==token)return null;
   const cost=outcome.costMicroUsd ?? job.reservationMicroUsd;
-  charge(data,job,cost);
+  if(!outcome.fromCache)charge(data,job,cost);
   Object.assign(job,{status:outcome.assessment?.decision||'uncertain',processedAt:iso(now),chargedMicroUsd:cost,...(outcome.usage?{usage:outcome.usage}:{}),...(outcome.assessment?{assessment:outcome.assessment}:{reason:'provider_result_uncertain'}),...(outcome.requestId?{requestId:outcome.requestId}:{})});
   if(outcome.assessment?.decision==='qualified' && data.products.some(p=>p.id===job.productId&&profileHash(p)===job.profileHash)) {
     const prior=data.items.find(item=>item.productId===job.productId&&canonicalPost(item)?.identity===job.identity);
@@ -275,13 +323,14 @@ export function finishQualification(data, key, token, outcome, now) {
       qualification:{model:job.model || QUALIFICATION_MODEL,promptVersion:job.promptVersion || QUALIFICATION_VERSION,...outcome.assessment}};
     data.items=[item,...data.items.filter(row=>row.id!==item.id)];
   }
+  if(job.analysisCycleBatchId&&!job.analysisCycleGroup)finishAnalysisCycleBatch(data,job.productId,job.analysisCycleBatchId,{[job.key]:{status:outcome.assessment?'success':'uncertain',...(outcome.assessment?{result:{assessment:outcome.assessment,model:job.model}}:{})}},{now});
   delete job.token;delete job.row;delete job.profile;return {status:job.status,key};
 }
 export function qualificationSummary(data, settings, productId) {
   const jobs=Object.values(data.qualifications||{}).filter(job=>!productId||job.productId===productId), counts={};
   for(const job of jobs)counts[job.status]=(counts[job.status]||0)+1;
   const day=budgetDay(Date.now()), usage=data.aiBudget?.dailyUsage?.[day]||{};
-  return {enabled:settings.active,collecting:settings.enabled,mode:settings.mode,model:QUALIFICATION_MODEL,reason:settings.reason,counts,
+  return {enabled:settings.active,collecting:settings.enabled,mode:settings.mode,model:QUALIFICATION_MODEL,reason:settings.reason,counts,...(productId&&data.subscription?{cycle:analysisCycleState(data,productId)}:{}),
     budget:{day,timeZone:AI_BUDGET_TIME_ZONE,spentMicroUsd:usage.spentMicroUsd||0,reservedMicroUsd:usage.reservedMicroUsd||0,calls:usage.calls||0,limitMicroUsd:settings.configured?settings.budgetMicroUsd:0,maxCalls:settings.maxCalls,overrun:Boolean(data.aiBudget?.overrun),paused:Boolean(data.aiBudget?.overrun)||(usage.calls||0)>=settings.dailyMaxCalls||(usage.spentMicroUsd||0)+(usage.reservedMicroUsd||0)>=settings.budgetMicroUsd}};
 }
 export function qualificationPublicState(data,settings) {
@@ -309,12 +358,14 @@ export async function processQualification(store,settings,provider,{productId,no
   if(!settings.active || !provider)return {status:'disabled'};
   if(provider.qualifyBatch && Object.values((await store.snapshot()).qualifications || {}).some(j=>j.status==='pending'&&j.row?.pipeline&&(!productId||j.productId===productId))) {
     const batch=await store.claimQualificationBatch(settings,now,productId);if(!batch)return {status:'idle'};
+    if(!batch.jobs)return batch;
     let outcome;
     try {const result=await provider.qualifyBatch(batch);outcome={assessments:resolveBatch(result.value,batch.jobs),costMicroUsd:result.costMicroUsd,usage:result.usage,requestId:result.requestId};}
     catch {outcome={};}
     return await store.finishQualificationBatch(batch,outcome,Date.now()) || {status:'uncertain'};
   }
   const job=await store.claimQualification(settings,now,productId);if(!job)return {status:'idle'};
+  if(!job.key)return job;
   let outcome,result;
   try {result=await provider.qualify(job);outcome={assessment:resolveQualification(result.value,job),costMicroUsd:result.costMicroUsd,requestId:result.requestId};if(!Number.isSafeInteger(outcome.costMicroUsd)||outcome.costMicroUsd<0)throw Error('invalid_usage');}
   catch {outcome={...(Number.isSafeInteger(result?.costMicroUsd)&&result.costMicroUsd>=0?{costMicroUsd:Math.max(job.reservationMicroUsd,result.costMicroUsd)}:{}),...(typeof result?.requestId==='string'?{requestId:text(result.requestId,120)}:{})};}
@@ -338,10 +389,10 @@ export function qualificationBackup(data) {
   const dailyUsage=Object.fromEntries(Object.entries(budget.dailyUsage||{}).map(([day,u])=>[day,{spentMicroUsd:u.spentMicroUsd+u.reservedMicroUsd,reservedMicroUsd:0,calls:u.calls}]));
   return {qualifications,qualificationMigrations:structuredClone(data.qualificationMigrations||{}),aiBudget:{spentMicroUsd:(budget.spentMicroUsd||0)+(budget.reservedMicroUsd||0),reservedMicroUsd:0,calls:budget.calls||0,daily:{...budget.daily},dailyUsage,overrun:Boolean(budget.overrun)}};
 }
-export function validateQualificationHistory(data) {
+export function validateQualificationHistory(data,{maxRecords=10000}={}) {
   if(data.qualifications===undefined&&data.aiBudget===undefined&&data.qualificationMigrations===undefined)return {};
   const fail=()=>{throw Error('The backup has invalid AI processing history.');};
-  if(!recordObject(data.qualifications)||Object.keys(data.qualifications).length>10000||!recordObject(data.qualificationMigrations)||Object.keys(data.qualificationMigrations).length>10000||!recordObject(data.aiBudget))fail();
+  if(!recordObject(data.qualifications)||Object.keys(data.qualifications).length>maxRecords||!recordObject(data.qualificationMigrations)||Object.keys(data.qualificationMigrations).length>10000||!recordObject(data.aiBudget))fail();
   const qualifications={};
   for(const [key,job] of Object.entries(data.qualifications)) {
     const source=job?.platform==='reddit'?'Reddit':job?.platform==='linkedin'?'LinkedIn':job?.platform==='x'?'X':null;
@@ -374,9 +425,9 @@ export function validateQualificationHistory(data) {
 // Restore retains the union of charged receipts; old backups cannot refund a
 // reservation, erase a rejection, or turn a dispatched request into a new job.
 export function mergeQualificationHistory(current, incoming) {
-  const old=qualificationBackup(current), restored=validateQualificationHistory(incoming);
+  const old=qualificationBackup(current), restored=validateQualificationHistory(incoming,{maxRecords:current.subscription?1000000:10000});
   const qualifications={...restored.qualifications,...old.qualifications};
-  if(Object.keys(qualifications).length>10000)throw Error('The combined AI processing history exceeds the 10,000-post limit.');
+  if(!current.subscription&&Object.keys(qualifications).length>10000)throw Error('The combined AI processing history exceeds the 10,000-post limit.');
   const daily={...restored.aiBudget?.daily};
   for(const [day,calls] of Object.entries(old.aiBudget?.daily||{}))daily[day]=Math.max(daily[day]||0,calls);
   const dailyUsage={},receiptUsage={};let receiptCost=0,receiptCalls=0;

@@ -37,7 +37,7 @@ function author(row) {
   return typeof row.author === 'string' && /^[a-z0-9_-]{3,32}$/i.test(row.author) ? row.author : null;
 }
 
-export function normalizeScrapeBadgerPost(value, collectedAt, {includeClosed=false} = {}) {
+export function normalizeScrapeBadgerPost(value, collectedAt, {includeClosed=false,preserveText=false} = {}) {
   const row = record(value); if (!row) return null;
   const id = identity(row, 't3_'), name = community(row), publishedAt = timestamp(row, Date.parse(collectedAt));
   if (!id || !name || !publishedAt || typeof row.title !== 'string' || typeof row.selftext !== 'string' ||
@@ -45,10 +45,10 @@ export function normalizeScrapeBadgerPost(value, collectedAt, {includeClosed=fal
     ['[removed]', '[deleted]'].includes(row.selftext.trim()) || !author(row) || !matchingPermalink(row.permalink, name, id)) return null;
   return {source: 'Reddit', provider: 'scrapebadger', sourceId: `t3_${id}`, postId: `t3_${id}`, parentId: null, type: 'post',
     url: `https://www.reddit.com/r/${name}/comments/${id}/`, collectionPath: `/r/${name}/comments/${id}/_/`,
-    title: row.title.slice(0,1000), snippet: row.selftext.slice(0,10000), outboundURL: row.url,
+    title: preserveText ? row.title : row.title.slice(0,1000), snippet: preserveText ? row.selftext : row.selftext.slice(0,10000), outboundURL: row.url,
     author: author(row), publishedAt, collectedAt, ...(row.crosspost_parent?{crosspost:true}:{}), ...(includeClosed?{discussionClosed:row.archived||row.locked}:{}), commentCount: Number.isSafeInteger(row.num_comments) && row.num_comments >= 0 ? row.num_comments : null};
 }
-export function normalizeScrapeBadgerComments(values, post, collectedAt, limit = 100, {includeClosed=false} = {}) {
+export function normalizeScrapeBadgerComments(values, post, collectedAt, limit = 100, {includeClosed=false,preserveText=false} = {}) {
   const rows = new Map(), queue = [...values]; let inspected = 0;
   const name = post.url.split('/')[4], postId = post.postId.slice(3);
   while (queue.length && rows.size < limit && inspected++ < 1000) {
@@ -64,7 +64,7 @@ export function normalizeScrapeBadgerComments(values, post, collectedAt, limit =
       !matchingPermalink(row.permalink, name, postId, id)) continue;
     rows.set(id, {source: 'Reddit comment', provider: 'scrapebadger', sourceId: `t1_${id}`, postId: post.postId, parentId: row.parent_id,
       type: 'comment', url: `https://www.reddit.com/r/${name}/comments/${postId}/_/${id}/`,
-      title: row.body.slice(0,180), snippet: row.body.slice(0,10000), author: author(row), publishedAt, collectedAt, ...(row.crosspost_parent?{crosspost:true}:{}), ...(includeClosed?{discussionClosed:Boolean(post.discussionClosed||row.archived||row.locked)}:{})});
+      title: row.body.slice(0,180), snippet: preserveText ? row.body : row.body.slice(0,10000), author: author(row), publishedAt, collectedAt, ...(row.crosspost_parent?{crosspost:true}:{}), ...(includeClosed?{discussionClosed:Boolean(post.discussionClosed||row.archived||row.locked)}:{})});
   }
   return [...rows.values()];
 }
@@ -125,7 +125,7 @@ export class ScrapeBadgerAdapter {
     if (!Number.isInteger(value) || value < 1 || value > max) throw new CollectionError('invalid_limit',400);
     return value;
   }
-  async listing(path,params,{signal,limit}) {
+  async listing(path,params,{signal,limit,preserveText=false}) {
     this.limit(limit); const rows = new Map(), cursors = new Set(), errors = []; let after = null, pages = 0, creditsUsed = 0, cacheHits = 0;
     const expectedCommunity = path.match(/^subreddits\/([^/]+)\/posts$/)?.[1];
     do {
@@ -138,7 +138,7 @@ export class ScrapeBadgerAdapter {
         this.cacheResponse(path,query,result);pages++;cacheHits += Number(result.cacheHit);
         creditsUsed = creditsUsed === null || result.creditsUsed === null ? null : creditsUsed + result.creditsUsed;
         for (const value of body.posts) {
-          const row = normalizeScrapeBadgerPost(value,result.collectedAt);
+          const row = normalizeScrapeBadgerPost(value,result.collectedAt,{preserveText});
           if (row && (!expectedCommunity || row.url.split('/')[4] === expectedCommunity)) rows.set(row.sourceId,row);
         }
         after = body.posts.length ? cursor : null;
@@ -149,16 +149,16 @@ export class ScrapeBadgerAdapter {
     return {rows:[...rows.values()].slice(0,limit),coverage:{provider:this.id,pages,cacheHits,creditsUsed,
       partial:Boolean(after || errors.length),complete:false,comments:'not_collected',errors}};
   }
-  list({subreddit,sort='new',signal,limit=30}) {
+  list({subreddit,sort='new',signal,limit=30,preserveText=false}) {
     if (!communityName.test(subreddit || '') || !['new','hot'].includes(sort)) throw new CollectionError('invalid_listing',400);
-    return this.listing(`subreddits/${subreddit.toLowerCase()}/posts`,{sort},{signal,limit});
+    return this.listing(`subreddits/${subreddit.toLowerCase()}/posts`,{sort},{signal,limit,preserveText});
   }
-  async thread({path,signal,limit=200}) {
+  async thread({path,signal,limit=200,preserveText=false}) {
     this.limit(limit,200);
     const match = typeof path === 'string' && path.match(/^\/r\/([a-z0-9_]{2,21})\/comments\/([a-z0-9]{1,20})\/(?:[^/?#]+\/)?$/i);
     if (!match) throw new CollectionError('invalid_thread',400);
     const [name,id] = [match[1].toLowerCase(),match[2]], postResult = await this.json(`posts/${id}`,{},signal);
-    const post = normalizeScrapeBadgerPost(postResult.body.post ?? postResult.body,postResult.collectedAt);
+    const post = normalizeScrapeBadgerPost(postResult.body.post ?? postResult.body,postResult.collectedAt,{preserveText});
     if (!post || post.sourceId !== `t3_${id}` || post.url.split('/')[4] !== name) throw new CollectionError('unexpected_response');
     this.cacheResponse(`posts/${id}`,{},postResult);
     const rows = [post], errors = []; let creditsUsed = postResult.creditsUsed, partial = false, cacheHits = Number(postResult.cacheHit);
@@ -168,7 +168,7 @@ export class ScrapeBadgerAdapter {
         const result = await this.json(`posts/${id}/comments`,params,signal), values = result.body.tree ?? result.body.comments;
         if (!Array.isArray(values)) throw new CollectionError('unexpected_response');
         this.cacheResponse(`posts/${id}/comments`,params,result);cacheHits += Number(result.cacheHit);
-        rows.push(...normalizeScrapeBadgerComments(values,post,result.collectedAt,Math.min(100,limit-1)));
+        rows.push(...normalizeScrapeBadgerComments(values,post,result.collectedAt,Math.min(100,limit-1),{preserveText}));
         creditsUsed = creditsUsed === null || result.creditsUsed === null ? null : creditsUsed + result.creditsUsed;
       } catch (error) {partial = true;creditsUsed = null;errors.push(error.code || 'thread_unavailable');}
     }
@@ -176,15 +176,15 @@ export class ScrapeBadgerAdapter {
     return {rows,coverage:{provider:this.id,pages:1,cacheHits,creditsUsed,partial:partial || post.commentCount === null || comments < post.commentCount,
       complete:false,comments:'bounded_threads_only',advertisedCommentCount:post.commentCount,collectedComments:comments,errors}};
   }
-  async search({query,signal,limit=30}) {
+  async search({query,signal,limit=30,preserveText=false}) {
     if (typeof query !== 'string' || !query.trim() || query.length > 200) throw new CollectionError('invalid_query',400);
-    const listing = await this.listing('search/posts',{q:query,sort:'new',t:'all'},{signal,limit});
+    const listing = await this.listing('search/posts',{q:query,sort:'new',t:'all'},{signal,limit,preserveText});
     const rows = new Map(listing.rows.map(row => [row.sourceId,row])), errors = [...listing.coverage.errors];
     const candidates = listing.rows.filter(row => row.commentCount !== 0); let threads = 0, comments = 0, partial = listing.coverage.partial || candidates.length > this.maxThreads;
     let creditsUsed = listing.coverage.creditsUsed;
     for (const post of candidates.slice(0,this.maxThreads)) {
       try {
-        const thread = await this.thread({path:post.collectionPath,signal});
+        const thread = await this.thread({path:post.collectionPath,signal,preserveText});
         for (const row of thread.rows) rows.set(row.sourceId,row);
         threads++;comments += thread.coverage.collectedComments;partial ||= thread.coverage.partial;errors.push(...thread.coverage.errors);
         creditsUsed = creditsUsed === null || thread.coverage.creditsUsed === null ? null : creditsUsed + thread.coverage.creditsUsed;

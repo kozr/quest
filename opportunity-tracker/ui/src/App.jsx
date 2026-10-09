@@ -1,3 +1,4 @@
+import {useConversationPage} from './useConversationPage';
 import {matchesConversation} from './feed.mjs';
 import {feedProgress} from './progress.mjs';
 import {PipelineWorkspace} from './PipelineWorkspace';
@@ -39,7 +40,7 @@ export function App(){
 }
 
 function Dashboard({state,reload,logout,error}){
- const [path,setPath]=useState(()=>route()),[query,setQuery]=useState(''),[productFilter,setProductFilter]=useState('all'),[platformFilter,setPlatformFilter]=useState('all'),[statusFilter,setStatusFilter]=useState('active'),[selectedId,setSelectedId]=useState(null),[page,setPage]=useState(0),[mobileDetail,setMobileDetail]=useState(false),[editing,setEditing]=useState(null),[formOpen,setFormOpen]=useState(false),[busy,setBusy]=useState('');
+ const [path,setPath]=useState(()=>route()),[query,setQuery]=useState(''),[productFilter,setProductFilter]=useState('all'),[platformFilter,setPlatformFilter]=useState('all'),[statusFilter,setStatusFilter]=useState('active'),[selectedId,setSelectedId]=useState(null),[page,setPage]=useState(0),[pageSelection,setPageSelection]=useState('first'),[mobileDetail,setMobileDetail]=useState(false),[editing,setEditing]=useState(null),[formOpen,setFormOpen]=useState(false),[busy,setBusy]=useState('');
  const [view,subview='conversations']=path.split('/');
  const [draftEdits,setDraftEdits]=useState({}),[noteEdits,setNoteEdits]=useState({}),[pipelineEdits,setPipelineEdits]=useState({});
  const setBuffer=(setter,id,value)=>setter(old=>{const next={...old};if(value===undefined)delete next[id];else next[id]=value;return next;});
@@ -56,11 +57,15 @@ function Dashboard({state,reload,logout,error}){
  useEffect(()=>{const change=()=>{if(location.hash==='#main-content')return;const next=route(enabledPurposes);if(location.hash!==`#${next}`)history.replaceState(null,'',`#${next}`);setPath(next);setMobileDetail(false);};window.addEventListener('hashchange',change);return()=>window.removeEventListener('hashchange',change);},[enabledPurposes]);
  useEffect(()=>{document.title=`${currentLabel}${isPurpose&&!isFeed?` · ${subview==='patterns'?'Patterns':'Explore'}`:''} · ${section}`;},[path,currentLabel,section]);
  useEffect(()=>{if(purpose)saveActivePurpose(view);if(location.hash!=='#main-content'&&location.hash!==`#${path}`)history.replaceState(null,'',`#${path}`);},[path]);
- useEffect(()=>{setPage(0);setMobileDetail(false);},[query,productFilter,platformFilter,statusFilter,path]);
+ useEffect(()=>{setPage(0);setPageSelection('first');setMobileDetail(false);},[query,productFilter,platformFilter,statusFilter,path]);
  useEffect(()=>{if(productFilter!==productId)setProductFilter(productId);},[productFilter,productId]);
  useEffect(()=>{if(!isFeed&&mobileDetail&&matchMedia('(max-width: 900px)').matches)heading.current?.focus();},[mobileDetail,selectedId,isFeed]);
- const filtered=useMemo(()=>state.items.filter(i=>(productFilter==='all'||i.productId===productFilter)&&(platformFilter==='all'||platform(i)===platformFilter)&&matchesConversation(i,{status:statusFilter,relevance:purpose?.relevance})&&(!query||`${i.title} ${i.snippet} ${i.reason} ${sourceLabel(i)}`.toLowerCase().includes(query.toLowerCase()))).sort((a,b)=>(Date.parse(b.publishedAt||b.foundAt)||0)-(Date.parse(a.publishedAt||a.foundAt)||0)),[state.items,productFilter,platformFilter,statusFilter,query,purpose]);
- const pageSize=5,pageIndex=Math.min(page,Math.max(0,Math.ceil(filtered.length/pageSize)-1)),visible=filtered.slice(pageIndex*pageSize,(pageIndex+1)*pageSize),selected=filtered.find(i=>i.id===selectedId)||visible[0];
+ const localFiltered=useMemo(()=>state.items.filter(i=>(productFilter==='all'||i.productId===productFilter)&&(platformFilter==='all'||platform(i)===platformFilter)&&matchesConversation(i,{status:statusFilter,relevance:purpose?.relevance})&&(!query||`${i.title} ${i.snippet} ${i.reason} ${sourceLabel(i)}`.toLowerCase().includes(query.toLowerCase()))).sort((a,b)=>(Date.parse(b.publishedAt||b.foundAt)||0)-(Date.parse(a.publishedAt||a.foundAt)||0)),[state.items,productFilter,platformFilter,statusFilter,query,purpose]);
+ const pageSize=5,paged=Boolean(state.conversationPaging&&isFeed);
+ const remote=useConversationPage(state,{enabled:paged,productId:productFilter,query,platform:platformFilter,status:statusFilter,relevance:purpose?.relevance,page,limit:pageSize});
+ const filtered=paged?remote.items:localFiltered,total=paged?remote.total:filtered.length;
+ const pageIndex=paged?page:Math.min(page,Math.max(0,Math.ceil(total/pageSize)-1)),visible=paged?filtered:filtered.slice(pageIndex*pageSize,(pageIndex+1)*pageSize),selected=filtered.find(i=>i.id===selectedId)||visible[pageSelection==='last'?visible.length-1:0];
+ useEffect(()=>{if(paged&&!remote.loading&&page>Math.max(0,Math.ceil(total/pageSize)-1))setPage(Math.max(0,Math.ceil(total/pageSize)-1));},[paged,remote.loading,page,total]);
  useEffect(()=>{if(selected&&selected.id!==selectedId)setSelectedId(selected.id);},[selected?.id,selectedId]);
  function navigate(next,enabled=enabledPurposes){const resolved=resolveWorkspaceRoute(next,enabled,loadActivePurpose(enabled));location.hash=resolved;setPath(resolved);setMobileDetail(false);}
  function addProduct(){setEditing(null);setFormOpen(true);}
@@ -94,9 +99,10 @@ function Dashboard({state,reload,logout,error}){
      <div className="purpose-tabs"><TabsList aria-label={`${purpose.label} views`}><TabsTrigger value="conversations">Conversations</TabsTrigger><TabsTrigger value="patterns">Patterns</TabsTrigger>{purpose.id!=='mentions'&&<TabsTrigger value="explore">Explore</TabsTrigger>}</TabsList></div>
      <TabsContent value={subview} className="purpose-panel">
      {error&&<p className="form-error" role="alert">Refresh failed: {error} <button onClick={()=>reload().catch(e=>toast.error(e.message))}>Try again</button></p>}
-     {isFeed&&<ConversationsDesk key={view} title={purpose.label} relevance={purpose.relevance} state={state} filtered={filtered} visible={visible} selected={selected} pageIndex={pageIndex} pageSize={pageSize}
-      onPage={index=>{setPage(index);setSelectedId(null);}}
-      onSelect={item=>{setSelectedId(item.id);setPage(Math.floor(filtered.findIndex(row=>row.id===item.id)/pageSize));setMobileDetail(true);}}
+     {isFeed&&paged&&remote.error&&<p className="form-error" role="alert">{remote.error} <button onClick={()=>reload().catch(e=>toast.error(e.message))}>Try again</button></p>}
+     {isFeed&&<ConversationsDesk key={view} title={purpose.label} relevance={purpose.relevance} state={state} total={total} paged={paged} pageLoading={paged&&remote.loading} filtered={filtered} visible={visible} selected={selected} pageIndex={pageIndex} pageSize={pageSize}
+      onPage={(index,edge='first')=>{setPage(index);setPageSelection(edge);setSelectedId(null);}}
+      onSelect={item=>{setSelectedId(item.id);if(!paged)setPage(Math.floor(filtered.findIndex(row=>row.id===item.id)/pageSize));setMobileDetail(true);}}
       mobileDetail={mobileDetail} onMobileDetail={setMobileDetail} detailHeading={heading}
       query={query} onQuery={setQuery} platformFilter={platformFilter} onPlatform={setPlatformFilter} statusFilter={statusFilter} onStatus={setStatusFilter}
       products={selectedProducts} busy={busy} find={find} action={action} updateReview={updateReview} showPlaceholders={showPlaceholders} addProduct={addProduct}

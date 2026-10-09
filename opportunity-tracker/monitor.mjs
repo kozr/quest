@@ -1,5 +1,6 @@
 import {listeningReady,plannedQueries} from './search-plan.mjs';
-import {collectionDueIds} from './collection.mjs';
+import {activeProduct,subscriptionState} from './plans.mjs';
+import {collectionDueIds,collectionPlanState} from './collection.mjs';
 export const MONITOR_INTERVAL_MS = 2 * 60 * 60 * 1000;
 export const LINKEDIN_TIME_ZONE = 'America/Los_Angeles';
 export const LINKEDIN_HOURS = [8, 20];
@@ -25,8 +26,15 @@ function checkedAt(search, source) {
   return search && source === 'reddit' && !search.sources?.length ? Date.parse(search.searchedAt) || 0 : 0;
 }
 
-export function dueSources(product, state, now = Date.now()) {
-  if (!product.monitoring || !listeningReady(product)) return [];
+export function dueSources(product, state, now = Date.now(),{manual=false}={}) {
+  if ((!manual&&!product.monitoring) || !listeningReady(product)) return [];
+  if(state.subscription){
+    if(!activeProduct(product)||product.planMonitoringBlocked||!subscriptionState(state,now).active)return [];
+    const due=[...new Set(collectionPlanState(state,product.id,now,{manual}).filter(row=>row.due).flatMap(row=>row.sources))];
+    const linkedinAt=Math.max(checkedAt(state.searches?.[product.id],'linkedin'),Date.parse(product.monitorAttempts?.linkedin||'')||0);
+    if(product.linkedin&&(!linkedinAt||linkedinSlot(linkedinAt)<linkedinSlot(now)))due.push('linkedin');
+    return due;
+  }
   const search = state.searches?.[product.id];
   const attempts = product.monitorAttempts || {};
   const due = [];
@@ -43,12 +51,13 @@ export function dueProducts(state, now = Date.now()) {
   return state.products.filter(product => dueSources(product, state, now).length);
 }
 
-export function startLocalMonitoring({store, runSearch, runQualification, onError = () => {}, interval = 60000}) {
+export function startLocalMonitoring({store, runSearch, runQualification, runWorkspaceTick, onError = () => {}, interval = 60000}) {
   let running = false;
   async function tick() {
     if (running) return;
     running = true;
     try {
+      if(runWorkspaceTick){await runWorkspaceTick();return;}
       const snapshot=await store.snapshot(),ids=new Set([...dueProducts(snapshot).map(p=>p.id),...collectionDueIds(snapshot)]);
       for (const id of ids) {
         try { await runSearch(id, true); } catch { onError(); }

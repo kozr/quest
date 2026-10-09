@@ -1,3 +1,4 @@
+import {activeProduct,assertSubscriptionActive,planError} from './plans.mjs';
 import {validateQualificationBatch} from './listening-qualification.mjs';
 import {stageReservation} from './pipeline-provider.mjs';
 import {randomUUID} from 'node:crypto';
@@ -7,11 +8,39 @@ import {reserveAnalysis,settleAnalysis,retireAnalysis,budgetDay} from './qualifi
 import {ANALYSIS_DAILY_LIMIT} from './analysis.mjs';
 import {validateSearchPlan,validateSavedPlan} from './search-plan.mjs';
 import {findEvidence,qualificationInputHash,qualificationEvidence,saveConversationReview,recordReviewFailure} from './conversation-evidence.mjs';
+import {pendingEvidenceAll} from './conversation-evidence.mjs';
+import {analysisCandidate,claimAnalysisCycleBatch,finishAnalysisCycleBatch,releaseAnalysisCycleBatch} from './analysis-cycles.mjs';
+
+function claimProvisionedQualification(data,productId,settings,now){
+  const product=data.products.find(row=>row.id===productId);if(!product)problem('Business not found.',404);
+  const version=STAGE_DEFINITIONS.qualify.promptVersion,profileHash=qualificationInputHash(product);
+  const candidates=pendingEvidenceAll(data,product).map(row=>analysisCandidate(row,{profileHash,version}));
+  const claim=claimAnalysisCycleBatch(data,productId,{candidates,profileHash,version,now,maxBatch:12,manual:true});
+  for(const cached of claim.cached||[]) {
+    const row=findEvidence(data,product,cached.candidate.id);
+    if(row&&cached.result?.decision)saveConversationReview(data,product,row,cached.result.decision,cached.result.generatedAt,cached.result.model);
+  }
+  if(!claim.batch)return {status:claim.status,blocked:claim.blocked||null,nextRunAt:claim.nextRunAt||claim.cycle?.nextRunAt||null,cycle:claim.cycle||null};
+  const definition=STAGE_DEFINITIONS.qualify;
+  const input={...definition.input(data,product),asOf:new Date(now).toISOString(),evidence:claim.batch.candidates.map(candidate=>qualificationEvidence(findEvidence(data,product,candidate.id)))};
+  const inputHash=hash([PIPELINE_VERSION,'qualify',definition.promptVersion,input]);
+  const lease={token:randomUUID(),kind:'pipeline-stage',productId,stage:'qualify',inputHash,stageReservationMicroUsd:stageReservation('qualify',input),expiresAt:now+120000,qualificationInput:input,qualificationProfileHash:profileHash,analysisCycleBatchId:claim.batch.id};
+  try{if(settings)reserveAnalysis(data,lease,settings,now);}
+  catch(error){const cycle=releaseAnalysisCycleBatch(data,productId,claim.batch.id,error,{now});return {status:'blocked',blocked:cycle?.blocked||{message:error.message,status:error.status},cycle};}
+  data.analysisLeases[lease.token]=lease;
+  return {lease:structuredClone(lease),input:structuredClone(input)};
+}
 
 export function claimStage(data,productId,stage,settings,refresh,now){
   retireAnalysis(data,now);
+  data.analysisLeases ||= {};
+  if(data.subscription&&stage==='qualify'){
+    if(Object.values(data.analysisLeases).some(l=>l.productId===productId))problem('A stage is already running for this business.',409);
+    return claimProvisionedQualification(data,productId,settings,now);
+  }
   const context=stageContext(data,productId,stage),cached=data.pipelineStages?.[productId]?.[stage];
   if(stage!=='qualify'&&!refresh&&cached&&!cached.imported&&cached.inputHash===context.inputHash&&Date.parse(cached.generatedAt)>now-30*86400000)return {cached:structuredClone(cached)};
+  if(data.subscription){assertSubscriptionActive(data,now);if(!activeProduct(context.product)||context.product.planMonitoringBlocked)throw planError('This product is outside the active plan capacity.',{status:403,code:context.product.planMonitoringBlocked||'product_archived'});}
   data.analysisLeases ||= {};
   if(Object.values(data.analysisLeases).some(l=>l.productId===productId))problem('A stage is already running for this business.',409);
   const day=budgetDay(now);data.analysisUsage ||= {};
@@ -41,6 +70,11 @@ export function finishStage(data,lease,result,now){
   if(saved.stage==='qualify')for(const decision of output.results){
     saveConversationReview(data,context.product,findEvidence(data,context.product,decision.evidenceId),decision,record.generatedAt,result.model);
   }
+  if(saved.analysisCycleBatchId){
+    const outcomes=Object.fromEntries(output.results.map(decision=>[decision.evidenceId,{status:'success',result:{decision,generatedAt:record.generatedAt,model:result.model}}]));
+    for(const failure of validated.failed)outcomes[failure.evidenceId]={status:'failed'};
+    finishAnalysisCycleBatch(data,saved.productId,saved.analysisCycleBatchId,outcomes,{now});
+  }
   settleAnalysis(data,saved,result.costMicroUsd);delete data.analysisLeases[lease.token];return structuredClone(record);
 }
 export function saveSearchPlan(data,productId,value,version){
@@ -66,5 +100,6 @@ export function failStage(data,lease,reason,costMicroUsd,now){
       const row=findEvidence(data,product,source.id);if(row&&hash(qualificationEvidence(row))===hash(source))recordReviewFailure(data,product,row,reason,new Date(now).toISOString());
     }
   }
+  if(saved.analysisCycleBatchId)finishAnalysisCycleBatch(data,saved.productId,saved.analysisCycleBatchId,Object.fromEntries(saved.qualificationInput.evidence.map(source=>[source.id,{status:Number.isSafeInteger(costMicroUsd)?'failed':'uncertain'}])),{now});
   settleAnalysis(data,saved,costMicroUsd);delete data.analysisLeases[lease.token];
 }

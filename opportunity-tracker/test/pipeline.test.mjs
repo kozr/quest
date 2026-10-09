@@ -63,7 +63,7 @@ test('collector executes active queries with distinct watermarks, preserves clos
  const f=await fixture(t);await activate(f);const now=Date.now(),settings=collectionSettings(env);
  let c=f.store.beginCollection(f.p.id,'manual',now);assert.equal(c.queue[0].kind,'search');assert.equal(c.queue[0].query,'subreddit:vancouver AND croissant AND sandwich');
  const req=f.store.claimCollection(settings,f.p.id,now);assert.match(new URL(req.url).searchParams.get('q'),/croissant/);assert.equal(req.task.includeClosed,true);
- f.store.finishCollection(req.token,{credits:5,result:{rows:conversations(),cursor:null}},now+1);
+ f.store.finishCollection(req.token,{credits:5,result:{rows:conversations().map((row,index)=>({...row,publishedAt:new Date(now-(index+1)*60000).toISOString()})),cursor:null}},now+1);
  assert.equal(f.store.snapshot().conversationEvidence[f.p.id].length,4);assert.equal(Object.keys(f.store.snapshot().qualifications||{}).length,0);
  const req2=f.store.claimCollection(settings,f.p.id,now+16000);assert.match(req2.task.query,/pickup/);f.store.finishCollection(req2.token,{credits:5,result:{rows:[],cursor:null}},now+16001);
  assert.equal(Object.keys(f.store.snapshot().collection.watermarks).length,2);
@@ -186,7 +186,7 @@ test('qualification uses its metered allowance while research keeps its request 
  const claim=f.store.claimStage(f.p.id,'qualify',settings,false,now);assert.equal(f.store.snapshot().analysisUsage[day],40);
  f.store.finishStage(claim.lease,{value:stageValue('qualify',claim.input),model:'fixture',costMicroUsd:1000},now+1);
  const limited=f.store.snapshot();limited.aiBudget.dailyUsage[day].calls=settings.dailyMaxCalls;f.store.commit(limited);
- const rows=conversations().map(r=>({...r,url:r.url+'new',postId:r.postId+'new'}));f.store.recordSearch(f.p.id,{semantic:true,items:[],candidates:rows,sources:[],searchedAt:new Date(now+2).toISOString()});
+ const rows=conversations().map(r=>({...r,url:r.url.replace(/\/comments\/([^/]+)\//,'/comments/$1new/'),postId:r.postId+'new',sourceId:r.sourceId+'new'}));f.store.recordSearch(f.p.id,{semantic:true,items:[],candidates:rows,sources:[],searchedAt:new Date(now+2).toISOString()});
  assert.throws(()=>f.store.claimStage(f.p.id,'qualify',settings,false,now+3),/daily AI allowance/);
 });
 

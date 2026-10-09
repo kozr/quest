@@ -9,10 +9,10 @@ const entries = value => (Array.isArray(value) ? value : String(value || '').spl
 const failure = (message, status = 401) => Object.assign(new Error(message), {status});
 
 // This is one private shared workspace, so Google identity must also be allowed.
-export function createAuth({clientId, allowedEmails, allowedSubjects, secret, secure = true, verifyIdToken, now = Date.now}) {
+export function createAuth({clientId, allowedEmails, allowedSubjects, secret, secure = true, verifyIdToken, now = Date.now, allowVerifiedAccounts = false}) {
   const emails = new Set(entries(allowedEmails).map(x => x.toLowerCase()));
   const subjects = new Set(entries(allowedSubjects));
-  if (!/^\d+-[\w-]+\.apps\.googleusercontent\.com$/.test(clientId || '') || (!emails.size && !subjects.size) || typeof secret !== 'string' || secret.length < 32) {
+  if (!/^\d+-[\w-]+\.apps\.googleusercontent\.com$/.test(clientId || '') || (!allowVerifiedAccounts && !emails.size && !subjects.size) || typeof secret !== 'string' || secret.length < 32) {
     throw new Error('Hosted login requires TRACKER_GOOGLE_CLIENT_ID, TRACKER_GOOGLE_ALLOWED_EMAILS or TRACKER_GOOGLE_ALLOWED_SUBJECTS, and TRACKER_SESSION_SECRET (32+ characters).');
   }
   const client = new OAuth2Client();
@@ -36,7 +36,7 @@ export function createAuth({clientId, allowedEmails, allowedSubjects, secret, se
       return /^[\w-]{32}$/.test(value.nonce || '') && Number.isFinite(value.expiresAt) && value.expiresAt > now() && value.expiresAt <= now() + maxAge * 1000 ? value : null;
     } catch { return null; }
   };
-  const allowed = identity => subjects.has(identity.sub) || emails.has(identity.email);
+  const allowed = identity => allowVerifiedAccounts || subjects.has(identity.sub) || emails.has(identity.email);
   const session = req => {
     const value = read(req, sessionName, 'session', lifetime);
     return value && typeof value.sub === 'string' && typeof value.email === 'string' && allowed(value) ? value : null;
@@ -44,6 +44,10 @@ export function createAuth({clientId, allowedEmails, allowedSubjects, secret, se
   const cookie = (name, value, seconds) => `${name}=${value}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${value ? seconds : 0}${secure ? '; Secure' : ''}`;
   return {
     authenticated: req => Boolean(session(req)),
+    principal: req => {
+      const value = session(req);
+      return value ? {sub:value.sub,email:value.email,authoritativeEmail:value.authoritativeEmail===true||value.email.endsWith('@gmail.com'),subjectPinned:subjects.has(value.sub)} : null;
+    },
     csrf: req => { const value = session(req); return value ? sign('csrf', value.nonce) : null; },
     challenge: (req, res) => {
       const value = read(req, challengeName, 'challenge', challengeLifetime) || {nonce: randomBytes(24).toString('base64url'), expiresAt: now() + challengeLifetime * 1000};
@@ -63,8 +67,8 @@ export function createAuth({clientId, allowedEmails, allowedSubjects, secret, se
       const identity = {sub: claims.sub, email: claims.email.toLowerCase()};
       // Third-party email ownership can change: require a pinned subject for it.
       const authoritativeEmail = identity.email.endsWith('@gmail.com') || typeof claims.hd === 'string' && claims.hd.length > 0;
-      if (!subjects.has(identity.sub) && !(authoritativeEmail && emails.has(identity.email))) throw failure('This Google account does not have access to this tracker. Choose an invited account.', 403);
-      const value = {...identity, nonce: randomBytes(24).toString('base64url'), expiresAt: now() + lifetime * 1000};
+      if (!allowVerifiedAccounts && !subjects.has(identity.sub) && !(authoritativeEmail && emails.has(identity.email))) throw failure('This Google account does not have access to this tracker. Choose an invited account.', 403);
+      const value = {...identity, authoritativeEmail, nonce: randomBytes(24).toString('base64url'), expiresAt: now() + lifetime * 1000};
       res.append('Set-Cookie', cookie(sessionName, encode('session', value), lifetime));
       res.append('Set-Cookie', cookie(challengeName, '', 0));
       if (secure) res.append('Set-Cookie', cookie('tracker_session', '', 0));

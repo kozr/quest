@@ -99,6 +99,6 @@ test('each purpose shows its own author quote on a shared conversation',()=>{
 
 test('current purpose signals take precedence over older qualification quotes',()=>{
  const item={snippet:'Original comment',conversationSignals:[],qualification:{quote:'Old general quote',purposes:[{purpose:'feedback',quote:'Old feedback'}]}};
- assert.deepEqual(purposeEvidence(item,'feedback'),{signals:[],quote:'Original comment'});
+ assert.deepEqual(purposeEvidence(item,'feedback'),{signals:[],quote:'Original comment',keywordMention:null,unverifiedMention:false});
  assert.equal(purposeEvidence({snippet:'Original comment',qualification:{purposes:[{purpose:'feedback',quote:'Legacy feedback'}]}},'feedback').quote,'Legacy feedback');
 });

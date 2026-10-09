@@ -39,14 +39,14 @@ export class LinkedInBridgeAdapter {
     const next = this.waiters.shift();
     if (next) next.resolve(); else this.active = false;
   }
-  async search({query, signal, limit = 30, datePosted = null}) {
+  async search({query, signal, limit = 30, datePosted = null, preserveText = false}) {
     await this.acquire(signal);
     try {
       signal?.throwIfAborted();
       for (let attempt = 0; ; attempt++) {
         const response = await this.fetchImpl(`${this.baseURL}/v1/linkedin/search`, {method: 'POST', signal, redirect: 'error',
           headers: {'Content-Type': 'application/json', Authorization: `Bearer ${this.token}`},
-          body: JSON.stringify({query, limit, datePosted})});
+          body: JSON.stringify({query, limit, datePosted, ...(preserveText === true ? {preserveText: true} : {})})});
         if (response.status === 429 && attempt < 2) {
           await response.body?.cancel(); await pause(2_000, undefined, {signal}); continue;
         }

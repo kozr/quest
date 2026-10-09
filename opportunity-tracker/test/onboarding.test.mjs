@@ -100,11 +100,12 @@ test('VPS worker uses restricted origin and endpoints and continues after a prod
   const urls=[];
   const results=await monitorCycle({baseURL:'https://tracker.vercel.app',token:'test-token-at-least-32-characters-long',fetchImpl:async(url,options)=>{
     urls.push(String(url));assert(options.headers.Authorization.startsWith('Bearer '));
+    if(url.pathname==='/api/monitor/workspaces')return Response.json({ids:['personal'],accountMode:false});
     if(url.pathname==='/api/monitor')return new Response(JSON.stringify({ids:['a','b']}));
     return new Response('{}',{status:url.pathname.endsWith('/a')?502:200});
   }});
   assert.deepEqual(results.map(row=>row.status),[502,200]);
-  assert.equal(urls.length,3);
+  assert.equal(urls.length,4);
   await assert.rejects(()=>monitorCycle({baseURL:'http://private.example.com',token:'x'.repeat(32)}),/HTTPS/);
   await assert.rejects(()=>monitorCycle({baseURL:'https://tracker.vercel.app',token:'x'.repeat(32),fetchImpl:async()=>new Response(JSON.stringify({ids:['../../secrets']}))}),/Invalid/);
 });

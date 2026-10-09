@@ -1,3 +1,11 @@
+import {projectPurposePatterns} from './purpose-patterns.mjs';
+import {planFor,subscriptionState,assertSubscriptionActive,activeProduct} from './plans.mjs';
+import {scheduleState} from './schedules.mjs';
+import {analysisCycleState,analysisCycleDue} from './analysis-cycles.mjs';
+import {analysisUsageState} from './usage.mjs';
+import {pilotBudgetState} from './pilot-budget.mjs';
+import {pagePrivateConversations} from './conversation-pages.mjs';
+import {FirestoreRecordBackend,LocalRecordBackend} from './record-backend.mjs';
 import {conversationCurrentState} from './conversation-feed.mjs';
 import {stageSnapshot,validateStageRecords} from './pipeline-stages.mjs';
 import {createStageProvider} from './pipeline-provider.mjs';
@@ -24,10 +32,22 @@ import {qualificationSettings, qualificationPublicState, qualificationBackup, va
 import {analysisConfiguration, analysisSnapshot, researchProduct, analyzeMatch, productHash, matchHash, validateResearch, validateFit, freshAnalysis, ANALYSIS_DAILY_LIMIT} from './analysis.mjs';
 
 const directory = dirname(fileURLToPath(import.meta.url));
+const publicSchedule=(...args)=>{const {lease,...state}=scheduleState(...args);return state;};
 const list = (value, max = 12) => {
   if (!Array.isArray(value) || value.length > max || value.some(x => typeof x !== 'string' || x.length > 160)) throw new Error(`Use up to ${max} phrases, each under 160 characters.`);
   return [...new Set(value.map(x => x.trim()).filter(Boolean))];
 };
+// The collector paces the whole workspace. Serve the least recently completed
+// product first so a fast fixed-order worker cannot repeatedly skip its peers.
+export function orderMonitorProducts(data,ids){
+  const last=new Map();
+  for(const receipt of data.collection?.receipts||[]){
+    const at=Date.parse(receipt.at);
+    if(Number.isFinite(at))last.set(receipt.productId,Math.max(last.get(receipt.productId)||0,at));
+  }
+  return [...ids].sort((a,b)=>(last.get(a)||0)-(last.get(b)||0));
+}
+
 export function validateProduct(value) {
   if (!value || typeof value.name !== 'string' || !value.name.trim() || value.name.length > 120) throw new Error('Enter a product name under 120 characters.');
   if (typeof value.description !== 'string' || value.description.length > 5000) throw new Error('Describe the product in 5,000 characters or fewer.');
@@ -41,7 +61,12 @@ export function validateProduct(value) {
 
 export function createTrackerApp({ dataDirectory = process.env.TRACKER_DATA_DIR || join(directory, '.local'), discoverFn = discover, metadataFn = importMetadata, profileFn = product => suggestProfile(product,{env:{}}), businessProfileProvider, stageProvider, analysisProvider, redditAdapter, linkedinAvailable = linkedinConfigured(), monitorToken = process.env.TRACKER_MONITOR_TOKEN, qualificationEnv = process.env, collectionProvider = createCollectionProvider({env:qualificationEnv}), qualificationProvider = createQualificationProvider({env:qualificationEnv}), store: providedStore, hosted = false, googleClientId = process.env.TRACKER_GOOGLE_CLIENT_ID, googleAllowedEmails = process.env.TRACKER_GOOGLE_ALLOWED_EMAILS, googleAllowedSubjects = process.env.TRACKER_GOOGLE_ALLOWED_SUBJECTS, verifyGoogleIdToken, sessionSecret = process.env.TRACKER_SESSION_SECRET, firebaseProjectId = process.env.FIREBASE_PROJECT_ID, firebaseServiceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON, workspace = process.env.TRACKER_WORKSPACE || (process.env.VERCEL_ENV === 'preview' ? 'preview' : 'personal') } = {}) {
   const auth = hosted ? createAuth({clientId:googleClientId,allowedEmails:googleAllowedEmails,allowedSubjects:googleAllowedSubjects,secret:sessionSecret,verifyIdToken:verifyGoogleIdToken}) : null;
-  const store = providedStore || (hosted ? new FirestoreStore(new FirestoreBackend(configuredFirestore({projectId:firebaseProjectId,serviceAccountJson:firebaseServiceAccountJson}),workspace)) : new Store(dataDirectory));
+  // Private record storage migrates on the first CAS write and does not alter
+  // the existing Google allowlist, signed sessions or account ownership.
+  const recordStorage=qualificationEnv.TRACKER_RECORD_STORAGE_ENABLED==='true';
+  const db=hosted&&!providedStore?configuredFirestore({projectId:firebaseProjectId,serviceAccountJson:firebaseServiceAccountJson}):null;
+  const legacy=providedStore||(hosted?new FirestoreStore(new FirestoreBackend(db,workspace)):new Store(dataDirectory));
+  const store=providedStore||(recordStorage?new FirestoreStore(hosted?new FirestoreRecordBackend(db,workspace,{legacyBackend:legacy.backend}):new LocalRecordBackend(dataDirectory,{legacyBackend:{read:async()=>({revision:0,data:legacy.snapshot()})}})):legacy);
   const app = express();
   const token = randomBytes(24).toString('hex');
   const busy = new Set();
@@ -60,6 +85,7 @@ export function createTrackerApp({ dataDirectory = process.env.TRACKER_DATA_DIR 
     if(!stages.available)throw Object.assign(new Error('AI stages are paused. Check the server key and daily budget settings.'),{status:503});
     const claimed=await store.claimStage(productId,stage,stageProvider?null:qualificationSettings(qualificationEnv),refresh);
     if(claimed.cached)return {result:claimed.cached,cached:true};
+    if(!claimed.lease)return claimed;
     let result;
     try{result=await stages.run(stage,claimed.input);return {result:await store.finishStage(claimed.lease,result),cached:false};}
     catch(error){await store.failStage(claimed.lease,error.message,result?.costMicroUsd);throw error;}
@@ -73,6 +99,8 @@ export function createTrackerApp({ dataDirectory = process.env.TRACKER_DATA_DIR 
     const cached = item ? item.analysis : snapshot.research?.[productId];
     if (!refresh && freshAnalysis(cached) && cached.profileHash === productHash(product) && (!item || cached.sourceHash === matchHash(item))) return {result: cached, cached: true};
     const lease = await store.claimAnalysis(productId, itemId, Date.now(), analysisProvider ? null : qualificationSettings(qualificationEnv));
+    if(lease.cached)return {result:lease.cached,cached:true};
+    if(!lease.token)return lease;
     try {
       if (lease.profileHash !== productHash(product) || item && lease.sourceHash !== matchHash(item)) {const error = new Error('The product or conversation changed. Refresh and run analysis again.'); error.status = 409; throw error;}
       const result = item ? await analysis.match(structuredClone(product), structuredClone(item)) : await analysis.research(structuredClone(product));
@@ -84,7 +112,7 @@ export function createTrackerApp({ dataDirectory = process.env.TRACKER_DATA_DIR 
     if (!productId && settings.mode !== 'ongoing') return {status:'disabled'};
     const snapshot=await store.snapshot();
     const lastReview=p=>Math.max(Date.parse(snapshot.pipelineStages?.[p.id]?.qualify?.generatedAt)||0,...Object.values(snapshot.conversationReviewFailures?.[p.id]||{}).map(f=>Date.parse(f.failedAt)||0));
-    const selected=productId?snapshot.products.find(p=>p.id===productId):snapshot.products.filter(p=>p.listeningVersion==='v2'&&(p.monitoring||snapshot.collection?.cycles?.[p.id]?.trigger==='manual'||snapshot.collection?.backfills?.[p.id]?.trigger==='onboarding')&&listeningReady(p)&&qualificationDue(snapshot,p)&&!Object.values(snapshot.analysisLeases||{}).some(l=>l.productId===p.id&&l.expiresAt>Date.now())).sort((a,b)=>lastReview(a)-lastReview(b))[0];
+    const selected=productId?snapshot.products.find(p=>p.id===productId):snapshot.products.filter(p=>p.listeningVersion==='v2'&&(p.monitoring||snapshot.collection?.cycles?.[p.id]?.trigger==='manual'||snapshot.collection?.backfills?.[p.id]?.trigger==='onboarding')&&listeningReady(p)&&(snapshot.subscription?analysisCycleDue(snapshot,p.id):qualificationDue(snapshot,p))&&!Object.values(snapshot.analysisLeases||{}).some(l=>l.productId===p.id&&l.expiresAt>Date.now())).sort((a,b)=>lastReview(a)-lastReview(b))[0];
     if(selected?.listeningVersion==='v2')return pendingEvidence(snapshot,selected).length?runStage(selected.id,'qualify'):{status:'complete'};
     return processQualification(store,settings,qualificationProvider,{productId});
   }
@@ -92,6 +120,8 @@ export function createTrackerApp({ dataDirectory = process.env.TRACKER_DATA_DIR 
     const snapshot = await store.snapshot();
     const product = snapshot.products.find(row => row.id === id);
     if (!product) {const error = new Error('Product not found.'); error.status = 404; throw error;}
+    if(snapshot.subscription){assertSubscriptionActive(snapshot);if(!collector.enabled)throw Object.assign(new Error('Plan monitoring requires the collection pipeline.'),{status:503,code:'collection_required'});if(!activeProduct(product)||product.planMonitoringBlocked)throw Object.assign(new Error('This product is paused under the current plan.'),{status:409,code:product.planMonitoringBlocked||'product_archived'});}
+    if(snapshot.pilotBudget?.active&&!collector.enabled)throw Object.assign(new Error('The pilot requires the budgeted collection pipeline.'),{status:409,code:'pilot_collection_required'});
     if(product.listeningVersion==='v2'){activeSearchPlan(product);if(!collector.enabled)throw Object.assign(new Error('V2 listening requires the configured collection pipeline.'),{status:503});}
     const continuing=collector.enabled && collectionDueIds(snapshot).includes(id);
     if (scheduled && !continuing && !dueProducts(snapshot).some(row => row.id === id)) return null;
@@ -99,15 +129,15 @@ export function createTrackerApp({ dataDirectory = process.env.TRACKER_DATA_DIR 
       if(!collector.configured)throw new Error('ScrapeBadger collection is not configured.');
       const needsRegular=snapshot.collection?.cycles?.[id]?.status==='running' || !scheduled || dueProducts(snapshot).some(row=>row.id===id);
       if(needsRegular) {
-        await store.beginCollection(id,scheduled?'scheduled':'manual',Date.now());
+        await store.beginCollection(id,scheduled?'scheduled':'manual',Date.now(),collector);
       }
       await processCollection(store,collector,collectionProvider,id);
       // Preserve the existing independent LinkedIn slots.
-      if(product.linkedin && (!scheduled || (await import('./monitor.mjs')).dueSources(product,snapshot).includes('linkedin'))) {
+      if(!snapshot.pilotBudget?.active&&product.linkedin && (snapshot.subscription?(await import('./monitor.mjs')).dueSources(product,snapshot,Date.now(),{manual:!scheduled}).includes('linkedin'):!scheduled || (await import('./monitor.mjs')).dueSources(product,snapshot).includes('linkedin'))) {
         const lease=store.claimSearch?await store.claimSearch(id):true;
         if(lease)try {
           if(scheduled)await store.markMonitorAttempt(id);
-          const result=await discoverFn(structuredClone(product),{watchOnly:true,scheduledSources:['linkedin'],paidWeb:false,semantic:qualificationSettings(qualificationEnv).enabled});
+          const result=await discoverFn(structuredClone(product),{watermarks:snapshot.searches[id]?.watermarks,watchOnly:true,scheduledSources:['linkedin'],preserveText:Boolean(snapshot.subscription),paidWeb:false,semantic:qualificationSettings(qualificationEnv).enabled});
           await store.recordSearch(id,{...result,trigger:scheduled?'scheduled':'manual'});
         }finally{if(store.releaseSearch)await store.releaseSearch(id,lease);}
       }
@@ -126,7 +156,7 @@ export function createTrackerApp({ dataDirectory = process.env.TRACKER_DATA_DIR 
       const recentThreads = snapshot.items.filter(row => row.productId === id && row.source?.startsWith('Reddit') && Date.parse(row.lastSeenAt || row.foundAt) > Date.now() - 7 * 86400000).slice(0, 4).map(row => row.url);
       // Paid profile suggestions and web tools are outside this qualification
       // allowance. Their old optional credentials cannot bypass the ledger.
-      const result = await discoverFn(structuredClone(currentProduct), {watchOnly: scheduled, recentThreads, paidWeb:false, semantic:qualificationSettings(qualificationEnv).enabled, ...(scheduled ? {scheduledSources: attempt.sources} : {})});
+      const result = await discoverFn(structuredClone(currentProduct), {watermarks:snapshot.searches[id]?.watermarks,watchOnly: scheduled, recentThreads, paidWeb:false, semantic:qualificationSettings(qualificationEnv).enabled, ...(scheduled ? {scheduledSources: attempt.sources} : {})});
       await store.recordSearch(id, {...result, trigger: scheduled ? 'scheduled' : 'manual', ...(scheduled ? {checkedSources: attempt.sources} : {})});
       const data = await store.snapshot();
       return {search: data.searches[id], items: data.items.filter(row => row.productId === id)};
@@ -152,7 +182,7 @@ export function createTrackerApp({ dataDirectory = process.env.TRACKER_DATA_DIR 
     }
     next();
   });
-  app.use(express.json({limit:'2mb'}));
+  app.use(express.json({limit:recordStorage?'64mb':'2mb'}));
   app.get('/api/auth',(req,res)=>{
     const authenticated = !auth || auth.authenticated(req);
     res.json({hosted,authenticated,storage:hosted?'cloud':'local',...(!authenticated ? {google:auth.challenge(req,res)} : {})});
@@ -164,15 +194,19 @@ export function createTrackerApp({ dataDirectory = process.env.TRACKER_DATA_DIR 
     await auth.login(req,res); res.json({ok:true});
   });
   app.post('/api/logout',(_req,res)=>{auth?.logout(res);res.json({ok:true});});
+  app.get('/api/conversations',async(req,res)=>{const snapshot=await store.snapshot();res.json(pagePrivateConversations(snapshot,req.query));});
   app.get('/api/state',async(req,res)=>{
-    const snapshot = await store.snapshot();
+    const internal = await store.snapshot(),modern=Boolean(internal.subscription);
+    const snapshot=modern?{...internal,items:internal.items.slice(0,100)}:internal;
+    const planState=modern?{subscription:subscriptionState(internal),entitlements:planFor(internal),usage:{analysis:analysisUsageState(internal)},conversationPaging:true,itemPage:{limit:100,total:internal.items.length},schedules:Object.fromEntries(internal.products.map(p=>[p.id,{keyword:publicSchedule(internal,p.id,'keyword',{manual:true}),long_tail:publicSchedule(internal,p.id,'long_tail',{manual:true}),analysis:publicSchedule(internal,p.id,'analysis',{manual:true,candidatesReady:true}),cycle:analysisCycleState(internal,p.id)}]))}:{};
+    const pilot=pilotBudgetState(internal);
     const publicAnalysis=analysisSnapshot(snapshot),v2Products=new Set(snapshot.products.filter(p=>p.listeningVersion==='v2').map(p=>p.id));
-    res.json({...qualificationPublicState(snapshot,qualificationSettings(qualificationEnv)),...publicAnalysis,items:publicAnalysis.items.map(item=>({...item,...conversationCurrentState(snapshot,item)})),pipeline:{available:stages.available,actionsEnabled,stages:stageSnapshot(snapshot),products:Object.fromEntries(snapshot.products.map(p=>[p.id,{ready:listeningReady(p),retained:evidenceFor(snapshot,p).length,batchSize:REVIEW_BATCH_LIMIT,failed:failedEvidenceCount(snapshot,p),pending:pendingEvidenceCount(snapshot,p),relevant:relevantEvidence(snapshot,p).length,conversations:reviewEvidenceFor(snapshot,p).map(r=>({...r,reviewFailure:currentReviewFailure(snapshot,p,r)?.reason||null,classificationCurrent:p.listeningVersion==='v2'&&r.qualification?.profileHash===qualificationInputHash(p)}))}]))},discovery:Object.fromEntries(snapshot.products.map(p=>[p.id,discoveryProgress(snapshot,p,{settings:qualificationSettings(qualificationEnv),available:stages.available})])),analysis:{available:analysis.available,dailyLimit:ANALYSIS_DAILY_LIMIT},businessProfiles:{versions:['v1','v2'],v2Available:businessProfiles.available},token:auth?auth.csrf(req):token,busy:await busyIds(),storage:hosted?'cloud':'local',collection:collector.enabled?collectionPublicState(snapshot):null,sources:{x:{available:collector.enabled&&collector.configured},linkedin:{available:linkedinAvailable}},monitoring:{available:monitoringAvailable,intervalMinutes:MONITOR_INTERVAL_MS / 60000,linkedin:{timeZone:LINKEDIN_TIME_ZONE,hours:LINKEDIN_HOURS}}});
+    res.json({...planState,...(pilot?{pilotBudget:pilot}:{}),...qualificationPublicState(snapshot,qualificationSettings(qualificationEnv)),...publicAnalysis,items:publicAnalysis.items.map(item=>({...item,...conversationCurrentState(internal,item)})),pipeline:{available:stages.available,actionsEnabled,stages:stageSnapshot(internal),products:Object.fromEntries(snapshot.products.map(p=>[p.id,{ready:listeningReady(p),purposePatterns:projectPurposePatterns(internal,p),retained:evidenceFor(internal,p).length,batchSize:REVIEW_BATCH_LIMIT,failed:failedEvidenceCount(internal,p),pending:pendingEvidenceCount(internal,p),relevant:relevantEvidence(internal,p).length,conversations:reviewEvidenceFor(internal,p).slice(0,modern?50:Infinity).map(r=>({...r,reviewFailure:currentReviewFailure(internal,p,r)?.reason||null,classificationCurrent:p.listeningVersion==='v2'&&r.qualification?.profileHash===qualificationInputHash(p)}))}]))},discovery:Object.fromEntries(snapshot.products.map(p=>[p.id,discoveryProgress(internal,p,{settings:qualificationSettings(qualificationEnv),available:stages.available})])),analysis:{available:analysis.available,dailyLimit:ANALYSIS_DAILY_LIMIT},businessProfiles:{versions:['v1','v2'],v2Available:businessProfiles.available},token:auth?auth.csrf(req):token,busy:await busyIds(),storage:hosted?'cloud':'local',collection:collector.enabled?collectionPublicState(internal):null,sources:{x:{available:collector.enabled&&collector.configured},linkedin:{available:linkedinAvailable&&!pilot?.active}},monitoring:{available:monitoringAvailable,intervalMinutes:(modern?planFor(internal).intervals.keyword:MONITOR_INTERVAL_MS) / 60000,linkedin:{timeZone:LINKEDIN_TIME_ZONE,hours:LINKEDIN_HOURS}}});
   });
   app.get('/api/monitor', async(_req, res) => {
     const snapshot=await store.snapshot(),settings=qualificationSettings(qualificationEnv);
-    res.json({ids:[...new Set([...dueProducts(snapshot).map(product=>product.id),...(collector.enabled?collectionDueIds(snapshot):[])])],analysis:{available:analysis.available,model:config.model},qualifications:{available:settings.active&&settings.mode==='ongoing',model:settings.model,pending:Object.values(snapshot.qualifications||{}).filter(job=>job.status==='pending').length},
-      collection:collector.enabled?{...collectionPublicState(snapshot),provider:'scrapebadger'}:null,schedules:{x:{intervalMinutes:MONITOR_INTERVAL_MS / 60000},reddit:{intervalMinutes:MONITOR_INTERVAL_MS / 60000},linkedin:{timeZone:LINKEDIN_TIME_ZONE,hours:LINKEDIN_HOURS}}});
+    res.json({ids:orderMonitorProducts(snapshot,[...new Set([...dueProducts(snapshot).map(product=>product.id),...(collector.enabled?collectionDueIds(snapshot):[])])]),analysis:{available:analysis.available,model:config.model},qualifications:{available:settings.active&&settings.mode==='ongoing',model:settings.model,pending:Object.values(snapshot.qualifications||{}).filter(job=>job.status==='pending').length},
+      collection:collector.enabled?{...collectionPublicState(snapshot),provider:'scrapebadger'}:null,schedules:{...(snapshot.subscription?Object.fromEntries(Object.entries(planFor(snapshot).intervals).map(([loop,ms])=>[loop,{intervalMinutes:ms/60000}])):{}),x:{intervalMinutes:(snapshot.subscription?planFor(snapshot).intervals.keyword:MONITOR_INTERVAL_MS) / 60000},reddit:{intervalMinutes:(snapshot.subscription?planFor(snapshot).intervals.keyword:MONITOR_INTERVAL_MS) / 60000},linkedin:{timeZone:LINKEDIN_TIME_ZONE,hours:LINKEDIN_HOURS}}});
   });
   app.post('/api/monitor/qualifications',async(_req,res)=>res.json(await runQualification()));
   app.post('/api/monitor/:id', async(req, res) => {
@@ -267,7 +301,8 @@ export function createTrackerApp({ dataDirectory = process.env.TRACKER_DATA_DIR 
   app.post('/api/import',async(req,res)=>{
     if((await busyIds()).length) throw new Error('Wait for the running searches to finish before restoring a backup.');
     const data=req.body;
-    if(data?.version!==1||!Array.isArray(data.products)||data.products.length>100||!Array.isArray(data.items)||data.items.length>10000) throw new Error('Choose a tracker JSON backup.');
+    const durable=Boolean((await store.snapshot()).subscription);
+    if(data?.version!==1||!Array.isArray(data.products)||data.products.length>100||!Array.isArray(data.items)||!durable&&data.items.length>10000) throw new Error('Choose a tracker JSON backup.');
     const history=validateQualificationHistory(data);
     const products=data.products.map(p=>{
       if(typeof p.id!=='string'||!/^[-a-zA-Z0-9_]{1,100}$/.test(p.id)||['__proto__','constructor','prototype'].includes(p.id)) throw new Error('The backup has invalid product IDs.');
@@ -294,7 +329,7 @@ export function createTrackerApp({ dataDirectory = process.env.TRACKER_DATA_DIR 
       if(i.historical===true)provenance.historical=true;
       if(typeof i.discussionClosed==='boolean')provenance.discussionClosed=i.discussionClosed;
       if (typeof i.collectedAt === 'string' && Number.isFinite(Date.parse(i.collectedAt))) provenance.collectedAt = new Date(i.collectedAt).toISOString();
-      const item = {...provenance,id:i.id,productId:i.productId,kind:i.kind,status:i.status,note:i.note,url:publicUrl(i.url).href,title:i.title.slice(0,500),snippet:String(i.snippet||'').slice(0,10000),reason:String(i.reason||'').slice(0,3000),source:typeof i.source==='string'?i.source.slice(0,100):'Imported',author:typeof i.author==='string'?i.author.slice(0,120):null,publishedAt:typeof i.publishedAt==='string'?i.publishedAt:null,foundAt:typeof i.foundAt==='string'?i.foundAt:new Date().toISOString(),lastSeenAt:typeof i.lastSeenAt==='string'?i.lastSeenAt:new Date().toISOString(),matchedTerms:Array.isArray(i.matchedTerms)?i.matchedTerms.filter(t=>typeof t==='string').slice(0,20):[]};
+      const item = {...provenance,id:i.id,productId:i.productId,kind:i.kind,status:i.status,note:i.note,url:publicUrl(i.url).href,title:durable?i.title:i.title.slice(0,500),snippet:durable?String(i.snippet||''):String(i.snippet||'').slice(0,10000),...(typeof i.context==='string'?{context:durable?i.context:i.context.slice(0,10000)}:{}),reason:String(i.reason||'').slice(0,3000),source:typeof i.source==='string'?i.source.slice(0,100):'Imported',author:typeof i.author==='string'?i.author.slice(0,120):null,publishedAt:typeof i.publishedAt==='string'?i.publishedAt:null,foundAt:typeof i.foundAt==='string'?i.foundAt:new Date().toISOString(),lastSeenAt:typeof i.lastSeenAt==='string'?i.lastSeenAt:new Date().toISOString(),matchedTerms:Array.isArray(i.matchedTerms)?i.matchedTerms.filter(t=>typeof t==='string').slice(0,20):[]};
       const product = products.find(row => row.id === item.productId);
       if (i.analysis && i.analysis.profileHash === productHash(product) && i.analysis.sourceHash === matchHash(item)) item.analysis = {...validateFit(i.analysis, product, item), profileHash: productHash(product), sourceHash: matchHash(item), imported: true, generatedAt: typeof i.analysis.generatedAt === 'string' ? i.analysis.generatedAt.slice(0,40) : null};
       return item;
@@ -313,10 +348,10 @@ export function createTrackerApp({ dataDirectory = process.env.TRACKER_DATA_DIR 
       const receipt=receipts.get(`${item.productId}:${item.url}`);
       if(receipt?.assessment)item.qualification={model:receipt.model,promptVersion:receipt.promptVersion,...receipt.assessment};
     }
-    await store.importData({version:1,products,items,searches:{},research,...history,pipelineStages:validateStageRecords(data.pipelineStages,products),conversationEvidence:validateEvidence(data.conversationEvidence,products),conversationReviewQueue:validateEvidence(data.conversationReviewQueue,products,{limit:REVIEW_QUEUE_LIMIT,totalLimit:REVIEW_WORKSPACE_LIMIT})});res.json({ok:true});
+    await store.importData({version:1,products,items,searches:{},research,...history,pipelineStages:validateStageRecords(data.pipelineStages,products),conversationEvidence:validateEvidence(data.conversationEvidence,products,{durable}),conversationReviewQueue:validateEvidence(data.conversationReviewQueue,products,{durable,...(!durable?{limit:REVIEW_QUEUE_LIMIT,totalLimit:REVIEW_WORKSPACE_LIMIT}:{})})});res.json({ok:true});
   });
   app.use(express.static(join(directory,'public')));
-  app.use((err,_req,res,_next)=>res.status(err.status||400).json({error:err.type==='entity.too.large'?'The backup is too large.':err.message||'The request failed. Try again.'}));
+  app.use((err,_req,res,_next)=>res.status(err.status||400).json({error:err.type==='entity.too.large'?'The backup is too large.':err.message||'The request failed. Try again.',...(err.code?{code:err.code}:{})}));
   return {app,store,runSearch,runQualification,runStage};
 }
 

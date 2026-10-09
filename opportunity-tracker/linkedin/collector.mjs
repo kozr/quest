@@ -32,7 +32,7 @@ function referenceURL(value) {
  * Only a unique observed author profile slug + matching /posts/ author slug can
  * establish an association. Ambiguous, company-newsletter, and URN-only rows
  * stay in coverage counts, never become falsely attributed inbox records. */
-export function normalizeLinkedInSearch(data, {limit = 30, collectedAt = new Date().toISOString()} = {}) {
+export function normalizeLinkedInSearch(data, {limit = 30, collectedAt = new Date().toISOString(), preserveText = false} = {}) {
   if (!data || typeof data !== 'object' || !data.sections || typeof data.sections !== 'object') throw new CollectionError('linkedin_schema_changed');
   const errors = Object.values(data.section_errors || {});
   if (errors.some(error => /auth|session|login/i.test(error?.error_type || ''))) throw new CollectionError('linkedin_session_required');
@@ -71,10 +71,10 @@ export function normalizeLinkedInSearch(data, {limit = 30, collectedAt = new Dat
     if (start < 0 || /reposted|repost of/i.test(block.slice(0, start).join(' '))) continue;
     const end = block.findIndex((line, index) => index > start && /^(?:\d[\d,.]*\s+(?:reactions?|comments?|reposts?)|Like|Comment|Repost|Send|Are these results helpful\?)/i.test(line));
     const body = block.slice(start + 1, end < 0 ? undefined : end).filter(line => !/^…\s*more$/.test(line)).join('\n').trim();
-    if (!body || body.length > 20_000) continue;
+    if (!body || !preserveText && body.length > 20_000) continue;
     const link = candidates[0];
     rows.set(link.id, {source: 'LinkedIn', provider: 'linkedin-mcp', sourceId: `li_${link.id}`, postId: link.id, parentId: null,
-      type: 'post', url: link.url, author: name, title: body.split('\n')[0].slice(0, 500), snippet: body.slice(0, 8000),
+      type: 'post', url: link.url, author: name, title: body.split('\n')[0].slice(0, 500), snippet: preserveText ? body : body.slice(0, 8000),
       publishedAt: null, collectedAt});
   }
   const kept = [...rows.values()].slice(0, limit);
@@ -101,9 +101,9 @@ export class LinkedInCollector {
     this.endpoint = url.href; this.authority = `127.0.0.1:${url.port || '80'}`;
     this.fetchImpl = fetchImpl; this.now = now; this.cache = new Map();
   }
-  async search({query, limit = 30, datePosted = null, signal}) {
+  async search({query, limit = 30, datePosted = null, signal, preserveText = false}) {
     if (typeof query !== 'string' || !query.trim() || query.length > 200 || /[\u0000-\u001f]/.test(query) || !Number.isInteger(limit) || limit < 1 || limit > 30 || ![null, 'past-month'].includes(datePosted)) throw new CollectionError('invalid_linkedin_search', 400);
-    const key = JSON.stringify([query.trim(), datePosted]);
+    const key = JSON.stringify([query.trim(), datePosted, preserveText === true]);
     const cached = this.cache.get(key);
     if (cached && cached.expires > this.now()) return structuredClone({...cached.value, rows: cached.value.rows.slice(0, limit), coverage: {...cached.value.coverage, cacheHit: true}});
     let session, protocol = '2025-03-26';
@@ -126,7 +126,7 @@ export class LinkedInCollector {
       const result = await send('tools/call', {name: 'search_posts', arguments: {keywords: query.trim(), max_pages: 1, ...(datePosted ? {date_posted: datePosted} : {})}}, 2);
       if (result.isError) throw new CollectionError(result.content?.some(block => block.type === 'text' && /authentication|session expired|log.?in required/i.test(block.text)) ? 'linkedin_session_required' : 'linkedin_provider_failed');
       const data = result.structuredContent || result.content?.filter(block => block.type === 'text').map(block => {try {return JSON.parse(block.text);} catch {return null;}}).find(Boolean);
-      const normalized = normalizeLinkedInSearch(data, {limit: 30, collectedAt: new Date(this.now()).toISOString()});
+      const normalized = normalizeLinkedInSearch(data, {limit: 30, collectedAt: new Date(this.now()).toISOString(), preserveText});
       if (this.cache.size >= 100) this.cache.delete(this.cache.keys().next().value);
       this.cache.set(key, {expires: this.now() + 300_000, value: normalized});
       return {...normalized, rows: normalized.rows.slice(0, limit), coverage: {...normalized.coverage, cacheHit: false}};

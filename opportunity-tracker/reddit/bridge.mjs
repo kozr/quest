@@ -29,8 +29,8 @@ export function createRedlibBridge({token = process.env.REDLIB_BRIDGE_TOKEN, ada
   app.use(express.json({limit: '8kb'}));
   app.post('/v1/linkedin/search', async (req, res) => {
     if (!linkedinCollector) return res.status(503).json({error: 'linkedin_unconfigured'});
-    const {query, limit = 30, datePosted = null} = req.body || {};
-    if (typeof query !== 'string' || !query.trim() || query.length > 200 || /[\u0000-\u001f]/.test(query) || !Number.isInteger(limit) || limit < 1 || limit > 30 || ![null, 'past-month'].includes(datePosted) || Object.keys(req.body).some(key => !['query', 'limit', 'datePosted'].includes(key))) return res.status(400).json({error: 'invalid_linkedin_search'});
+    const {query, limit = 30, datePosted = null, preserveText = false} = req.body || {};
+    if (typeof query !== 'string' || !query.trim() || query.length > 200 || /[\u0000-\u001f]/.test(query) || !Number.isInteger(limit) || limit < 1 || limit > 30 || ![null, 'past-month'].includes(datePosted) || typeof preserveText !== 'boolean' || Object.keys(req.body).some(key => !['query', 'limit', 'datePosted', 'preserveText'].includes(key))) return res.status(400).json({error: 'invalid_linkedin_search'});
     while (linkedinCalls[0] < Date.now() - 60_000) linkedinCalls.shift();
     if (linkedinActive || linkedinCalls.length >= 12) return res.status(429).set('Retry-After', '2').json({error: 'collector_busy'});
     linkedinCalls.push(Date.now()); linkedinActive = true;
@@ -38,7 +38,7 @@ export function createRedlibBridge({token = process.env.REDLIB_BRIDGE_TOKEN, ada
     const timer = setTimeout(() => controller.abort(), 30_000);
     const disconnect = () => {if (!res.writableEnded) controller.abort();};
     res.on('close', disconnect);
-    try {res.json(await linkedinCollector.search({query, limit, datePosted, signal: controller.signal}));}
+    try {res.json(await linkedinCollector.search({query, limit, datePosted, preserveText, signal: controller.signal}));}
     catch (error) {
       const code = error instanceof CollectionError ? error.code : 'linkedin_provider_failed';
       res.status(error instanceof CollectionError ? error.status : 502).json({error: code});

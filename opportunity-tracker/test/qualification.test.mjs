@@ -169,8 +169,8 @@ test('owner and worker endpoints enforce CSRF/bearer separately, expose safe sta
   await fetch(origin+`/api/products/${p.id}/search`,{method:'POST',headers,body:'{}'});assert.equal(collected,2);assert.equal(paid,1);
 });
 test('monitor worker dispatches bounded qualification calls only when explicitly available',async()=>{
-  const paths=[];await monitorCycle({baseURL:'https://tracker.vercel.app',token:'x'.repeat(32),fetchImpl:async url=>{paths.push(url.pathname);return new Response(JSON.stringify(url.pathname==='/api/monitor'?{ids:[],qualifications:{available:true,pending:10}}:{status:'rejected'}));}});
-  assert.deepEqual(paths,['/api/monitor','/api/monitor/qualifications','/api/monitor/qualifications']);
+  const paths=[];await monitorCycle({baseURL:'https://tracker.vercel.app',token:'x'.repeat(32),fetchImpl:async url=>{paths.push(url.pathname);return new Response(JSON.stringify(url.pathname==='/api/monitor/workspaces'?{ids:['personal'],accountMode:false}:url.pathname==='/api/monitor'?{ids:[],qualifications:{available:true,pending:10}}:{status:'rejected'}));}});
+  assert.deepEqual(paths,['/api/monitor/workspaces','/api/monitor','/api/monitor/qualifications','/api/monitor/qualifications']);
 });
 const emulator=process.env.FIRESTORE_EMULATOR_HOST;
 test('real Firestore CAS prevents duplicate paid dispatch across independent instances', {skip:emulator?false:'Needs local Firestore emulator'},async t=>{

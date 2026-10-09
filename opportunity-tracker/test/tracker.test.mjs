@@ -119,7 +119,9 @@ test('saved, dismissed, notes, products and discovery history survive restart an
   const state = (await instance.request('/api/state')).value;
   const restarted = new Store(instance.dataDirectory).snapshot();
   assert.deepEqual(restarted.products, state.products);
-  assert.deepEqual(restarted.items, state.items);
+  assert.deepEqual(restarted.items, state.items.map(({keywordMention,...persisted})=>persisted));
+  assert.equal(state.items.find(item=>item.id===mention.id).keywordMention.reference,'QuietBoard');
+  assert.equal(restarted.items.find(item=>item.id===mention.id).keywordMention,undefined,'Derived mention evidence is recomputed, not trusted from stored user data');
   assert.deepEqual(restarted.searches, state.searches);
   assert.equal(restarted.items.find(item => item.id === mention.id).note, 'An unrelated product with the same name.');
 

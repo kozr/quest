@@ -77,12 +77,12 @@ test('accent variants match while partial names, domains and namesake businesses
  assert.deepEqual(conversationSignals(p,row,{relevant:true,purposes:[]},{current:false}),[]);
 });
 
-test('an explicit no-purpose decision stays out of purpose inboxes despite a brand name',()=>{
+test('an explicit no-purpose decision remains unconfirmed when its literal name match is shown in Mentions',()=>{
  const {p,data}=fixture();captureEvidence(data,p,[source('Fixture Cafe is the name. No customer experience or useful comparison here.')],at);const e=data.conversationEvidence[p.id][0];
  const q=classify(p,e,decision(e,{category:'other',purposes:[]}));saveConversationReview(data,p,e,q,at,'fixture');
  const item={...data.items[0],...conversationCurrentState(data,data.items[0])};
  assert.equal(item.qualification.relevant,true);assert.deepEqual(item.conversationSignals,[]);
- assert.equal(matchesConversation(item,{relevance:'mentions'}),false);
+ assert.equal(matchesConversation(item,{relevance:'mentions'}),true);assert.equal(item.keywordMention.reference,p.name);assert.equal(matchesConversation(item,{relevance:'direct'}),false);
 });
 
 test('legacy name mentions preserve complete source URLs rather than sentence fragments',()=>{

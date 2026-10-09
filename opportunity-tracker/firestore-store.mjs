@@ -1,3 +1,5 @@
+import {accountRestore} from './account.mjs';
+import {activeProduct,assertSubscriptionActive} from './plans.mjs';
 import { applicationDefault, cert, getApps, initializeApp } from 'firebase-admin/app';
 import { Firestore, getFirestore } from 'firebase-admin/firestore';
 import { getVercelOidcToken } from '@vercel/oidc';
@@ -108,6 +110,13 @@ export class FirestoreBackend {
 
 // The file and database adapters share the same record semantics. Each cloud
 // mutation replays against fresh data and commits only its observed revision.
+// Legacy modules omit optional object values with JSON.stringify. Preserve
+// that storage behavior while keeping malformed arrays/numbers detectable.
+function omitUndefinedProperties(value) {
+  if(Array.isArray(value)){for(const row of value)omitUndefinedProperties(row);}
+  else if(value&&typeof value==='object')for(const key of Object.keys(value)){if(value[key]===undefined)delete value[key];else omitUndefinedProperties(value[key]);}
+  return value;
+}
 export class FirestoreStore {
   constructor(backend) { this.backend = backend; }
   async mutate(change) {
@@ -115,7 +124,8 @@ export class FirestoreStore {
       const { revision, data } = await this.backend.read();
       const next = structuredClone(data);
       const result = change(next);
-      if (await this.backend.compareAndSwap(revision, next)) return result;
+      if(result&&typeof result.then==='function')throw new TypeError('Store mutation callbacks must be synchronous.');
+      if (await this.backend.compareAndSwap(revision, omitUndefinedProperties(next))) return result;
     }
     const error = new Error('Another request is updating the tracker. Try again.');
     error.status = 409;
@@ -123,20 +133,27 @@ export class FirestoreStore {
   }
   async snapshot() {
     const {data} = await this.backend.read();
-    return {...(data.conversationReviewFailures?{conversationReviewFailures:structuredClone(data.conversationReviewFailures)}:{}),...(data.pipelineStages?{pipelineStages:structuredClone(data.pipelineStages)}:{}),...(data.conversationEvidence?{conversationEvidence:structuredClone(data.conversationEvidence)}:{}),...(data.conversationReviewQueue?{conversationReviewQueue:structuredClone(data.conversationReviewQueue)}:{}),...(data.analysisLeases?{analysisLeases:structuredClone(data.analysisLeases)}:{}),analysisUsage:structuredClone(data.analysisUsage||{}),...(data.collection?{collection:structuredClone(data.collection)}:{}),version:1,products:structuredClone(data.products),items:structuredClone(data.items),searches:structuredClone(data.searches),...(data.research ? {research:structuredClone(data.research)} : {}),
-      ...(data.qualifications ? {qualifications:structuredClone(data.qualifications),qualificationMigrations:structuredClone(data.qualificationMigrations),aiBudget:structuredClone(data.aiBudget)} : {})};
+    return structuredClone(data);
   }
+  initializeAccount(options) {return this.record('initializeAccount',options);}
+  accountAction(principal,action,input,now) {return this.record('accountAction',principal,action,input,now);}
+  accountSnapshot(principal,now) {return this.backend.read().then(({data})=>{const memory=Object.create(Store.prototype);memory.data=data;return memory.accountSnapshot(principal,now);});}
+  reserveAnalysisUnits(options) {return this.record('reserveAnalysisUnits',options);}
+  settleAnalysisUnits(id,options) {return this.record('settleAnalysisUnits',id,options);}
+  claimScheduledLoop(...args) {return this.record('claimScheduledLoop',...args);}
+  finishScheduledLoop(...args) {return this.record('finishScheduledLoop',...args);}
+
   async record(method, ...args) {
     return this.mutate(data => {
       const memory = Object.create(Store.prototype);
       memory.data = data;
-      memory.commit = next => { Object.assign(data, next); memory.data = data; };
+      memory.commit = next => { for(const key of Object.keys(data))delete data[key];Object.assign(data,next);memory.data=data; };
       return memory[method](...args);
     });
   }
   saveProduct(product,id,options) {
     return this.mutate(data=>{
-      if(!id&&data.products.length>=100) throw new Error('The tracker supports up to 100 products.');
+      if(!data.subscription&&!id&&data.products.length>=100) throw new Error('The tracker supports up to 100 products.');
       const memory=Object.create(Store.prototype); memory.data=data;
       memory.commit=next=>Object.assign(data,next);
       return memory.saveProduct(product,id,options);
@@ -158,7 +175,7 @@ export class FirestoreStore {
   claimBusinessProfile(inputHash,reservation,now,settings,refresh) {return this.record('claimBusinessProfile',inputHash,reservation,now,settings,refresh);}
   finishBusinessProfile(lease,result,now) {return this.record('finishBusinessProfile',lease,result,now);}
   beginBackfill(productId,now) {return this.record('beginBackfill',productId,now);}
-  beginCollection(productId,trigger,now) {return this.record('beginCollection',productId,trigger,now);}
+  beginCollection(id,trigger,now,settings) { return this.record('beginCollection',id,trigger,now,settings); }
   claimCollection(settings,productId,now) {return this.record('claimCollection',settings,productId,now);}
   finishCollection(token,outcome,now) {return this.record('finishCollection',token,outcome,now);}
   claimQualificationBatch(settings,now,productId) {return this.record('claimQualificationBatch',settings,now,productId);}
@@ -171,12 +188,14 @@ export class FirestoreStore {
       if(Object.values(data.qualifications||{}).some(job=>job.status==='running'&&job.leaseUntil>Date.now())) throw new Error('Wait for the running AI check to finish before restoring a backup.');
       if(Object.values(data.analysisLeases||{}).some(lease=>lease.expiresAt>Date.now())) throw new Error('Wait for the running analysis to finish before restoring a backup.');
       if(data.collection?.active)throw new Error('Wait for the collection request to finish before restoring a backup.');
-      const collection=data.collection,conversationReviewFailures=data.conversationReviewFailures||{};
+      const collection=data.collection,ingestion=data.ingestion,conversationReviewFailures=data.conversationReviewFailures||{};
       const analysisUsage=data.analysisUsage||{};
       const failures=data.loginFailures||[];
-      const restored=data.qualifications||value.qualifications?mergeQualificationHistory(data,value):structuredClone(value);
+      const merged=data.qualifications||value.qualifications?mergeQualificationHistory(data,value):structuredClone(value);
+      const restored=data.workspace||data.subscription?accountRestore(data,merged):merged;
+      delete restored.pilotBudget;if(Object.hasOwn(data,'pilotBudget'))restored.pilotBudget=structuredClone(data.pilotBudget);
       for(const key of Object.keys(data)) delete data[key];
-      Object.assign(data,restored,{loginFailures:failures,analysisUsage,conversationReviewReceipts:{},conversationReviewFailures,...(collection?{collection}:{})});
+      Object.assign(data,restored,{loginFailures:failures,analysisUsage,conversationReviewReceipts:{},conversationReviewFailures,...(collection?{collection}:{}),...(ingestion?{ingestion}:{})});
     });
   }
   activeSearches() {
@@ -185,9 +204,16 @@ export class FirestoreStore {
   claimSearch(id) {
     const token=randomUUID();
     return this.mutate(data=>{
+      const now=Date.now();
+      if(data.subscription){
+        assertSubscriptionActive(data,now);
+        const product=data.products.find(row=>row.id===id);
+        if(!product)throw Object.assign(new Error('Product not found.'),{status:404,code:'product_not_found'});
+        if(!activeProduct(product)||product.planMonitoringBlocked)throw Object.assign(new Error('This product is paused under the current plan.'),{status:409,code:product.planMonitoringBlocked||'product_archived'});
+      }
       data.leases ||= {};
-      if(data.leases[id]?.expiresAt>Date.now()) return null;
-      data.leases[id]={token,expiresAt:Date.now()+90000};
+      if(data.leases[id]?.expiresAt>now) return null;
+      data.leases[id]={token,expiresAt:now+90000};
       return token;
     });
   }
