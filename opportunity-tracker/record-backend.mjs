@@ -277,7 +277,12 @@ export class RecordBackend {
       if(views){
         const buckets=new Map();
         for(const [name,value] of Object.entries(views)){
-          const encoded=encode(value,this.maxWriteBytes);
+          // Pack small public projections in one envelope. The primary codec
+          // remains byte-for-byte unchanged; large views still use its chunks.
+          json(value);
+          const packed=jsonBytes({v:RECORD_VERSION,t:'value',value});
+          if(jsonBytes(value).length>this.maxWriteBytes)throw error('Read view exceeds the configured byte limit.',413);
+          const encoded=packed.length<=MAX_NODE_BYTES?{root:hash(packed),nodes:new Map([[hash(packed),packed]])}:encode(value,this.maxWriteBytes);
           for(const [id,bytes] of encoded.nodes)viewNodes.set(id,bytes);
           const prefix=hash(jsonBytes(name)).slice(0,2);
           if(!buckets.has(prefix))buckets.set(prefix,{});
