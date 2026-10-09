@@ -1,3 +1,4 @@
+import {createRequestGate} from './request-gate.mjs';
 import {useConversationPage} from './useConversationPage';
 import {matchesConversation} from './feed.mjs';
 import {feedProgress} from './progress.mjs';
@@ -27,14 +28,15 @@ import {PageHeading} from './WorkspacePage';
 const route=(enabled=loadPurposes())=>resolveWorkspaceRoute(location.hash,enabled,loadActivePurpose(enabled));
 
 export function App(){
- const [state,setState]=useState(null),[auth,setAuth]=useState(null),[error,setError]=useState(''),generation=useRef(0);
- const reload=useCallback(async()=>{const n=++generation.current;const next=await api('/state');if(n===generation.current){setToken(next.token);setState(next);setError('');}return next;},[]);
+ const [state,setState]=useState(null),[auth,setAuth]=useState(null),[error,setError]=useState(''),stateRequests=useRef(null),clientRefreshEpoch=useRef(0);
+ stateRequests.current ||= createRequestGate();
+ const reload=useCallback(({coalesce=false}={})=>{if(!coalesce){stateRequests.current.cancel();clientRefreshEpoch.current++;}const epoch=clientRefreshEpoch.current;return stateRequests.current.run('state',signal=>api('/state',{signal}),next=>{setToken(next.token);setState({...next,_clientRefreshEpoch:epoch});setError('');});},[]);
  const signIn=useCallback(async()=>{await reload();setAuth(null);},[reload]);
  const boot=useCallback(async()=>{setError('');try{const a=await api('/auth');if(a.authenticated)await signIn();else setAuth(a);}catch(e){setError(e.message);}},[signIn]);
- useEffect(()=>{boot();const expired=()=>{generation.current++;setState(null);setToken('');boot();};window.addEventListener('tracker:unauthorized',expired);return()=>window.removeEventListener('tracker:unauthorized',expired);},[boot]);
+ useEffect(()=>{boot();const expired=()=>{stateRequests.current.cancel();setState(null);setToken('');boot();};window.addEventListener('tracker:unauthorized',expired);return()=>{window.removeEventListener('tracker:unauthorized',expired);stateRequests.current.cancel();};},[boot]);
  const finding=Object.values(state?.discovery||{}).some(p=>p.phase==='finding');
- useEffect(()=>{if(!state)return;const refresh=()=>{if(document.visibilityState==='visible')reload().catch(e=>setError(e.message));};const timer=setInterval(refresh,finding?10000:60000);document.addEventListener('visibilitychange',refresh);return()=>{clearInterval(timer);document.removeEventListener('visibilitychange',refresh);};},[Boolean(state),finding,reload]);
- async function logout(){await api('/logout',{method:'POST',body:{}});generation.current++;setState(null);setToken('');await boot();}
+ useEffect(()=>{if(!state)return;const refresh=()=>{if(document.visibilityState==='visible')reload({coalesce:true}).catch(e=>{if(e.name!=='AbortError')setError(e.message);});};const timer=setInterval(refresh,finding?10000:60000);document.addEventListener('visibilitychange',refresh);return()=>{clearInterval(timer);document.removeEventListener('visibilitychange',refresh);};},[Boolean(state),finding,reload]);
+ async function logout(){await api('/logout',{method:'POST',body:{}});stateRequests.current.cancel();setState(null);setToken('');await boot();}
  if(!state)return auth?<Login configuration={auth} onSignedIn={signIn}/>:<WorkspaceStartup error={error} onRetry={boot}/>;
  return <Dashboard state={state} reload={reload} logout={logout} error={error}/>;
 }
