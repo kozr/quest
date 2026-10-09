@@ -6,7 +6,7 @@ Read `../AGENTS.md` before continuing dashboard work. This is the canonical dash
 
 ## Workspace startup — October 8, 2026
 
-- The user wants shadcn skeletons but rejected the two-column loading layout, low status placement, and large blank lower area. Use one continuous skeleton list beneath a full-width charcoal brand header. Keep the loading message near the top and let placeholder rows fill the available height on desktop and phones. Hide placeholders from assistive technology and respect reduced motion. Keep startup errors in the compact centered brand layout with a clear retry action.
+- Keep the existing sidebar, product selector, navigation groups, pinned Settings, header breadcrumbs, and toolbar in the loading shell. The user explicitly rejected removing that chrome. Only the main loading content is a single skeleton list; place its status near the top and fill the available height. Hide placeholders from assistive technology, respect reduced motion, and retain compact error/retry behavior. Do not alter the loaded dashboard layout for a loading-screen request.
 
 ## Header hierarchy — October 8, 2026
 
