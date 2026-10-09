@@ -25,7 +25,7 @@ export function mentionEvidence(product,source){
   for(const reference of businessReferences(product))for(const text of ownTexts(source)){
     if(!namedReference(text,reference))continue;
     // Preserve an exact source passage rather than the normalised matching text.
-    const sentences=text.match(/[^\n.!?]+(?:[.!?]|$)/g)||[text];
+    const sentences=text.split(/(?<=[.!?])\s+|\n+/);
     const quote=sentences.find(sentence=>sentence.length<=400&&namedReference(sentence,reference))?.trim();
     if(quote)return {purpose:'mention',reference,quote,reason:`Names ${product.name} in the source.`,offeringIds:[]};
     for(let start=0;start<text.length;start+=200){const passage=text.slice(start,start+400);if(namedReference(passage,reference))return {purpose:'mention',reference,quote:passage,reason:`Names ${product.name} in the source.`,offeringIds:[]};}
@@ -34,8 +34,9 @@ export function mentionEvidence(product,source){
 }
 export function conversationSignals(product,source,qualification,{current=false}={}){
   const signals=[],mention=mentionEvidence(product,source);
-  // A name match alone cannot disambiguate a namesake business.
-  if(mention&&current&&qualification?.relevant===true)signals.push(mention);
+  // Legacy decisions can use a verified name match. An explicitly reviewed
+  // purpose list, including an empty one, must remain authoritative.
+  if(mention&&current&&qualification?.relevant===true&&!Array.isArray(qualification.purposes))signals.push(mention);
   if(!current||qualification?.relevant!==true)return signals;
   for(const signal of qualification.purposes||[]){
     if(!PURPOSE_IDS.includes(signal.purpose)||!ownsQuote(source,signal.quote))continue;

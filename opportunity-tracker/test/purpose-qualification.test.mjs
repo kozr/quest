@@ -77,6 +77,22 @@ test('accent variants match while partial names, domains and namesake businesses
  assert.deepEqual(conversationSignals(p,row,{relevant:true,purposes:[]},{current:false}),[]);
 });
 
+test('an explicit no-purpose decision stays out of purpose inboxes despite a brand name',()=>{
+ const {p,data}=fixture();captureEvidence(data,p,[source('Fixture Cafe is the name. No customer experience or useful comparison here.')],at);const e=data.conversationEvidence[p.id][0];
+ const q=classify(p,e,decision(e,{category:'other',purposes:[]}));saveConversationReview(data,p,e,q,at,'fixture');
+ const item={...data.items[0],...conversationCurrentState(data,data.items[0])};
+ assert.equal(item.qualification.relevant,true);assert.deepEqual(item.conversationSignals,[]);
+ assert.equal(matchesConversation(item,{relevance:'mentions'}),false);
+});
+
+test('legacy name mentions preserve complete source URLs rather than sentence fragments',()=>{
+ const p={name:'Blind Box Tracker',aliases:['BlindBoxTracker']};
+ const text='Android is available: [BlindBoxTracker](https://play.google.com/store/apps/details?id=example.blindboxtracker). Download here.';
+ const signals=conversationSignals(p,{text},{relevant:true},{current:true});
+ assert.equal(signals.length,1);assert.equal(signals[0].purpose,'mention');
+ assert.equal(signals[0].quote,'Android is available: [BlindBoxTracker](https://play.google.com/store/apps/details?id=example.blindboxtracker).');
+});
+
 test('resolved, closed and satisfied-user evidence cannot qualify as a potential customer',()=>{
  const {p,data}=fixture();captureEvidence(data,p,[source('Where can I pick up a sandwich in Vancouver?')],at);const e=data.conversationEvidence[p.id][0];
  const q=decision(e,{category:'question',directFit:true,need:'Find a sandwich in Vancouver',offeringIds:['o1'],purposes:[signal('potential_customer',e.text)]});
