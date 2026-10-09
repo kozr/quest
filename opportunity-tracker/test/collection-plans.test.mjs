@@ -110,3 +110,23 @@ test('interleaved products independently advance live keywords and historical se
   assert.deepEqual(data.collection.lastModes,{p:'backfill',second:'backfill'});
   for(const id of ['p','second'])assert.equal(data.collection.backfills[id].requests,2);
 });
+
+
+test('new keyword runs cannot starve an existing long-tail queue; both families retain FIFO',()=>{
+  const data=workspace({planId:'growth'});const initial=beginCollection(data,'p','scheduled',now,settings),cycle=data.collection.cycles.p;
+  const keyword=cycle.queue.find(task=>task.queryFamily==='keyword'),tail=cycle.queue.find(task=>task.queryFamily==='long_tail');
+  cycle.queue=[...Array.from({length:3},(_,i)=>({...keyword,query:`keyword ${i}`,queryId:`k${i}`})),...Array.from({length:3},(_,i)=>({...tail,query:`long tail ${i}`,queryId:`t${i}`}))];
+  const claims=[];
+  for(let i=0;i<6;i++){
+    // Simulate a slow worker: a fresh keyword run is due before the old tail drains.
+    const at=now+i*16*minute;beginCollection(data,'p','scheduled',at,settings);
+    claims.push(complete(data,at).task);
+  }
+  assert.deepEqual(claims.map(task=>task.queryFamily),['keyword','long_tail','keyword','long_tail','keyword','long_tail']);
+  assert.deepEqual(claims.filter(task=>task.queryFamily==='long_tail').map(task=>task.queryId),['t0','t1','t2']);
+  assert.deepEqual(claims.filter(task=>task.queryFamily==='keyword').map(task=>task.queryId),['k0','k1','k2']);
+  assert(claims.filter(task=>task.queryFamily==='long_tail').every(task=>task.loopRunId===initial.familyRuns.long_tail.id));
+  assert.equal(data.loopSchedules.p.long_tail.lastOutcome,'success');
+  // More keyword work remains after the old long-tail family completed.
+  assert(cycle.queue.some(task=>task.queryFamily==='keyword'));
+});

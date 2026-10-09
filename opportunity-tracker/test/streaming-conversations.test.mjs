@@ -24,7 +24,7 @@ async function fixture(t){
 }
 const rows=(n,start=0)=>Array.from({length:n},(_,i)=>({...conversations()[(i+start)%4],url:`https://www.reddit.com/r/vancouver/comments/stream${i+start}/`,postId:`t3_stream${i+start}`,sourceId:`t3_stream${i+start}`,author:`person_${i+start}`}));
 const search=(f,rs,at=Date.now())=>f.store.recordSearch(f.p.id,{semantic:true,items:[],candidates:rs,sources:[],searchedAt:new Date(at).toISOString()});
-const review=(f,now)=>{const claim=f.store.claimStage(f.p.id,'qualify',null,false,now);return f.store.finishStage(claim.lease,{value:stageValue('qualify',claim.input),model:'fixture-sol'},now+1);};
+const review=(f,now)=>{const claim=f.store.claimStage(f.p.id,'qualify',null,false,now),value=stageValue('qualify',claim.input);for(const row of value.results)row.entityMatch={status:'uncertain',basis:'none',reference:'',quote:'',identityQuote:'',businessQuote:'',contextSource:'none',reason:'Fixture does not establish business identity.'};return f.store.finishStage(claim.lease,{value,model:'fixture-sol'},now+1);};
 
 test('a completed batch reaches the customer while the backfill is still running',async t=>{
  const f=await fixture(t),now=Date.now();f.store.beginBackfill(f.p.id,now);const initial=rows(35);initial[3].title=f.p.name+' lunch delivery is frustrating';search(f,initial,now);review(f,now+1);

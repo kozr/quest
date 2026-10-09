@@ -9,7 +9,7 @@ function reviewed(){
   const product={...v2Business(),id:'cafe',listeningVersion:'v2'};
   const data={products:[product],items:[],pipelineStages:{cafe:{qualify:{model:'fixture'}}}};
   captureEvidence(data,product,conversations(),'2026-10-08T10:00:00Z');
-  for(const row of data.conversationEvidence.cafe)row.qualification={relevant:true,directFit:!row.text.includes('deliver'),reason:'Relevant to café customers',quote:row.text,offeringIds:row.text.includes('deliver')?[]:['o1'],profileHash:qualificationInputHash(product),qualifiedAt:'2026-10-08T10:01:00Z'};
+  for(const row of data.conversationEvidence.cafe)row.qualification={relevant:true,directFit:!row.text.includes('deliver'),reason:'Relevant to café customers',quote:row.text,offeringIds:row.text.includes('deliver')?[]:['o1'],profileHash:qualificationInputHash(product),contentHash:row.contentHash,qualifiedAt:'2026-10-08T10:01:00Z'};
   // This fixture represents completed review, so no source remains queued.
   data.conversationReviewQueue.cafe=[];
   return {data,product};
@@ -51,13 +51,13 @@ test('qualified relevant records survive sample eviction; legacy mentions remain
   assert.equal(conversationCurrentState(data,item).currentConversationRelevant,true);
   const mention={id:'mention',productId:product.id,kind:'mention',status:'new',url:'https://www.reddit.com/r/vancouver/comments/brand/'};
   const visible={...mention,...conversationCurrentState(data,mention)};
-  assert.equal(matchesConversation(visible),true);assert.equal(matchesConversation(visible,{relevance:'direct'}),false);assert.equal(matchesConversation(visible,{relevance:'mentions'}),false,'A legacy kind without source proof does not establish a qualified mention');
+  assert.equal(matchesConversation(visible),false);assert.equal(matchesConversation(visible,{relevance:'direct'}),false);assert.equal(matchesConversation(visible,{relevance:'mentions'}),false,'A legacy kind without source proof does not establish a qualified mention');
   assert.equal(matchesConversation({...item,status:'dismissed'}),false);
 });
 
 
 test('purpose views share review records and keep feedback separate from direct fits',()=>{
- const item={id:'shared',status:'saved',kind:'conversation',note:'Keep this note',draft:'Keep this draft',currentConversationRelevant:true,currentOpportunityFit:false,conversationSignals:[{purpose:'mention'},{purpose:'feedback'}]};
+ const item={id:'shared',status:'saved',kind:'conversation',note:'Keep this note',draft:'Keep this draft',entityMention:{quote:'Confirmed business'},currentConversationRelevant:true,currentOpportunityFit:false,conversationSignals:[{purpose:'mention'},{purpose:'feedback'}]};
  const before=structuredClone(item);
  assert.equal(matchesConversation(item),true);
  assert.equal(matchesConversation(item,{relevance:'mentions'}),true);
@@ -99,6 +99,6 @@ test('each purpose shows its own author quote on a shared conversation',()=>{
 
 test('current purpose signals take precedence over older qualification quotes',()=>{
  const item={snippet:'Original comment',conversationSignals:[],qualification:{quote:'Old general quote',purposes:[{purpose:'feedback',quote:'Old feedback'}]}};
- assert.deepEqual(purposeEvidence(item,'feedback'),{signals:[],quote:'Original comment',keywordMention:null,unverifiedMention:false});
+ assert.deepEqual(purposeEvidence(item,'feedback'),{signals:[],quote:'Original comment',entityMention:null});
  assert.equal(purposeEvidence({snippet:'Original comment',qualification:{purposes:[{purpose:'feedback',quote:'Legacy feedback'}]}},'feedback').quote,'Legacy feedback');
 });

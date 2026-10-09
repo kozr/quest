@@ -1,0 +1,12 @@
+.collected-conversations .collected-filters{display:flex;align-items:end;flex-wrap:wrap;gap:12px;margin:16px 0}
+.collected-conversations .collected-filters label{display:grid;gap:6px;min-width:140px;flex:1;font-size:12px}
+.collected-conversations select{border:1px solid var(--border);border-radius:6px;background:var(--background);color:var(--foreground);padding:8px;min-height:36px;max-width:100%}
+.collected-conversations .collected-row{margin:10px 0}
+.collected-conversations .collected-row>summary{display:flex;justify-content:space-between;gap:12px;cursor:pointer}
+.collected-conversations .collected-row>summary span{font-size:11px;color:var(--muted-foreground);font-weight:400;max-width:50%}
+.collected-conversations .collected-original{white-space:pre-wrap;overflow-wrap:anywhere;max-width:100%;line-height:1.6}
+.collected-conversations .collected-review{margin-top:12px}
+.collected-conversations .collected-review fieldset{border:0;padding:12px 0;display:grid;gap:12px}
+.collected-conversations .collected-review label{display:block;margin-bottom:6px;font-size:12px}
+.collected-conversations .collected-review textarea{width:100%;min-height:80px}
+@media(max-width:600px){.collected-conversations .collected-row>summary{display:block}.collected-conversations .collected-row>summary span{display:block;max-width:none;margin-top:6px}}

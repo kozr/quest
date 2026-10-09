@@ -1,10 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {stageReservation} from '../pipeline-provider.mjs';
+import {ENTITY_MATCH_VERSION,needsEntityReview} from '../entity-mention.mjs';
 import {cafe,breakdown} from './business-profile.fixture.mjs';
 import {validateSearchPlan} from '../search-plan.mjs';
-import {captureEvidence,pendingEvidenceCount} from '../conversation-evidence.mjs';
+import {captureEvidence,pendingEvidenceCount,saveConversationReview,qualificationInputHash} from '../conversation-evidence.mjs';
 import {claimStage,finishStage,failStage} from '../pipeline-runtime.mjs';
-import {analysisCycleState,analysisCycleDue} from '../analysis-cycles.mjs';
+import {analysisCycleState,analysisCycleDue,analysisCandidate,claimAnalysisCycleBatch} from '../analysis-cycles.mjs';
 import {analysisUsageState,reserveAnalysisUnits,settleAnalysisUnits} from '../usage.mjs';
 import {stageQualifications,claimQualificationBatch,finishQualificationBatch,claimQualification,finishQualification,qualificationSettings,budgetDay,profileHash} from '../qualification.mjs';
 import {hash,PIPELINE_VERSION} from '../pipeline-contract.mjs';
@@ -114,4 +116,64 @@ test('a capacity downgrade or archive blocks analysis-cycle resumes without disc
 test('non-qualification paid AI stages require active subscription and capacity',()=>{
   const data=workspace();data.subscription.status='cancelled';assert.throws(()=>claimStage(data,'p','search_plan',settings,false,now),error=>error.code==='subscription_inactive');
   data.subscription.status='manual';data.products[0].planMonitoringBlocked='plan_capacity';assert.throws(()=>claimStage(data,'p','search_plan',settings,false,now),error=>error.code==='plan_capacity');
+});
+
+
+test('targeted identity review joins an active backlog before unrelated rows and never replays an old receipt',()=>{
+  const data=workspace({planId:'growth'});collect(data,25);
+  const first=claimStage(data,'p','qualify',settings,false,now);finishStage(data,first.lease,response(first.input),now+1);
+  const cycleId=data.analysisCycles.p.id;collect(data,1,100,{snippet:'Fixture Cafe in London has a menu.'});
+  const p=data.products[0],row=data.conversationEvidence.p.find(row=>row.text.includes('London')),version=STAGE_DEFINITIONS.qualify.promptVersion;
+  const legacy={evidenceId:row.id,relevant:false,directFit:false,category:'other',need:'',quote:'',offeringIds:[],reason:'No product need.',resolved:'unknown',purposes:[]};
+  saveConversationReview(data,p,row,legacy,new Date(now).toISOString(),'old-fixture');
+  const candidate=analysisCandidate(row,{profileHash:qualificationInputHash(p),version}),executionKey=hash(['p',candidate.profileHash,version,candidate.sourceIdentity,candidate.contentHash]);
+  const reservation=reserveAnalysisUnits(data,{productId:'p',executionKey,sourceIdentities:[candidate.sourceIdentity],now});settleAnalysisUnits(data,reservation.id,{outcome:'success',now});
+  data.usage.reservations[reservation.id].result={decision:legacy,generatedAt:new Date(now).toISOString(),model:'old-fixture'};
+  const before=analysisUsageState(data,now).monthly.used,spent=data.aiBudget.spentMicroUsd;
+  assert.equal(needsEntityReview(p,data.conversationEvidence.p.find(r=>r.id===row.id)),true);
+  const next=claimStage(data,'p','qualify',settings,false,now+2);assert(next.lease);assert.equal(next.input.evidence[0].id,row.id);assert.equal(next.input.evidence.length,12);
+  assert.equal(data.analysisCycles.p.id,cycleId);assert.equal(data.analysisCycles.p.total,26);assert.equal(data.analysisCycles.p.cached,0);
+  assert.equal(data.analysisCycles.p.batch.candidates[0].version,`${version}:entity-review-v1`);
+  assert.equal(new Set(data.analysisCycles.p.queue).size,data.analysisCycles.p.queue.length);
+  const result=response(next.input);result.value.results[0].entityMatch={version:ENTITY_MATCH_VERSION,status:'different',basis:'none',reference:'',quote:'',identityQuote:'',businessQuote:'',contextSource:'none',reason:'A namesake in London.'};
+  finishStage(data,next.lease,result,now+3);
+  assert.equal(analysisUsageState(data,now).monthly.used,before+11,'The previously charged source is not charged another unique unit.');
+  assert.equal(data.aiBudget.spentMicroUsd,spent+1000,'The new provider call is charged its actual cost.');
+  assert.equal(needsEntityReview(p,data.conversationEvidence.p.find(r=>r.id===row.id)),false);
+  const last=claimStage(data,'p','qualify',settings,false,now+4);assert.equal(last.input.evidence.length,2);assert(last.input.evidence.every(r=>r.id!==row.id));
+});
+
+test('an active old candidate gets the identity revision before any cached execution is considered',()=>{
+  const data=workspace({planId:'growth'});collect(data,13);const first=claimStage(data,'p','qualify',settings,false,now);finishStage(data,first.lease,response(first.input),now+1);
+  const oldId=data.analysisCycles.p.queue[0],row=data.conversationEvidence.p.find(r=>r.id===oldId);
+  row.text='Fixture Cafe in London';row.contentHash=hash([row.title,row.text]);
+  data.analysisCycles.p.candidates[oldId]=analysisCandidate(row,{profileHash:qualificationInputHash(data.products[0]),version:STAGE_DEFINITIONS.qualify.promptVersion});
+  const next=claimStage(data,'p','qualify',settings,false,now+2);assert.equal(next.input.evidence[0].id,oldId);assert.equal(data.analysisCycles.p.batch.candidates[0].version,`${STAGE_DEFINITIONS.qualify.promptVersion}:entity-review-v1`);assert.equal(data.analysisCycles.p.skipped,0);
+});
+
+
+test('qualification shrinks to an affordable batch without raising caps, losing queue entries, or retaining excess unit holds',()=>{
+  const data=workspace({planId:'growth'});collect(data,13,0,{snippet:'Detailed source body. '.repeat(100)});
+  // Use the real serializer reservation to make exactly one row affordable.
+  const probe=claimStage(structuredClone(data),'p','qualify',settings,false,now),one={...probe.input,evidence:probe.input.evidence.slice(0,1)},oneCost=stageReservation('qualify',one);
+  const limited={...settings,budgetMicroUsd:oneCost};
+  const first=claimStage(data,'p','qualify',limited,false,now);assert.equal(first.input.evidence.length,1);assert.equal(first.lease.reservationMicroUsd,oneCost);
+  assert.equal(data.aiBudget.reservedMicroUsd,oneCost);assert.equal(analysisUsageState(data,now).monthly.reserved,1);assert.equal(data.analysisCycles.p.queue.length,13);assert.equal(data.analysisCycles.p.batch.candidates.length,1);
+  assert.equal(settings.budgetMicroUsd,2000000);assert.equal(limited.budgetMicroUsd,oneCost);
+  finishStage(data,first.lease,response(first.input),now+1);assert.equal(data.analysisCycles.p.queue.length,12);assert.equal(data.aiBudget.reservedMicroUsd,0);
+  const blocked=claimStage(data,'p','qualify',limited,false,now+2);assert.equal(blocked.status,'blocked');assert.equal(data.analysisCycles.p.queue.length,12);assert.equal(analysisUsageState(data,now).monthly.reserved,0);assert.equal(data.aiBudget.spentMicroUsd,1000);
+});
+
+
+test('operator archive adoption reuses only an existing same-product historical grant within its dates',()=>{
+  const data=workspace({planId:'growth'}),job={id:'existing',productId:'p',from:new Date(now-365*86400000).toISOString(),to:new Date(now).toISOString()};
+  data.collection={backfills:{p:job}};
+  const grant=reserveAnalysisUnits(data,{productId:'p',historical:true,backfillId:job.id,executionKey:'prior-history',sourceIdentities:['prior-history-source'],now});settleAnalysisUnits(data,grant.id,{outcome:'success',now});
+  collect(data,1,0,{historical:true});const row=data.conversationEvidence.p[0];row.historicalAllowanceBackfillId=job.id;row.allowanceAttribution={kind:'saved-archive-adoption',jobId:job.id,at:new Date(now).toISOString()};
+  const base=structuredClone(data),first=claimStage(data,'p','qualify',settings,false,now);assert(first.lease);assert.equal(data.analysisCycles.p.batch.candidates[0].backfillId,job.id);assert.equal(Object.keys(data.usage.historical).length,1);assert.equal(analysisUsageState(data,now).monthly.used,0);
+  assert.equal(row.backfillId,undefined);assert.equal(row.backfillIds,undefined);assert.equal(row.historical,true);
+  for(const invalid of ['date','grant','product','marker']){
+    const copy=structuredClone(base);if(invalid==='date')copy.conversationEvidence.p[0].publishedAt=new Date(now-367*86400000).toISOString();if(invalid==='grant')copy.usage.historical={};if(invalid==='product')copy.collection.backfills.p.productId='other';if(invalid==='marker')copy.conversationEvidence.p[0].allowanceAttribution.jobId='forged';
+    const claim=claimStage(copy,'p','qualify',settings,false,now);assert.equal(claim.blocked.code,'historical_attribution_required',invalid);assert.equal(claim.lease,undefined);assert.equal(analysisUsageState(copy,now).monthly.used,0);
+  }
 });

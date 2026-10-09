@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {ENTITY_MATCH_VERSION} from '../entity-mention.mjs';
 import {projectPurposePatterns} from '../purpose-patterns.mjs';
 import {captureEvidence,saveConversationReview,evidenceFor} from '../conversation-evidence.mjs';
 import {v2Business} from './pipeline.fixture.mjs';
@@ -10,9 +11,9 @@ function fixture(){
   const p={...v2Business(),id:'p',listeningVersion:'v2'},q={...v2Business(),id:'q',name:'Another Cafe',listeningVersion:'v2'};
   const data={version:1,products:[p,q],items:[],searches:{},subscription:{planId:'growth',status:'manual'}};
   for(const product of [p,q]){
-    const rows=Array.from({length:120},(_,i)=>({url:`https://www.reddit.com/r/vancouver/comments/${product.id}${i}/`,source:'Reddit',type:'post',title:`Discussion ${i}`,snippet:i>=114?`${product.name} has good sandwiches.`:'Unreviewed source body '.repeat(500),author:`author${i}`,publishedAt:at}));
+    const rows=Array.from({length:120},(_,i)=>({url:`https://www.reddit.com/r/vancouver/comments/${product.id}${i}/`,source:'Reddit',type:'post',title:`Discussion ${i}`,snippet:i>=114?`${product.name} in Vancouver has good sandwiches.`:'Unreviewed source body '.repeat(500),author:`author${i}`,publishedAt:at}));
     captureEvidence(data,product,rows,at);
-    for(const row of evidenceFor(data,product).slice(product===p?114:119))saveConversationReview(data,product,row,{relevant:true,directFit:false,category:'recommendation',need:'',quote:row.text,offeringIds:[],reason:'Names the business.',resolved:'unknown',purposes:[{purpose:'mention',quote:row.text,reference:product.name,reason:'Names the business.',offeringIds:[]}]},at,'fixture');
+    for(const row of evidenceFor(data,product).slice(product===p?114:119))saveConversationReview(data,product,row,{entityMatch:{version:ENTITY_MATCH_VERSION,status:'confirmed',basis:'business_context',reference:product.name,quote:row.text,identityQuote:row.text,businessQuote:'We serve croissant sandwiches and cheesecake in Vancouver.',contextSource:'own',reason:'Name and Vancouver match.'},relevant:true,directFit:false,category:'recommendation',need:'',quote:row.text,offeringIds:[],reason:'Names the business.',resolved:'unknown',purposes:[{purpose:'mention',quote:row.text,reference:product.name,reason:'Names the business.',offeringIds:[]}]},at,'fixture');
     data.conversationEvidence[product.id]=[...evidenceFor(data,product).filter(row=>!row.qualification),...evidenceFor(data,product).filter(row=>row.qualification)];
   }
   const rows=evidenceFor(data,p).slice(114),insight={id:'saved',kind:'repeated_question',title:'Original saved title',outcome:'Original saved claim',explanation:'Original saved explanation',community:'vancouver',evidenceIds:rows.slice(0,3).map(row=>row.id),offeringIds:[],unknowns:['Original limitation'],independentThreadCount:3,firstSeen:at,lastSeen:at,sources:rows.slice(0,3).map(row=>({id:row.id,url:row.url,title:row.title,author:row.author,publishedAt:row.publishedAt,quote:row.qualification.quote,threadId:row.threadId,discussionClosed:false,resolved:'unknown'}))};
@@ -34,7 +35,7 @@ test('all supporting sources must have a current confirmed purpose; stale, raw, 
   const mixed=structuredClone(insight);mixed.id='mixed';mixed.evidenceIds=[rows[0].id,evidenceFor(data,q).at(-1).id];data.pipelineStages.p.insights.data.insights.push(mixed);
   assert.equal(projectPurposePatterns(data,p).purposes.mentions.patterns.length,1);
   rows[0].contentHash='changed-content';let projected=projectPurposePatterns(data,p);assert.equal(projected.purposes.mentions.evidenceCount,5);assert.deepEqual(projected.purposes.mentions.patterns,[]);
-  rows[1].qualification.profileHash='old-profile';rows[2].qualification.purposes=[];delete rows[3].qualification;
+  rows[1].qualification.profileHash='old-profile';delete rows[2].qualification.entityMatch;rows[2].qualification.purposes=[];delete rows[3].qualification;
   projected=projectPurposePatterns(data,p);assert.equal(projected.purposes.mentions.evidenceCount,2);assert.equal(projected.purposes.all.evidenceCount,3);
   assert.equal(projected.purposes.feedback.evidenceCount,0);assert.deepEqual(projected.purposes.feedback.patterns,[]);
 });

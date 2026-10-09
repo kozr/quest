@@ -70,3 +70,11 @@ for(const adapter of ['local','record'])test(`${adapter} Store.importData applie
   assert(saved.collection.backfillRuns['trusted-run']);assert.equal(saved.collection.backfillRuns['attacker-run'],undefined);
   const usage=analysisUsageState(saved,NOW);assert.equal(usage.monthly.used,1);assert.deepEqual(usage.historical,{});
 });
+
+
+test('historical allowance adoption is server-owned and retained only for unchanged trusted sources',()=>{
+  const row={id:'saved',productId:'p',url:'https://www.reddit.com/r/test/comments/post/',title:'Original',snippet:'Exact original text',author:'writer',publishedAt:'2026-01-01T00:00:00Z',historical:true,historicalAllowanceBackfillId:'job',allowanceAttribution:{kind:'saved-archive-adoption',jobId:'job',at:'2026-10-09T12:00:00Z'}};
+  const current={items:[row]},incoming={items:[{...structuredClone(row),historicalAllowanceBackfillId:'forged',allowanceAttribution:{kind:'saved-archive-adoption',jobId:'forged',at:row.allowanceAttribution.at}}]};
+  const kept=restoreSourceProvenance(current,incoming).items[0];assert.equal(kept.historicalAllowanceBackfillId,'job');assert.deepEqual(kept.allowanceAttribution,row.allowanceAttribution);assert.equal(kept.backfillId,undefined);
+  incoming.items[0].snippet='Changed source';const stripped=restoreSourceProvenance(current,incoming).items[0];assert.equal(stripped.historical,false);assert.equal(stripped.historicalAllowanceBackfillId,undefined);assert.equal(stripped.allowanceAttribution,undefined);
+});

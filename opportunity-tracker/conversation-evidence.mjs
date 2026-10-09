@@ -1,3 +1,4 @@
+import {needsEntityReview} from './entity-mention.mjs';
 import {canonicalSocialSource} from './social-search.mjs';
 import {conversationSignals,commentThreadPriority} from './conversation-purpose.mjs';
 import {hash,problem,string,array,oneOf} from './pipeline-contract.mjs';
@@ -10,7 +11,7 @@ export const QUALIFY_PIPELINE_VERSION='listening-qualification-v3';
 export const durableEvidenceEnabled=data=>Boolean(data.subscription);
 export const qualificationInputHash=product=>hash([QUALIFY_PIPELINE_VERSION,product.businessProfileV2,product.searchPlanV2,product.aliases||[],product.competitorNames||[]]);
 export function qualificationEvidence(row){
-  const value=Object.fromEntries(['id','url','title','text','author','community','threadId','type','source','publishedAt','discussionClosed','crosspost','context'].map(k=>[k,row[k]]));
+  const value=Object.fromEntries(['id','url','title','text','author','community','threadId','type','source','publishedAt','discussionClosed','crosspost','context','postId','parentId'].map(k=>[k,row[k]]));
   // Preserve source text in storage. Only the AI request receives an excerpt.
   if(row.retention==='durable')Object.assign(value,{title:String(row.title||'').slice(0,500),text:String(row.text||'').slice(0,2200),context:String(row.context||'').slice(0,1500),sourceContentHash:row.contentHash,sourceTextTruncated:String(row.title||'').length>500||String(row.text||'').length>2200||String(row.context||'').length>1500});
   return value;
@@ -77,7 +78,9 @@ function captureDurableEvidence(data,product,rows,at){
     const queryIds=[...new Set([...(prior?.queryIds||[]),...(row.queryId?[row.queryId]:[]),...(row.queryIds||[])])];
     const queryFamilies=[...new Set([...(prior?.queryFamilies||[]),...(row.queryFamily?[row.queryFamily]:[]),...(row.queryFamilies||[])])];
     const backfillIds=[...new Set([...(prior?.backfillIds||[]),...(prior?.backfillId?[prior.backfillId]:[]),...(row.backfillId?[row.backfillId]:[])])];
-    const record={...sourceProvenance(row),id,url:url.href,title,text,...(context?{context}:{}),retention:'durable',author:typeof row.author==='string'?row.author.slice(0,120):null,
+    const allowanceSource=prior?.contentHash===contentHash?prior:item?.qualification?.contentHash===contentHash?item:null;
+    const allowance=allowanceSource?.historicalAllowanceBackfillId&&allowanceSource?.allowanceAttribution?{historicalAllowanceBackfillId:allowanceSource.historicalAllowanceBackfillId,allowanceAttribution:structuredClone(allowanceSource.allowanceAttribution)}:{};
+    const record={...allowance,...sourceProvenance(row),id,url:url.href,title,text,...(context?{context}:{}),retention:'durable',author:typeof row.author==='string'?row.author.slice(0,120):null,
       community:url.pathname.match(/\/r\/([^/]+)/i)?.[1]?.toLowerCase()||String(row.community||row.subreddit||'').replace(/^r\//,'').toLowerCase().slice(0,21)||null,
       threadId:thread?`reddit:${thread}`:String(social?`${social.platform}:${social.post}`:row.postId||row.parentId||url.href),type:row.type==='comment'?'comment':'post',source:String(row.source||'').slice(0,80),publishedAt:Number.isFinite(Date.parse(row.publishedAt))?new Date(row.publishedAt).toISOString():null,
       collectedAt:prior?.collectedAt||at,lastSeenAt:at,historical:row.historical===true||prior?.historical===true,discussionClosed:row.discussionClosed===true,crosspost:row.crosspost===true||Boolean(row.crosspostParent||row.crosspost_parent),contentHash,queryIds,queryFamilies,
@@ -96,7 +99,19 @@ function trimEvidence(data){
   for(const {p,r} of all.slice(0,600).reverse()){if(Buffer.byteLength(JSON.stringify(data.conversationEvidence))<=2000000)break;data.conversationEvidence[p]=data.conversationEvidence[p].filter(x=>x.id!==r.id);}
 }
 export function evidenceFor(data,product){return data.conversationEvidence?.[product.id]||[];}
-export function findEvidence(data,product,id){return data.conversationReviewQueue?.[product.id]?.find(r=>r.id===id)||evidenceFor(data,product).find(r=>r.id===id)||data.conversationReviewFailures?.[product.id]?.[id]?.row;}
+// Recover only a bounded set of named saved conversations evicted by the old
+// sample archive. Read-only synthesis preserves their original review and
+// historical flag; it never invents backfill authority or recurring eligibility.
+export function savedItemIdentityEvidence(data,product){
+  const present=new Set([...(data.conversationEvidence?.[product.id]||[]),...(data.conversationReviewQueue?.[product.id]||[])].map(row=>conversationSourceKey(row.url)));
+  return (data.items||[]).filter(item=>item.productId===product.id&&item.url&&!present.has(conversationSourceKey(item.url))&&needsEntityReview(product,item)).slice(0,24).map(item=>{
+    const title=String(item.title||''),text=String(item.snippet||''),context=String(item.context||''),contentHash=hash(context?[title,text,context]:[title,text]),thread=new URL(item.url).pathname.match(/\/comments\/([a-z0-9]+)/i)?.[1];
+    const id=/^[a-f0-9]{24}$/.test(item.qualification?.evidenceId||'')?item.qualification.evidenceId:hash([product.id,conversationSourceKey(item.url)]).slice(0,24);
+    return {...item,id,text,title,context,contentHash,retention:'durable',savedItemIdentityReview:true,threadId:item.threadId||(thread?`reddit:${thread}`:item.postId||item.url),collectedAt:item.collectedAt||item.lastSeenAt||item.foundAt||item.qualification?.qualifiedAt||'1970-01-01T00:00:00.000Z'};
+  });
+}
+export function findEvidence(data,product,id){return data.conversationReviewQueue?.[product.id]?.find(r=>r.id===id)||evidenceFor(data,product).find(r=>r.id===id)||data.conversationReviewFailures?.[product.id]?.[id]?.row||savedItemIdentityEvidence(data,product).find(row=>row.id===id);}
+
 export function currentReviewFailure(data,product,row){const failure=data.conversationReviewFailures?.[product.id]?.[row.id];return failure?.profileHash===qualificationInputHash(product)&&failure.contentHash===row.contentHash?failure:null;}
 export function reviewEvidenceFor(data,product){const saved=evidenceFor(data,product),rows=new Map(saved.map(row=>[row.id,row]));for(const failure of Object.values(data.conversationReviewFailures?.[product.id]||{}))if(!rows.has(failure.row.id)&&currentReviewFailure(data,product,failure.row))rows.set(failure.row.id,failure.row);return [...rows.values()].sort((a,b)=>Number(Boolean(currentReviewFailure(data,product,b)))-Number(Boolean(currentReviewFailure(data,product,a))));}
 export function failedEvidenceCount(data,product){return reviewEvidenceFor(data,product).filter(row=>currentReviewFailure(data,product,row)).length;}
@@ -106,7 +121,7 @@ export function recordReviewFailure(data,product,row,reason,at){
   if(!durableEvidenceEnabled(data))for(const id of Object.keys(failures).slice(0,Math.max(0,Object.keys(failures).length-150)))delete failures[id];
   data.conversationReviewQueue ||= {};data.conversationReviewQueue[product.id]=(data.conversationReviewQueue?.[product.id]||[]).filter(r=>r.id!==row.id);
 }
-function unqualifiedEvidence(data,product){const h=qualificationInputHash(product),rows=new Map();for(const r of [...(data.conversationReviewQueue?.[product.id]||[]),...evidenceFor(data,product)])if(r.qualification?.profileHash!==h&&!currentReviewFailure(data,product,r)&&!rows.has(r.id))rows.set(r.id,r);const priority=row=>Math.max(commentThreadPriority(product,row),row.type==='comment'&&row.context&&commentThreadPriority(product,{text:row.context})>=3?3:0);return [...rows.values()].sort((a,b)=>priority(b)-priority(a)||a.collectedAt.localeCompare(b.collectedAt)||a.id.localeCompare(b.id));}
+function unqualifiedEvidence(data,product){const h=qualificationInputHash(product),rows=new Map();for(const r of [...(data.conversationReviewQueue?.[product.id]||[]),...evidenceFor(data,product),...savedItemIdentityEvidence(data,product)])if((r.qualification?.profileHash!==h||needsEntityReview(product,r))&&!currentReviewFailure(data,product,r)&&!rows.has(r.id))rows.set(r.id,r);const priority=row=>Math.max(commentThreadPriority(product,row),row.type==='comment'&&row.context&&commentThreadPriority(product,{text:row.context})>=3?3:0);return [...rows.values()].sort((a,b)=>priority(b)-priority(a)||a.collectedAt.localeCompare(b.collectedAt)||a.id.localeCompare(b.id));}
 export function pendingEvidenceAll(data,product){return unqualifiedEvidence(data,product);}
 export function pendingEvidence(data,product){return pendingEvidenceAll(data,product).slice(0,REVIEW_BATCH_LIMIT);}
 export function pendingEvidenceCount(data,product){return unqualifiedEvidence(data,product).length;}

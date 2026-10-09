@@ -57,7 +57,11 @@ export function validateStageRecords(value,products){
       if(!STAGE_DEFINITIONS[stage]||row.version!==PIPELINE_VERSION||row.stage!==stage||!/^[a-f0-9]{64}$/.test(row.inputHash)||!Number.isFinite(Date.parse(row.generatedAt))||JSON.stringify(row).length>100000)problem('Invalid saved stage record.');
       // Old exported search-plan stage outputs predate executable loop families.
       // Normalize only this stage before applying the current generated schema.
-      const output=stage==='search_plan'&&Array.isArray(row.data?.themes)?{...row.data,themes:row.data.themes.map(theme=>({...theme,...(Array.isArray(theme.queries)?{queries:theme.queries.map(query=>({...query,loop:query.loop===undefined?'keyword':query.loop}))}:{})}))}:row.data;
+      let output=stage==='search_plan'&&Array.isArray(row.data?.themes)?{...row.data,themes:row.data.themes.map(theme=>({...theme,...(Array.isArray(theme.queries)?{queries:theme.queries.map(query=>({...query,loop:query.loop===undefined?'keyword':query.loop}))}:{})}))}:row.data;
+      // Older exports predate the separate entity verdict. Import them as
+      // explicitly unverified history; do not turn a name-only purpose label
+      // into a confirmed mention. Live provider validation remains unchanged.
+      if(stage==='qualify'&&Array.isArray(output?.results))output={...output,results:output.results.map(result=>result?.entityMatch===undefined?{...result,entityMatch:{status:'uncertain',basis:'none',reference:'',quote:'',identityQuote:'',businessQuote:'',contextSource:'none',reason:'Imported assessment predates business identity verification.'},...(Array.isArray(result?.purposes)?{purposes:result.purposes.filter(signal=>signal?.purpose!=='mention')}:{})}:result)};
       records[product.id][stage]={version:PIPELINE_VERSION,stage,inputHash:row.inputHash,generatedAt:row.generatedAt,model:String(row.model||'imported').slice(0,80),data:declared(output,STAGE_DEFINITIONS[stage].schema),imported:true};
     }
   }return records;

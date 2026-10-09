@@ -58,7 +58,7 @@ test('paging rejects excessive/invalid inputs, has deterministic ordering and cl
 test('failure and irrelevant analysis remain visible in collected results without creating purpose signals',()=>{
   const {data,p}=fixture();collect(data,p,[source(1),source(2)]);const [one,two]=evidenceFor(data,p);
   recordReviewFailure(data,p,one,'Provider temporarily unavailable',AT);saveConversationReview(data,p,two,decision(two,{relevant:false,directFit:false,purposes:[],offeringIds:[]}),AT,'fixture');
-  assert.equal(pageConversationEvidence(data,viewer,{status:'analysis_failed'}).total,1);assert.equal(pageConversationEvidence(data,viewer,{status:'analyzed'}).total,1);assert.equal(pageConversations(data,viewer,{relevance:'feedback'}).total,0);assert.equal(pageConversations(data,viewer,{relevance:'direct'}).total,0);
+  assert.equal(pageConversationEvidence(data,viewer,{status:'analysis_failed'}).total,1);assert.equal(conversationCurrentState(data,data.items.find(item=>item.url===one.url)).currentConversationRelevant,false);assert.equal(pageConversationEvidence(data,viewer,{status:'analyzed'}).total,1);assert.equal(pageConversations(data,viewer,{relevance:'feedback'}).total,0);assert.equal(pageConversations(data,viewer,{relevance:'direct'}).total,0);
   assert.equal(pageConversationEvidence(data,viewer,{status:'all'}).total,2);
 });
 

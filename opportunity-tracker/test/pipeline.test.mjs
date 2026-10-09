@@ -1,4 +1,5 @@
 import test from 'node:test';
+import {PIPELINE_VERSION} from '../pipeline-contract.mjs';
 import assert from 'node:assert/strict';
 import {mkdtemp,rm} from 'node:fs/promises';
 import {join} from 'node:path';
@@ -8,7 +9,7 @@ import {Store} from '../store.mjs';
 import {FirestoreStore} from '../firestore-store.mjs';
 import {createTrackerApp,validateProduct} from '../server.mjs';
 import {validateSearchPlan,activeSearchPlan,validateSavedPlan,listeningReady} from '../search-plan.mjs';
-import {stageContext,stageSnapshot} from '../pipeline-stages.mjs';
+import {stageContext,stageSnapshot,validateStageRecords} from '../pipeline-stages.mjs';
 import {stageRequest,stageReservation,createStageProvider} from '../pipeline-provider.mjs';
 import {validateV2Qualification} from '../listening-qualification.mjs';
 import {validateInsights,independentThreads} from '../listening-insights.mjs';
@@ -197,4 +198,17 @@ test('background qualification gives the waiting business a turn before repeatin
  f.store.recordSearch(other.id,{semantic:true,items:[],candidates:conversations(),sources:[],searchedAt:new Date().toISOString()});
  const data=f.store.snapshot();data.products.forEach(p=>p.monitoring=true);data.pipelineStages[f.p.id].qualify={generatedAt:new Date().toISOString()};f.store.commit(data);
  await f.runQualification();assert(f.store.snapshot().items.some(i=>i.productId===other.id));assert.equal(f.store.snapshot().items.some(i=>i.productId===f.p.id),false);
+});
+
+
+test('legacy qualification stage imports remain unverified history without weakening live entity validation',()=>{
+ const product={...v2Business(),id:'legacy-import',listeningVersion:'v2'},source={id:'a'.repeat(24),type:'post',title:'Fixture Cafe in Vancouver',text:'Fixture Cafe in Vancouver serves croissant sandwiches.'};
+ const input={business:{offerings:product.businessProfileV2.offerings},evidence:[source]},output=stageValue('qualify',input);
+ output.results[0].purposes.push({purpose:'mention',quote:source.text,reason:'Names the business.',offeringIds:[],reference:product.name});
+ const row={version:PIPELINE_VERSION,stage:'qualify',inputHash:'a'.repeat(64),generatedAt:new Date().toISOString(),model:'legacy',data:output};
+ const restored=validateStageRecords({[product.id]:{qualify:row}},[product])[product.id].qualify;
+ assert.equal(restored.imported,true);assert.equal(restored.data.results[0].entityMatch.status,'uncertain');assert.equal(restored.data.results[0].purposes.some(signal=>signal.purpose==='mention'),false);assert.equal(restored.data.results[0].purposes.some(signal=>signal.purpose==='feedback'),true);
+ assert.equal(output.results[0].entityMatch,undefined,'Import normalization does not change the original export.');
+ assert.throws(()=>validateV2Qualification(output,product,input),/identity|entity/i);
+ const malformed=structuredClone(row);malformed.data.results[0].entityMatch=null;assert.throws(()=>validateStageRecords({[product.id]:{qualify:malformed}},[product]),/Invalid imported/);
 });

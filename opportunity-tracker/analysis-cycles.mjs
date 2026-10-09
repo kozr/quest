@@ -11,7 +11,7 @@ const active=cycle=>cycle&&['running','blocked'].includes(cycle.status);
 export function analysisCandidate(row,{id=row.id,profileHash,version}={}) {
   const identity=sourceIdentity(row);
   if(!identity||typeof id!=='string'||!id)throw planError('Conversation identity is missing.',{status:409,code:'analysis_source_missing'});
-  return {id,sourceIdentity:identity,contentHash:row.contentHash||hash([row.title,row.text??row.snippet,row.context]),profileHash,version,historical:row.historical===true,backfillId:row.backfillId||null,backfillIds:Array.isArray(row.backfillIds)?row.backfillIds:[]};
+  return {id,sourceIdentity:identity,contentHash:row.contentHash||hash([row.title,row.text??row.snippet,row.context]),profileHash,version,historical:row.historical===true,backfillId:row.backfillId||null,backfillIds:Array.isArray(row.backfillIds)?row.backfillIds:[],historicalAllowanceBackfillId:row.historicalAllowanceBackfillId||null,allowanceAttribution:row.allowanceAttribution?structuredClone(row.allowanceAttribution):null,publishedAt:row.publishedAt||null};
 }
 function cycleTable(data) { data.analysisCycles??={};return data.analysisCycles; }
 function heartbeat(data,cycle,now) {
@@ -69,7 +69,7 @@ export function prepareAnalysisCycle(data,productId,{profileHash,version,candida
 }
 // The candidate snapshot is fixed for a cycle; later arrivals wait for the next
 // cadence. Each resume claims another bounded batch, not another daily run.
-export function claimAnalysisCycleBatch(data,productId,{candidates,profileHash,version,now=Date.now(),maxBatch=12,manual=true}={}) {
+export function claimAnalysisCycleBatch(data,productId,{candidates,priorityCandidateIds=[],profileHash,version,now=Date.now(),maxBatch=12,manual=true}={}) {
   if(!Number.isInteger(maxBatch)||maxBatch<1||maxBatch>12)throw planError('Analysis batches contain at most twelve conversations.',{status:400,code:'invalid_analysis_batch'});
   const prepared=prepareAnalysisCycle(data,productId,{candidates,profileHash,version,now,manual});
   if(prepared.status!=='ready')return prepared;
@@ -78,13 +78,30 @@ export function claimAnalysisCycleBatch(data,productId,{candidates,profileHash,v
   if(cycle.retryAt&&Date.parse(cycle.retryAt)>now)return {status:'blocked',blocked:cycle.blocked,nextRunAt:cycle.retryAt,cycle:analysisCycleState(data,productId,now)};
   delete cycle.blocked;delete cycle.retryAt;cycle.status='running';
   const current=new Map(candidates.map(candidate=>[candidate.id,candidate])),selected=[],cached=[],reservations={};let blocker=null;
+  // A targeted review correction may join an existing cycle between batches.
+  // New unrelated arrivals still wait for the next scheduled cycle. A changed
+  // execution revision cannot reuse the older provider receipt.
+  const priority=[...new Set(priorityCandidateIds)].filter(id=>current.has(id));
+  for(const id of priority){
+    if(!cycle.queue.includes(id))cycle.total++;
+    cycle.candidates[id]=structuredClone(current.get(id));
+  }
+  if(priority.length){const ids=new Set(priority);cycle.queue=[...priority,...cycle.queue.filter(id=>!ids.has(id))];}
+
   for(const id of [...cycle.queue]) {
     if(selected.length>=maxBatch)break;
     const candidate=cycle.candidates[id],latest=current.get(id);
-    if(!latest||latest.contentHash!==candidate.contentHash||latest.profileHash!==candidate.profileHash) {cycle.queue=cycle.queue.filter(key=>key!==id);cycle.skipped++;continue;}
+    if(!latest||latest.contentHash!==candidate.contentHash||latest.profileHash!==candidate.profileHash||latest.version!==candidate.version) {cycle.queue=cycle.queue.filter(key=>key!==id);cycle.skipped++;continue;}
     if(candidate.historical){
       const ids=[...new Set([candidate.backfillId,...(candidate.backfillIds||[])].filter(Boolean))];
-      const trustedId=ids.find(id=>data.collection?.backfills?.[productId]?.id===id||data.collection?.backfillRuns?.[id]?.productId===productId||Object.values(data.usage?.historical||{}).some(pool=>pool.productId===productId&&pool.backfillId===id));
+      let trustedId=ids.find(id=>data.collection?.backfills?.[productId]?.id===id||data.collection?.backfillRuns?.[id]?.productId===productId||Object.values(data.usage?.historical||{}).some(pool=>pool.productId===productId&&pool.backfillId===id));
+      if(!trustedId&&candidate.historicalAllowanceBackfillId){
+        const id=candidate.historicalAllowanceBackfillId,attribution=candidate.allowanceAttribution;
+        const job=data.collection?.backfills?.[productId]?.id===id?data.collection.backfills[productId]:data.collection?.backfillRuns?.[id];
+        const published=Date.parse(candidate.publishedAt),from=Date.parse(job?.from),to=Date.parse(job?.to);
+        const existingGrant=Object.values(data.usage?.historical||{}).some(pool=>pool.productId===productId&&pool.backfillId===id);
+        if(attribution?.kind==='saved-archive-adoption'&&attribution.jobId===id&&Number.isFinite(Date.parse(attribution.at))&&job?.productId===productId&&Number.isFinite(from)&&Number.isFinite(to)&&to>=from&&to-from<=366*86400000&&published>=from&&published<=to&&existingGrant)trustedId=id;
+      }
       if(!trustedId){blocker=planError('Historical conversations need their original backfill attribution before analysis.',{status:409,code:'historical_attribution_required'});continue;}
       candidate.backfillId=trustedId;
     }
@@ -117,6 +134,18 @@ export function finishAnalysisCycleBatch(data,productId,batchId,outcomes={}, {no
   }
   delete cycle.batch;heartbeat(data,cycle,now);finishCycle(data,cycle,now);
   return analysisCycleState(data,productId,now);
+}
+// Shrink an undispatched batch to fit the remaining provider allowance. The
+// omitted sources stay queued; their temporary plan-unit holds are released.
+export function resizeAnalysisCycleBatch(data,productId,batchId,count,{now=Date.now()}={}){
+  const batch=data.analysisCycles?.[productId]?.batch;
+  if(!batch||batch.id!==batchId||!Number.isInteger(count)||count<1||count>batch.candidates.length)throw planError('Analysis batch changed before dispatch.',{status:409,code:'analysis_batch_changed'});
+  for(const candidate of batch.candidates.slice(count)){
+    settleAnalysisUnits(data,batch.reservations[candidate.id],{outcome:'failed',now});
+    delete batch.reservations[candidate.id];
+  }
+  batch.candidates=batch.candidates.slice(0,count);
+  return structuredClone(batch);
 }
 // The caller knows no provider request was dispatched (for example, a cost cap
 // rejected it). Release plan reservations while leaving candidates in this cycle.

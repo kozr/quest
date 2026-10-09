@@ -103,7 +103,9 @@ function familyTasks(data,product,loop,sources,settings) {
   return queue.map(task=>({...task,queryFamily:loop}));
 }
 function markFamilyDispatch(data,cycle,task,now){
-  if(!data.subscription||!task.loopRunId||commentTask(task))return;
+  if(!data.subscription||cycle.mode==='backfill')return;
+  cycle.lastFamily=familyOf(task);
+  if(!task.loopRunId||commentTask(task))return;
   const record=data.loopSchedules?.[cycle.productId]?.[familyOf(task)];
   if(record?.lease?.id===task.loopRunId){record.sourceStartedAt||={};record.sourceStartedAt[taskPlatform(task)]=iso(now);}
 }
@@ -272,10 +274,14 @@ export function claimCollection(data, settings, productId, now = Date.now()) {
   if(!cycle.queue.length && cycle.mode!=='backfill')planThreads(data,cycle,now);
   if(!cycle.queue.length){cycle.mode==='backfill'?finishBackfill(data,cycle,now):finishCycle(data,cycle,now);return null;}
   const quotaBlock=collectedQuotaBlock(data,productId,cycle.mode==='backfill',100,now);if(quotaBlock){cycle.blocked=quotaBlock.code;return null;}
-  const task=cycle.queue[0],url=taskURL(task),cache=s.cache[digest([url,Boolean(task.historical||task.includeClosed),...(data.subscription?['durable',task.loopRunId||cycle.id]:[])])];
+  // Preserve FIFO within each family while preventing repeated keyword runs
+  // from indefinitely postponing an already queued long-tail run.
+  const alternate=cycle.lastFamily==='keyword'?'long_tail':'keyword';
+  const preferred=data.subscription&&cycle.mode!=='backfill'?cycle.queue.findIndex(task=>familyOf(task)===alternate):-1;
+  const taskIndex=preferred<0?0:preferred,task=cycle.queue[taskIndex],url=taskURL(task),cache=s.cache[digest([url,Boolean(task.historical||task.includeClosed),...(data.subscription?['durable',task.loopRunId||cycle.id]:[])])];
   if(cache && now-cache.at<OVERLAP) {
     const cachedRequest={token:randomUUID(),mode:cycle.mode||'regular',productId};reserveCollectedQuota(data,cachedRequest,now);
-    cycle.queue.shift();applyPage(data,cycle,task,structuredClone(cache.result),now);settleCollectedQuota(data,cachedRequest,{result:cache.result});s.lastModes[productId]=cachedRequest.mode;return {cached:true};
+    markFamilyDispatch(data,cycle,task,now);cycle.queue.splice(taskIndex,1);applyPage(data,cycle,task,structuredClone(cache.result),now);settleCollectedQuota(data,cachedRequest,{result:cache.result});s.lastModes[productId]=cachedRequest.mode;return {cached:true};
   }
   if(data.pilotBudget?.active&&(socialTaskPlatform(task)||['instagram','reddit_comment_search'].includes(task.kind))){cycle.blocked='pilot_provider_not_allowed';return null;}
   if(task.kind==='instagram'){
@@ -287,7 +293,7 @@ export function claimCollection(data, settings, productId, now = Date.now()) {
       cycle.queue=cycle.queue.filter(task=>task.kind!=='instagram');return claimCollection(data,settings,productId,now);
     }
     const request={mode:'regular',provider:'instagram-apify',token:randomUUID(),productId,cycleId:cycle.id,task,url,day:dayKey,reserve,expiresAt:now+90000,...(data.subscription?{preserveText:true}:{})};
-    reserveCollectedQuota(data,request,now);markFamilyDispatch(data,cycle,task,now);day.reservedMicroUsd+=reserve;day.calls++;cycle.requests++;cycle.queue.shift();s.lastModes[productId]=request.mode;s.nextRequestAt=now+PACE;s.active=request;return structuredClone(request);
+    reserveCollectedQuota(data,request,now);markFamilyDispatch(data,cycle,task,now);day.reservedMicroUsd+=reserve;day.calls++;cycle.requests++;cycle.queue.splice(taskIndex,1);s.lastModes[productId]=request.mode;s.nextRequestAt=now+PACE;s.active=request;return structuredClone(request);
   }
   if(task.kind==='reddit_comment_search'){
     const dayKey=budgetDay(now),day=s.apifyDaily[dayKey] ||= {spentMicroUsd:0,reservedMicroUsd:0,calls:0};
@@ -298,11 +304,11 @@ export function claimCollection(data, settings, productId, now = Date.now()) {
       cycle.queue=cycle.queue.filter(task=>task.kind!=='reddit_comment_search');return claimCollection(data,settings,productId,now);
     }
     const request={mode:'regular',provider:'reddit-apify',token:randomUUID(),productId,cycleId:cycle.id,task,url,day:dayKey,reserve,expiresAt:now+90000,...(data.subscription?{preserveText:true}:{})};
-    reserveCollectedQuota(data,request,now);markFamilyDispatch(data,cycle,task,now);day.reservedMicroUsd+=reserve;day.calls++;cycle.requests++;cycle.queue.shift();s.lastModes[productId]=request.mode;s.nextRequestAt=now+PACE;s.active=request;return structuredClone(request);
+    reserveCollectedQuota(data,request,now);markFamilyDispatch(data,cycle,task,now);day.reservedMicroUsd+=reserve;day.calls++;cycle.requests++;cycle.queue.splice(taskIndex,1);s.lastModes[productId]=request.mode;s.nextRequestAt=now+PACE;s.active=request;return structuredClone(request);
   }
   if(settings.scrapebadgerConfigured===false){
     if(cycle.mode==='backfill')backfillError(cycle,task,'provider_unconfigured');else cycleError(cycle,task,'provider_unconfigured');
-    cycle.queue.shift();if(cycle.mode==='backfill'&&!cycle.queue.length)finishBackfill(data,cycle,now);return claimCollection(data,settings,productId,now);
+    cycle.queue.splice(taskIndex,1);if(cycle.mode==='backfill'&&!cycle.queue.length)finishBackfill(data,cycle,now);return claimCollection(data,settings,productId,now);
   }
   const dayKey=budgetDay(now),day=s.daily[dayKey] ||= {spentCredits:0,reservedCredits:0,uncertainCredits:0,calls:0};
   const reserve=commentTask(task)?200:socialTaskPlatform(task)?105:task.kind==='x'?101:102;
@@ -310,7 +316,7 @@ export function claimCollection(data, settings, productId, now = Date.now()) {
   const pilotBlock=pilotBudgetBlock(data,'scrapeCredits',reserve);if(pilotBlock){cycle.blocked=pilotBlock.code;return null;}
   delete cycle.blocked;
   const request={mode:cycle.mode||'regular',token:randomUUID(),productId,cycleId:cycle.id,task,url,day:dayKey,reserve,expiresAt:now+45000,...(data.subscription?{preserveText:true}:{})};
-  reserveCollectedQuota(data,request,now);markFamilyDispatch(data,cycle,task,now);day.reservedCredits+=reserve;day.calls++;cycle.requests++;cycle.queue.shift();
+  reserveCollectedQuota(data,request,now);markFamilyDispatch(data,cycle,task,now);day.reservedCredits+=reserve;day.calls++;cycle.requests++;cycle.queue.splice(taskIndex,1);
   s.lastModes[productId]=request.mode;s.nextRequestAt=now+PACE;s.active=request;return structuredClone(request);
 }
 function applyPage(data,cycle,task,result,now) {

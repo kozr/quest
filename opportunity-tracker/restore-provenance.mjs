@@ -31,9 +31,12 @@ export function restoreSourceProvenance(current,incoming){
   const result=structuredClone(incoming);
   visit(result,(productId,row)=>{
     const source=identity(productId,row),prior=source?trusted.get(JSON.stringify([source,fingerprint(row)])):null;
-    delete row.backfillId;delete row.backfillIds;
+    delete row.backfillId;delete row.backfillIds;delete row.historicalAllowanceBackfillId;delete row.allowanceAttribution;
     row.historical=prior?.historical===true;
     if(!row.historical)return;
+    if(typeof prior.historicalAllowanceBackfillId==='string'&&prior.allowanceAttribution?.kind==='saved-archive-adoption'&&prior.allowanceAttribution.jobId===prior.historicalAllowanceBackfillId){
+      row.historicalAllowanceBackfillId=prior.historicalAllowanceBackfillId;row.allowanceAttribution=structuredClone(prior.allowanceAttribution);
+    }
     if(typeof prior.backfillId==='string'&&prior.backfillId)row.backfillId=prior.backfillId;
     if(Array.isArray(prior.backfillIds))row.backfillIds=[...new Set(prior.backfillIds.filter(id=>typeof id==='string'&&id))];
   });

@@ -1,49 +1,19 @@
+import {entityMentionEvidence,businessReferences,namedReference,ownSourceTexts,ownsSourceQuote,literalMentionEvidence} from './entity-mention.mjs';
+export {businessReferences,namedReference} from './entity-mention.mjs';
 export const PURPOSE_LABELS={potential_customer:'Potential customer',mention:'Mention',feedback:'Feedback',competitor:'Competitor'};
 export const PURPOSE_IDS=Object.keys(PURPOSE_LABELS);
-const folded=value=>String(value).normalize('NFD').replace(/\p{M}/gu,'').toLowerCase();
-const word=value=>Boolean(value&&/[\p{L}\p{N}_]/u.test(value));
-const escape=value=>value.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
-
-export function namedReference(text,name){
-  if(typeof text!=='string'||typeof name!=='string'||!name.trim())return false;
-  const source=folded(text),needle=folded(name.trim());
-  for(const match of source.matchAll(new RegExp(escape(needle).replace(/\s+/g,'\\s+'),'g'))){
-    const end=match.index+match[0].length;
-    if(word(source[match.index-1])||word(source[end])||needle.includes('.')&&source[end]==='.'&&word(source[end+1]))continue;
-    return true;
-  }
-  return false;
-}
-export function businessReferences(product){
-  const names=[product.name,...(product.aliases||[])];
-  try{const url=new URL(product.url);if(url.hostname==='apps.apple.com'){const id=url.pathname.match(/id\d+/)?.[0];if(id)names.push(id);}else names.push(url.hostname.replace(/^www\./,''));}catch{}
-  return [...new Set(names.filter(name=>typeof name==='string'&&name.trim()))];
-}
-export const ownTexts=source=>[source.title,source.text??source.snippet].filter(text=>typeof text==='string');
-export const ownsQuote=(source,quote)=>Boolean(quote&&ownTexts(source).some(text=>text.includes(quote)));
-export function mentionEvidence(product,source){
-  for(const reference of businessReferences(product))for(const text of ownTexts(source)){
-    if(!namedReference(text,reference))continue;
-    // Preserve an exact source passage rather than the normalised matching text.
-    const sentences=text.split(/(?<=[.!?])\s+|\n+/);
-    const quote=sentences.find(sentence=>sentence.length<=400&&namedReference(sentence,reference))?.trim();
-    if(quote)return {purpose:'mention',reference,quote,reason:`Names ${product.name} in the source.`,offeringIds:[]};
-    for(let start=0;start<text.length;start+=200){const passage=text.slice(start,start+400);if(namedReference(passage,reference))return {purpose:'mention',reference,quote:passage,reason:`Names ${product.name} in the source.`,offeringIds:[]};}
-  }
-  return null;
-}
+export const ownTexts=ownSourceTexts;
+export const ownsQuote=ownsSourceQuote;
+export const mentionEvidence=literalMentionEvidence;
 export function conversationSignals(product,source,qualification,{current=false}={}){
-  const signals=[],mention=mentionEvidence(product,source);
+  const mention=entityMentionEvidence(product,source,{decision:qualification,current}),signals=mention?[{purpose:'mention',...mention,offeringIds:[]}]:[];
   // Legacy decisions can use a verified name match. An explicitly reviewed
   // purpose list, including an empty one, must remain authoritative.
-  if(mention&&current&&qualification?.relevant===true&&!Array.isArray(qualification.purposes))signals.push(mention);
   if(!current||qualification?.relevant!==true)return signals;
   for(const signal of qualification.purposes||[]){
     if(!PURPOSE_IDS.includes(signal.purpose)||!ownsQuote(source,signal.quote))continue;
     if(signal.purpose==='mention'){
-      if(businessReferences(product).some(name=>namedReference(signal.quote,name))){
-        const index=signals.findIndex(row=>row.purpose==='mention');if(index>=0)signals[index]=signal;else signals.push(signal);
-      }
+      // Identity is computed above; old name-only purpose labels cannot affirm it.
     }else if(signal.purpose==='potential_customer'){
       if(qualification.directFit&&qualification.resolved!=='yes'&&!source.discussionClosed)signals.push(signal);
     }else signals.push(signal);

@@ -8,14 +8,18 @@ import {reserveAnalysis,settleAnalysis,retireAnalysis,budgetDay} from './qualifi
 import {ANALYSIS_DAILY_LIMIT} from './analysis.mjs';
 import {validateSearchPlan,validateSavedPlan} from './search-plan.mjs';
 import {findEvidence,qualificationInputHash,qualificationEvidence,saveConversationReview,recordReviewFailure} from './conversation-evidence.mjs';
+import {pilotBudgetBlock} from './pilot-budget.mjs';
+import {needsEntityReview} from './entity-mention.mjs';
 import {pendingEvidenceAll} from './conversation-evidence.mjs';
-import {analysisCandidate,claimAnalysisCycleBatch,finishAnalysisCycleBatch,releaseAnalysisCycleBatch} from './analysis-cycles.mjs';
+import {analysisCandidate,claimAnalysisCycleBatch,finishAnalysisCycleBatch,releaseAnalysisCycleBatch,resizeAnalysisCycleBatch} from './analysis-cycles.mjs';
 
 function claimProvisionedQualification(data,productId,settings,now){
   const product=data.products.find(row=>row.id===productId);if(!product)problem('Business not found.',404);
   const version=STAGE_DEFINITIONS.qualify.promptVersion,profileHash=qualificationInputHash(product);
-  const candidates=pendingEvidenceAll(data,product).map(row=>analysisCandidate(row,{profileHash,version}));
-  const claim=claimAnalysisCycleBatch(data,productId,{candidates,profileHash,version,now,maxBatch:12,manual:true});
+  const pending=pendingEvidenceAll(data,product),priorityCandidateIds=pending.filter(row=>needsEntityReview(product,row)).map(row=>row.id);
+  const targeted=new Set(priorityCandidateIds);
+  const candidates=pending.map(row=>analysisCandidate(row,{profileHash,version:targeted.has(row.id)?`${version}:entity-review-v1`:version}));
+  const claim=claimAnalysisCycleBatch(data,productId,{candidates,priorityCandidateIds,profileHash,version,now,maxBatch:12,manual:true});
   for(const cached of claim.cached||[]) {
     const row=findEvidence(data,product,cached.candidate.id);
     if(row&&cached.result?.decision)saveConversationReview(data,product,row,cached.result.decision,cached.result.generatedAt,cached.result.model);
@@ -23,6 +27,15 @@ function claimProvisionedQualification(data,productId,settings,now){
   if(!claim.batch)return {status:claim.status,blocked:claim.blocked||null,nextRunAt:claim.nextRunAt||claim.cycle?.nextRunAt||null,cycle:claim.cycle||null};
   const definition=STAGE_DEFINITIONS.qualify;
   const input={...definition.input(data,product),asOf:new Date(now).toISOString(),evidence:claim.batch.candidates.map(candidate=>qualificationEvidence(findEvidence(data,product,candidate.id)))};
+  if(settings){
+    const daily=data.aiBudget?.dailyUsage?.[budgetDay(now)],available=settings.budgetMicroUsd-(daily?.spentMicroUsd||0)-(daily?.reservedMicroUsd||0);
+    while(input.evidence.length>1){
+      const cost=stageReservation('qualify',input);
+      if(cost<=available&&!pilotBudgetBlock(data,'aiMicroUsd',cost))break;
+      input.evidence.pop();
+    }
+    if(input.evidence.length<claim.batch.candidates.length)claim.batch=resizeAnalysisCycleBatch(data,productId,claim.batch.id,input.evidence.length,{now});
+  }
   const inputHash=hash([PIPELINE_VERSION,'qualify',definition.promptVersion,input]);
   const lease={token:randomUUID(),kind:'pipeline-stage',productId,stage:'qualify',inputHash,stageReservationMicroUsd:stageReservation('qualify',input),expiresAt:now+120000,qualificationInput:input,qualificationProfileHash:profileHash,analysisCycleBatchId:claim.batch.id};
   try{if(settings)reserveAnalysis(data,lease,settings,now);}

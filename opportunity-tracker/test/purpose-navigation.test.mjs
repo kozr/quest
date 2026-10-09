@@ -52,6 +52,7 @@ test('stale, resolved or closed need evidence cannot support a potential-custome
 
 test('retained evidence and review records share canonical source identity for mention summaries',()=>{
  const state=fixture();
- state.items=[{productId:'p',url:'https://www.reddit.com/r/example/comments/fit/?ref=preview',kind:'mention',status:'saved',note:'Shared note',draft:'Shared draft'}];
+ state.items=[{productId:'p',url:'https://www.reddit.com/r/example/comments/fit/?ref=preview',kind:'mention',entityMention:{reference:'example.com',quote:'https://example.com',basis:'identifier',reason:'Exact official domain.'},status:'saved',note:'Shared note',draft:'Shared draft'}];
  assert.deepEqual(patternsForPurpose(state,'p',purposes.find(p=>p.id==='mentions')).patterns.map(p=>p.id),['fit-pattern']);
+ delete state.items[0].entityMention;assert.deepEqual(patternsForPurpose(state,'p',purposes.find(p=>p.id==='mentions')).patterns,[],'A stored mention kind alone cannot establish identity');
 });

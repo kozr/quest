@@ -62,8 +62,8 @@ test('a named alternative in a reply reaches Competitors with its own quote',()=
 });
 
 test('a recommendation may qualify as a mention without inventing an unmet need',()=>{
- const {p,data}=fixture();captureEvidence(data,p,[source('Fixture Cafe has excellent sandwiches.')],at);const e=data.conversationEvidence[p.id][0];
- const q=classify(p,e,decision(e,{category:'recommendation',need:'',purposes:[signal('mention',e.text,{reference:p.name,offeringIds:[]})]}));saveConversationReview(data,p,e,q,at,'fixture');
+ const {p,data}=fixture();captureEvidence(data,p,[source('Fixture Cafe has excellent sandwiches in Vancouver.')],at);const e=data.conversationEvidence[p.id][0];
+ const q=classify(p,e,decision(e,{category:'recommendation',need:'',entityMatch:{status:'confirmed',basis:'business_context',reference:p.name,quote:e.text,identityQuote:e.text,businessQuote:'sandwiches and cheesecake in Vancouver',contextSource:'own',reason:'The named cafe matches the reviewed Vancouver offering.'},purposes:[signal('mention',e.text,{reference:p.name,offeringIds:[]})]}));saveConversationReview(data,p,e,q,at,'fixture');
  const item={...data.items[0],...conversationCurrentState(data,data.items[0])};assert.equal(matchesConversation(item,{relevance:'mentions'}),true);assert.equal(matchesConversation(item,{relevance:'direct'}),false);
 });
 
@@ -77,20 +77,20 @@ test('accent variants match while partial names, domains and namesake businesses
  assert.deepEqual(conversationSignals(p,row,{relevant:true,purposes:[]},{current:false}),[]);
 });
 
-test('an explicit no-purpose decision remains unconfirmed when its literal name match is shown in Mentions',()=>{
+test('an explicit uncertain identity stays outside Mentions while retaining its literal name',()=>{
  const {p,data}=fixture();captureEvidence(data,p,[source('Fixture Cafe is the name. No customer experience or useful comparison here.')],at);const e=data.conversationEvidence[p.id][0];
- const q=classify(p,e,decision(e,{category:'other',purposes:[]}));saveConversationReview(data,p,e,q,at,'fixture');
+ const q=classify(p,e,decision(e,{category:'other',entityMatch:{status:'uncertain',basis:'none',reference:'',quote:'',identityQuote:'',businessQuote:'',contextSource:'none',reason:'Only an ambiguous name is supplied.'},purposes:[]}));saveConversationReview(data,p,e,q,at,'fixture');
  const item={...data.items[0],...conversationCurrentState(data,data.items[0])};
  assert.equal(item.qualification.relevant,true);assert.deepEqual(item.conversationSignals,[]);
- assert.equal(matchesConversation(item,{relevance:'mentions'}),true);assert.equal(item.keywordMention.reference,p.name);assert.equal(matchesConversation(item,{relevance:'direct'}),false);
+ assert.equal(matchesConversation(item,{relevance:'mentions'}),false);assert.equal(item.keywordMention.reference,p.name);assert.equal(matchesConversation(item,{relevance:'direct'}),false);
 });
 
 test('legacy name mentions preserve complete source URLs rather than sentence fragments',()=>{
- const p={name:'Blind Box Tracker',aliases:['BlindBoxTracker']};
+ const p={name:'Blind Box Tracker',aliases:['BlindBoxTracker'],url:'https://play.google.com/store/apps/details?id=example.blindboxtracker'};
  const text='Android is available: [BlindBoxTracker](https://play.google.com/store/apps/details?id=example.blindboxtracker). Download here.';
  const signals=conversationSignals(p,{text},{relevant:true},{current:true});
  assert.equal(signals.length,1);assert.equal(signals[0].purpose,'mention');
- assert.equal(signals[0].quote,'Android is available: [BlindBoxTracker](https://play.google.com/store/apps/details?id=example.blindboxtracker).');
+ assert.equal(signals[0].quote,'https://play.google.com/store/apps/details?id=example.blindboxtracker');
 });
 
 test('resolved, closed and satisfied-user evidence cannot qualify as a potential customer',()=>{
