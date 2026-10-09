@@ -11,9 +11,9 @@ export const CONVERSATION_PAGE_LIMIT=100;
 const fail=(message,code='invalid_conversation_filter')=>{throw Object.assign(new Error(message),{status:400,code});};
 const key=(productId,row)=>`${productId}\n${conversationSourceKey(row.url)}`;
 const clone=value=>structuredClone(value);
-const platform=row=>row.source?.startsWith('Reddit')?'reddit':row.source==='X'?'x':row.source==='LinkedIn'?'linkedin':row.source?.startsWith('TikTok')?'tiktok':row.source?.startsWith('Instagram')?'instagram':'other';
+const platform=row=>row.source?.startsWith('Reddit')?'reddit':row.source==='X'?'x':row.source==='LinkedIn'?'linkedin':row.source?.startsWith('TikTok')?'tiktok':row.source?.startsWith('Instagram')?'instagram':row.source==='Google Maps review'||row.source==='App Store review'?'reviews':row.source==='Web'?'web':'other';
 const purposeMap={mentions:'mention',direct:'potential_customer',opportunities:'potential_customer',feedback:'feedback',competitors:'competitor',mention:'mention',potential_customer:'potential_customer',competitor:'competitor'};
-const fields=['id','productId','url','source','provider','sourceId','postId','parentId','type','title','snippet','context','author','community','threadId','publishedAt','collectedAt','lastSeenAt','foundAt','historical','backfillId','backfillIds','discussionClosed','crosspost','kind','status','note','draft','reason','matchedTerms','queryIds','queryFamilies'];
+const fields=['id','productId','url','source','provider','sourceId','postId','parentId','type','title','snippet','context','author','community','threadId','publishedAt','collectedAt','lastSeenAt','foundAt','historical','backfillId','backfillIds','discussionClosed','crosspost','kind','status','note','draft','reason','matchedTerms','queryIds','queryFamilies','discoverySource','discoveryURL','contentOrigin','sourceLinkKind','businessReview','rating'];
 const pick=(value,names)=>Object.fromEntries(names.filter(name=>value?.[name]!==undefined).map(name=>[name,value[name]]));
 function evidenceIndex(data,products){
   const rows=new Map();
@@ -57,7 +57,7 @@ function filters(value={}){
   const offset=value.offset==null?0:Number(value.offset),limit=value.limit==null?50:Number(value.limit);
   if(!Number.isSafeInteger(offset)||offset<0||!Number.isSafeInteger(limit)||limit<1||limit>CONVERSATION_PAGE_LIMIT)fail('Choose a valid page offset and a limit from 1 to 100.');
   const selectedPlatform=value.platform||'all',status=value.status||'active',relevance=value.relevance||'all',purpose=value.purpose||null;
-  if(!['all','reddit','x','linkedin','tiktok','instagram','other'].includes(selectedPlatform)||!['all','active','new','saved','dismissed','awaiting_analysis','analysis_failed','analyzed'].includes(status)||!['all','collected',...Object.keys(purposeMap)].includes(relevance)||purpose!==null&&!Object.hasOwn(purposeMap,purpose))fail('Choose a supported conversation filter.');
+  if(!['all','reddit','x','linkedin','tiktok','instagram','reviews','web','other'].includes(selectedPlatform)||!['all','active','new','saved','dismissed','awaiting_analysis','analysis_failed','analyzed'].includes(status)||!['all','collected',...Object.keys(purposeMap)].includes(relevance)||purpose!==null&&!Object.hasOwn(purposeMap,purpose))fail('Choose a supported conversation filter.');
   if(purpose&&relevance!=='all'&&relevance!=='collected'&&purposeMap[purpose]!==purposeMap[relevance])fail('Purpose and relevance filters must agree.');
   return {productId,query:query.toLowerCase(),offset,limit,platform:selectedPlatform,status,relevance,purpose:purposeMap[purpose]||purposeMap[relevance]||null};
 }

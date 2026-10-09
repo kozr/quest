@@ -59,11 +59,11 @@ test('ScrapeBadger uncertainty consumes its hold without a new allowance the nex
   assert.equal(pilotBudgetState(data).scrapeCredits.used,204);
 });
 
-test('ScrapeBadger daily limits remain lower bounds and unapproved Apify tasks cannot dispatch',()=>{
+test('ScrapeBadger and Apify share the pilot collection ceiling while daily limits still apply',()=>{
   const data=workspace(true);activate(data);beginCollection(data,'p','scheduled',NOW,scrape);
   assert.equal(claimCollection(data,{...scrape,dailyCreditLimit:0},'p',NOW),null);assert.equal(data.collection.cycles.p.blocked,'daily_scraper_budget');
   const task=data.collection.cycles.p.queue[0];Object.assign(task,{kind:'reddit_comment_search',query:'figure collection',cutoff:NOW-DAY});
-  assert.equal(claimCollection(data,{...scrape,commentSearchEnabled:true,commentDailyLimitMicroUsd:500000},'p',NOW),null);assert.equal(data.collection.cycles.p.blocked,'pilot_provider_not_allowed');assert.equal(data.collection.active,undefined);
+  const claim=claimCollection(data,{...scrape,commentSearchEnabled:true,commentDailyLimitMicroUsd:500000},'p',NOW);assert.equal(claim.provider,'reddit-apify');assert.equal(claim.reserve,100000);assert.equal(pilotBudgetState(data).scrapeCredits.apifyEquivalentCredits,667);assert.equal(pilotBudgetState(data).scrapeCredits.limit,13333);
 });
 
 for(const modern of [false,true])for(const batched of [false,true])test(`${modern?'provisioned':'legacy'} ${batched?'batch':'single'} qualification cannot reserve beyond the total pilot cap`,()=>{

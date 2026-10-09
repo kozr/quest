@@ -52,15 +52,15 @@ export class ApifyRedditCommentsAdapter{
       run.defaultDatasetId!=null&&(typeof run.defaultDatasetId!=='string'||!runID.test(run.defaultDatasetId)))throw new CollectionError('reddit_comments_schema_changed');
     return run;
   }
-  async search({query,subreddit,cutoff,limit=30,signal,preserveText=false}={}){
+  async search({query,subreddit,cutoff,until,limit=30,signal,preserveText=false}={}){
     if(typeof query!=='string'||!query.trim()||query.length>500||!Number.isInteger(limit)||limit<1||limit>30||
-      subreddit!=null&&!/^[a-z0-9_]{2,21}$/i.test(subreddit)||cutoff!=null&&!Number.isFinite(cutoff))throw new CollectionError('invalid_comment_search',400);
+      subreddit!=null&&!/^[a-z0-9_]{2,21}$/i.test(subreddit)||cutoff!=null&&!Number.isFinite(cutoff)||until!=null&&!Number.isFinite(until))throw new CollectionError('invalid_comment_search',400);
     const deadline=AbortSignal.any([...(signal?[signal]:[]),AbortSignal.timeout(75000)]);let run;
     try{
       // A lost start response may still have started a paid run. Never retry it.
       run=this.run(await this.json(`actors/${REDDIT_COMMENTS_ACTOR}/runs?timeout=60&memory=512&maxTotalChargeUsd=${COMMENT_SEARCH_MAX_CHARGE_USD.toFixed(2)}&restartOnError=false`,{
         method:'POST',signal:deadline,timeout:8000,body:{searchTerms:[query.trim()],searchComments:true,searchPosts:false,searchCommunities:false,
-          searchSort:'new',searchTime:'all',...(subreddit?{withinCommunity:subreddit.toLowerCase()}:{}),maxCommentsCount:limit,maxPostsCount:0,
+          searchSort:'new',searchTime:'all',...(cutoff!=null?{commentedAfter:new Date(cutoff).toISOString()}:{}),...(until!=null?{commentedBefore:new Date(until).toISOString()}:{}),...(subreddit?{withinCommunity:subreddit.toLowerCase()}:{}),maxCommentsCount:limit,maxPostsCount:0,
           maxCommentsPerPost:0,maxCommunitiesCount:0,crawlCommentsPerPost:false,aiAnalysis:false,startUrls:[],subredditUrls:[]}}));
       for(let poll=0;!terminal.has(run.status)&&poll<8;poll++)run=this.run(await this.json(`actor-runs/${run.id}?waitForFinish=10`,{signal:deadline}),run.id);
       if(!terminal.has(run.status))throw new CollectionError('reddit_comments_timeout');
@@ -69,7 +69,7 @@ export class ApifyRedditCommentsAdapter{
       const items=await this.json(`datasets/${run.defaultDatasetId}/items?format=json&clean=true&limit=${limit+1}`,{signal:deadline});
       if(!Array.isArray(items)||items.length>limit)throw new CollectionError('reddit_comments_schema_changed');
       const collectedAt=new Date(this.now()).toISOString(),unique=new Map(),stamps=[];let invalid=0,older=0;
-      for(const item of items){const row=normalizeApifyRedditComment(item,collectedAt,{preserveText});if(!row){invalid++;continue;}stamps.push(Date.parse(row.publishedAt));if(cutoff!=null&&Date.parse(row.publishedAt)<cutoff){older++;continue;}unique.set(row.sourceId,row);}
+      for(const item of items){const row=normalizeApifyRedditComment(item,collectedAt,{preserveText});if(!row){invalid++;continue;}stamps.push(Date.parse(row.publishedAt));if(cutoff!=null&&Date.parse(row.publishedAt)<cutoff||until!=null&&Date.parse(row.publishedAt)>until){older++;continue;}unique.set(row.sourceId,row);}
       if(items.length&&invalid===items.length)throw new CollectionError('reddit_comments_schema_changed');
       if(failure&&!unique.size)throw new CollectionError(failure);
       return {rows:[...unique.values()],coverage:{provider:this.id,actor:REDDIT_COMMENTS_ACTOR.replace('~','/'),runId:run.id,runStatus:run.status,

@@ -1,3 +1,4 @@
+import {DISCOVERY_VERSION,DISCOVERY_INTERVAL_MS,DISCOVERY_LABELS,discoveryTasks,discoveryPlatform,discoveryTaskURL,discoveryReservation,parseDiscoveryPage,applyDiscoveryPage} from './mention-discovery.mjs';
 import {collectedQuotaBlock,reserveCollectedQuota,settleCollectedQuota,collectedUsageState} from './collected-usage.mjs';
 import {materializeCollectedConversations} from './conversation-pages.mjs';
 import {activeProduct,subscriptionState} from './plans.mjs';
@@ -9,12 +10,12 @@ import {commentThreadPriority} from './conversation-purpose.mjs';
 import {SOCIAL_PLATFORMS,SOCIAL_LABELS,socialDue,socialTaskPlatform,socialTaskURL,parseSocialPage} from './social-search.mjs';
 import {activeSearchPlan,plannedQueries,compileRedditQuery,listeningReady} from './search-plan.mjs';
 import {captureEvidence,reviewQueueBlock} from './conversation-evidence.mjs';
-import {createBackfill,backfillBlock,applyBackfillPage,backfillError,backfillPublic,finishBackfill} from './backfill.mjs';
+import {backfillPlan,createBackfill,backfillBlock,applyBackfillPage,backfillError,backfillPublic,finishBackfill} from './backfill.mjs';
 import {createHash, randomUUID} from 'node:crypto';
 import {normalizeScrapeBadgerPost, normalizeScrapeBadgerComments} from './reddit/scrapebadger.mjs';
 import {readText} from './reddit/http.mjs';
 import {stageQualifications, budgetDay} from './qualification.mjs';
-import {pilotBudgetBlock} from './pilot-budget.mjs';
+import {pilotBudgetBlock,ensurePilotCollectionAccounting} from './pilot-budget.mjs';
 
 export const COLLECTION_VERSION = 'experiment-v1';
 export const COLLECTION_INTERVAL_MS = 2 * 3600000;
@@ -27,7 +28,7 @@ export function collectionSettings(env = process.env) {
   const instagramSearchEnabled=Boolean(env.APIFY_TOKEN)&&env.INSTAGRAM_SEARCH_ENABLED!=='false';
   return {enabled:env.TRACKER_COLLECTION_PIPELINE === COLLECTION_VERSION,
     configured:Boolean(env.SCRAPEBADGER_API_KEY)||Boolean(env.APIFY_TOKEN), scrapebadgerConfigured:Boolean(env.SCRAPEBADGER_API_KEY), dailyCreditLimit:3333,
-    instagramSearchEnabled,apifyDailyLimitMicroUsd,
+    instagramSearchEnabled,apifyDailyLimitMicroUsd,extendedDiscoveryEnabled:Boolean(env.SCRAPEBADGER_API_KEY)&&env.TRACKER_MENTION_DISCOVERY_ENABLED!=='false',
     commentSearchEnabled:Boolean(env.APIFY_TOKEN)&&env.REDDIT_COMMENTS_ENABLED!=='false',
     commentDailyLimitMicroUsd:Math.min(apifyDailyLimitMicroUsd,Math.floor(Math.max(0,Math.min(0.50,Number(env.REDDIT_COMMENTS_DAILY_BUDGET_USD??0.50)||0))*1e6))}; // Shared Apify collection allowance stays <= $0.50/day.
 }
@@ -50,12 +51,27 @@ function state(data) {
 }
 export function beginBackfill(data,productId,now=Date.now()) {
   const product=data.products.find(p=>p.id===productId);if(!product)return null;
-  state(data);return createBackfill(data,product,xQueries(product),digest([profileKey(product),product.needs]),now);
+  state(data);const job=createBackfill(data,product,xQueries(product),digest([profileKey(product),product.needs]),now,{settings:collectionSettings()});extendBackfillCoverage(data,product,collectionSettings());return structuredClone(data.collection.backfills[productId]||job);
+}
+export function extendBackfillCoverage(data,product,settings=collectionSettings()) {
+  const job=data.collection?.backfills?.[product.id];
+  if(!data.subscription||!job||job.coverageVersion===DISCOVERY_VERSION||!settings.extendedDiscoveryEnabled||!listeningReady(product))return 0;
+  const desired=backfillPlan(product,xQueries(product),Date.parse(job.to),{durable:true,settings}).filter(t=>discoveryPlatform(t)||t.kind==='reddit_comment_search');
+  let count=0;
+  for(const task of desired){
+    const identity=digest([task.kind,task.query||task.appId||'',task.country||'',task.name||'']).slice(0,16),id=`coverage_${identity}`;
+    if(job.branches.some(b=>b.id===id))continue;
+    const next={...task,branch:id,cutoff:Date.parse(job.from),until:Date.parse(job.to),historical:true};
+    job.queue.push(next);job.branches.push({id,platform:taskPlatform(next),query:next.query||next.appId,queryId:next.queryId,queryFamily:next.queryFamily,from:job.from,to:job.to,pages:0,rows:0,status:'queued'});count++;
+  }
+  job.coverageVersion=DISCOVERY_VERSION;
+  if(count){job.status='running';job.coverageStatus='in_progress';delete job.finishedAt;delete job.blocked;}
+  return count;
 }
 const requestCycle=(s,r)=>r.mode==='backfill'?s.backfills[r.productId]:s.cycles[r.productId];
 const sourceKey = (productId, task) => `${productId}:${task.kind}:${task.query ? digest([task.query,task.name||null]) : task.post?.sourceId||task.name}`;
-const taskPlatform=task=>socialTaskPlatform(task)||(task.kind==='reddit_comment_search'?'reddit_comment_search':task.kind==='x'?'x':'reddit');
-const sourcePlatform=name=>Object.entries(SOCIAL_LABELS).find(([,label])=>label===name)?.[0]||(name==='Reddit comments'?'reddit_comment_search':name==='X'?'x':'reddit');
+const taskPlatform=task=>discoveryPlatform(task)||socialTaskPlatform(task)||(task.kind==='reddit_comment_search'?'reddit_comment_search':task.kind==='x'?'x':'reddit');
+const sourcePlatform=name=>Object.entries(DISCOVERY_LABELS).find(([,label])=>label===name)?.[0]||Object.entries(SOCIAL_LABELS).find(([,label])=>label===name)?.[0]||(name==='Reddit comments'?'reddit_comment_search':name==='X'?'x':'reddit');
 const commentTask=task=>task.kind==='comments'||task.kind.endsWith('_comments');
 export function socialQueries(product,platform,{loop}={}){
   if(product[platform]!==true||product.listeningVersion!=='v2'&&loop==='long_tail')return [];
@@ -70,12 +86,13 @@ function cycleError(cycle,task,code) {
 }
 function availableFamilySources(product,loop) {
   const reddit=product.listeningVersion==='v2'?plannedQueries(product,'reddit',{loop}).length:loop==='keyword'&&product.communities?.length;
-  return [...(reddit?['reddit']:[]),...(xQueries(product,{loop}).length?['x']:[]),...SOCIAL_PLATFORMS.filter(platform=>socialQueries(product,platform,{loop}).length)];
+  return [...(reddit?['reddit']:[]),...(xQueries(product,{loop}).length?['x']:[]),...(loop==='keyword'&&discoveryTasks(product,{settings:{extendedDiscoveryEnabled:true}}).length?['google']:[]),...SOCIAL_PLATFORMS.filter(platform=>socialQueries(product,platform,{loop}).length)];
 }
 function familySources(data,product,loop,now,settings={}) {
   const record=data.loopSchedules?.[product.id]?.[loop];
   return availableFamilySources(product,loop).filter(platform=>{
-    const floor=Math.max(SOCIAL_PLATFORMS.includes(platform)?DAY:0,Number(settings.sourceFloors?.[platform])||0);
+    if(platform==='google'&&settings.extendedDiscoveryEnabled===false)return false;
+    const floor=Math.max(SOCIAL_PLATFORMS.includes(platform)||platform==='google'?DAY:0,Number(settings.sourceFloors?.[platform])||0);
     const at=Date.parse(record?.sourceStartedAt?.[platform]);
     return !Number.isFinite(at)||now-at>=floor;
   });
@@ -93,7 +110,7 @@ function familyTasks(data,product,loop,sources,settings) {
   const s=state(data),plan=activeSearchPlan(product),has=platform=>sources.includes(platform);
   const reddit=has('reddit')?(plan?plannedQueries(product,'reddit',{loop}).map(q=>({kind:'search',query:compileRedditQuery(q),queryId:q.id,purposes:q.purposes,name:q.community,page:1,sort:'new',includeClosed:true})):(product.communities||[]).map(name=>({kind:'listing',name,page:1}))):[];
   const x=has('x')?xQueries(product,{loop}).map((query,index)=>({kind:'x',query,page:1,...(plan?{queryId:plannedQueries(product,'x',{loop})[index].id,purposes:plannedQueries(product,'x',{loop})[index].purposes}: {})})):[];
-  const queue=[...reddit,...x,...SOCIAL_PLATFORMS.flatMap(platform=>has(platform)?socialQueries(product,platform,{loop}).map(q=>({kind:platform,query:q.query,queryId:q.id,purposes:q.purposes||[],page:1})):[])];
+  const queue=[...reddit,...x,...(has('google')?discoveryTasks(product,{settings}):[]),...SOCIAL_PLATFORMS.flatMap(platform=>has(platform)?socialQueries(product,platform,{loop}).map(q=>({kind:platform,query:q.query,queryId:q.id,purposes:q.purposes||[],page:1})):[])];
   if(settings.commentSearchEnabled&&has('reddit')){
     const queries=plan?plannedQueries(product,'reddit',{loop}):redditCommentQueries(product),key=`${product.id}:${loop}`,offset=s.commentOffsets[key]||0;
     const selected=Array.from({length:Math.min(2,queries.length)},(_,i)=>queries[(offset+i)%queries.length]);
@@ -131,6 +148,7 @@ function settleFamilies(data,cycle,now) {
 function beginPlanCollection(data,product,trigger,now,settings) {
   if(!activeProduct(product)||product.planMonitoringBlocked||!subscriptionState(data,now).active||trigger==='scheduled'&&!product.monitoring)return null;
   const s=state(data),prior=s.cycles[product.id],manual=trigger!=='scheduled';
+  extendBackfillCoverage(data,product,settings);
   if(prior?.status==='running'&&prior.profileKey!==profileKey(product))return structuredClone(prior);
   let cycle=prior?.status==='running'?prior:null;
   if(cycle?.familyRuns)settleFamilies(data,cycle,now);
@@ -150,7 +168,7 @@ function beginPlanCollection(data,product,trigger,now,settings) {
     if(existingQueue)cycle.queue=cycle.queue.filter(task=>familyOf(task)!==current.loop);
     if(current.loop==='keyword')cycle.queue.unshift(...queue);else cycle.queue.push(...queue);
     const record=data.loopSchedules[product.id][current.loop];record.sourceStartedAt={...record.sourceStartedAt,...Object.fromEntries(current.sources.map(platform=>[platform,iso(now)]))};
-    cycle.sources=[...new Set([...cycle.sources,...queue.map(task=>SOCIAL_LABELS[taskPlatform(task)]||(task.kind==='reddit_comment_search'?'Reddit comments':task.kind==='x'?'X':'Reddit watchlist'))])];
+    cycle.sources=[...new Set([...cycle.sources,...queue.map(task=>DISCOVERY_LABELS[taskPlatform(task)]||SOCIAL_LABELS[taskPlatform(task)]||(task.kind==='reddit_comment_search'?'Reddit comments':task.kind==='x'?'X':'Reddit watchlist'))])];
   }
   if(!cycle)return null;
   if(manual)cycle.trigger='manual';
@@ -191,7 +209,7 @@ export function beginCollection(data, productId, trigger, now = Date.now(), sett
     const mark=s.watermarks[sourceKey(productId,task)] || (task.kind==='listing'?data.searches[productId]?.lastChecks?.reddit:null);
     const stamp=Date.parse(mark);task.cutoff=Number.isFinite(stamp)?stamp-OVERLAP:now-DAY;
   }
-  const cycle={id:randomUUID(),productId,profileKey:profileKey(product),trigger,startedAt:iso(now),status:'running',queue,posts:[],threadsPlanned:false,rows:0,staged:0,unassessed:0,requests:0,errors:[],sourceStats:{},sources:[...new Set(queue.map(task=>SOCIAL_LABELS[taskPlatform(task)]||(task.kind==='reddit_comment_search'?'Reddit comments':task.kind==='x'?'X':'Reddit watchlist')))]};
+  const cycle={id:randomUUID(),productId,profileKey:profileKey(product),trigger,startedAt:iso(now),status:'running',queue,posts:[],threadsPlanned:false,rows:0,staged:0,unassessed:0,requests:0,errors:[],sourceStats:{},sources:[...new Set(queue.map(task=>DISCOVERY_LABELS[taskPlatform(task)]||SOCIAL_LABELS[taskPlatform(task)]||(task.kind==='reddit_comment_search'?'Reddit comments':task.kind==='x'?'X':'Reddit watchlist')))]};
   s.cycles[productId]=cycle;
   product.monitorAttempts={...product.monitorAttempts,...Object.fromEntries(cycle.sources.map(name=>[sourcePlatform(name),iso(now)]))};
   if(!queue.length)finishCycle(data,cycle,now);
@@ -216,6 +234,7 @@ function planThreads(data, cycle, now,loop) {
   cycle.queue.push(...selected.map(post=>({kind:post.source==='TikTok'?'tiktok_comments':post.source==='Instagram'?'instagram_comments':'comments',post,cutoff:s.threads[`${cycle.productId}:${post.sourceId}`]?.checkedAt?Date.parse(s.threads[`${cycle.productId}:${post.sourceId}`].checkedAt)-OVERLAP:now-DAY,includeClosed:product.listeningVersion==='v2',...(run?{loopRunId:run.id,runStartedAt:run.startedAt,queryFamily:loop,queryId:post.queryId}:{})})));
 }
 function taskURL(task) {
+  if(discoveryPlatform(task))return discoveryTaskURL(task);
   if(task.kind==='instagram')return `https://api.apify.com/v2/actors/${INSTAGRAM_ACTOR}/runs?${new URLSearchParams({keyword:task.query,maxItems:String(INSTAGRAM_MAX_ITEMS)})}`;
   if(task.kind==='reddit_comment_search')return `https://api.apify.com/v2/actors/${REDDIT_COMMENTS_ACTOR}/runs?${new URLSearchParams({query:task.query,community:task.name||'',cutoff:iso(task.cutoff)})}`;
   const social=socialTaskURL(task);if(social)return social;
@@ -277,13 +296,35 @@ export function claimCollection(data, settings, productId, now = Date.now()) {
   // Preserve FIFO within each family while preventing repeated keyword runs
   // from indefinitely postponing an already queued long-tail run.
   const alternate=cycle.lastFamily==='keyword'?'long_tail':'keyword';
-  const preferred=data.subscription&&cycle.mode!=='backfill'?cycle.queue.findIndex(task=>familyOf(task)===alternate):-1;
-  const taskIndex=preferred<0?0:preferred,task=cycle.queue[taskIndex],url=taskURL(task),cache=s.cache[digest([url,Boolean(task.historical||task.includeClosed),...(data.subscription?['durable',task.loopRunId||cycle.id]:[])])];
+    ensurePilotCollectionAccounting(data,now);
+  const apifyTask=t=>['instagram','reddit_comment_search'].includes(t.kind);
+  const reserveFor=t=>t.kind==='reddit_comment_search'?Math.round(COMMENT_SEARCH_MAX_CHARGE_USD*1e6):t.kind==='instagram'?Math.round(INSTAGRAM_MAX_CHARGE_USD*1e6):discoveryPlatform(t)?(settings.discoveryPricing?.[t.kind]??discoveryReservation(t)):commentTask(t)?200:socialTaskPlatform(t)?105:t.kind==='x'?101:102;
+  const taskBlock=t=>{
+    const reserve=reserveFor(t),dayKey=budgetDay(now);
+    if(apifyTask(t)){
+      if(t.kind==='instagram'?!settings.instagramSearchEnabled:!settings.commentSearchEnabled)return 'provider_unconfigured';
+      const day=s.apifyDaily[dayKey]||{},limit=t.kind==='instagram'?settings.apifyDailyLimitMicroUsd:settings.commentDailyLimitMicroUsd;
+      if((day.spentMicroUsd||0)+(day.reservedMicroUsd||0)+reserve>(limit||0))return t.kind==='instagram'?'daily_apify_collection_budget':'daily_comment_search_budget';
+      return pilotBudgetBlock(data,'apifyMicroUsd',reserve)?.code||null;
+    }
+    if(settings.scrapebadgerConfigured===false)return 'provider_unconfigured';
+    if(discoveryPlatform(t)&&settings.discoveryPricingRequired&&!Number.isSafeInteger(settings.discoveryPricing?.[t.kind]))return 'provider_pricing_unavailable';
+    const day=s.daily[dayKey]||{};
+    if((day.spentCredits||0)+(day.reservedCredits||0)+reserve>settings.dailyCreditLimit)return 'daily_scraper_budget';
+    return pilotBudgetBlock(data,'scrapeCredits',reserve)?.code||null;
+  };
+  const order=cycle.queue.map((_,i)=>i).sort((a,b)=>(data.subscription&&cycle.mode!=='backfill'?Number(familyOf(cycle.queue[b])===alternate)-Number(familyOf(cycle.queue[a])===alternate):0)||a-b);
+  const taskIndex=order.find(i=>!taskBlock(cycle.queue[i]));
+  if(taskIndex===undefined){
+    const unavailable=cycle.queue.filter(t=>taskBlock(t)==='provider_unconfigured');
+    if(unavailable.length){for(const t of unavailable)cycle.mode==='backfill'?backfillError(cycle,t,'provider_unconfigured'):cycleError(cycle,t,'provider_unconfigured');cycle.queue=cycle.queue.filter(t=>!unavailable.includes(t));if(!cycle.queue.length){cycle.mode==='backfill'?finishBackfill(data,cycle,now):finishCycle(data,cycle,now);return null;}return claimCollection(data,settings,productId,now);}
+    cycle.blocked=taskBlock(cycle.queue[order[0]]);return null;
+  }
+  const task=cycle.queue[taskIndex],url=taskURL(task),cache=s.cache[digest([url,Boolean(task.historical||task.includeClosed),...(data.subscription?['durable',task.loopRunId||cycle.id]:[])])];
   if(cache && now-cache.at<OVERLAP) {
     const cachedRequest={token:randomUUID(),mode:cycle.mode||'regular',productId};reserveCollectedQuota(data,cachedRequest,now);
     markFamilyDispatch(data,cycle,task,now);cycle.queue.splice(taskIndex,1);applyPage(data,cycle,task,structuredClone(cache.result),now);settleCollectedQuota(data,cachedRequest,{result:cache.result});s.lastModes[productId]=cachedRequest.mode;return {cached:true};
   }
-  if(data.pilotBudget?.active&&(socialTaskPlatform(task)||['instagram','reddit_comment_search'].includes(task.kind))){cycle.blocked='pilot_provider_not_allowed';return null;}
   if(task.kind==='instagram'){
     const dayKey=budgetDay(now),day=s.apifyDaily[dayKey] ||= {spentMicroUsd:0,reservedMicroUsd:0,calls:0};
     const reserve=Math.round(INSTAGRAM_MAX_CHARGE_USD*1e6);
@@ -292,7 +333,7 @@ export function claimCollection(data, settings, productId, now = Date.now()) {
       cycleError(cycle,task,settings.instagramSearchEnabled?'daily_apify_collection_budget':'provider_unconfigured');
       cycle.queue=cycle.queue.filter(task=>task.kind!=='instagram');return claimCollection(data,settings,productId,now);
     }
-    const request={mode:'regular',provider:'instagram-apify',token:randomUUID(),productId,cycleId:cycle.id,task,url,day:dayKey,reserve,expiresAt:now+90000,...(data.subscription?{preserveText:true}:{})};
+    const request={mode:cycle.mode||'regular',provider:'instagram-apify',token:randomUUID(),productId,cycleId:cycle.id,task,url,day:dayKey,reserve,expiresAt:now+90000,...(data.subscription?{preserveText:true}:{})};
     reserveCollectedQuota(data,request,now);markFamilyDispatch(data,cycle,task,now);day.reservedMicroUsd+=reserve;day.calls++;cycle.requests++;cycle.queue.splice(taskIndex,1);s.lastModes[productId]=request.mode;s.nextRequestAt=now+PACE;s.active=request;return structuredClone(request);
   }
   if(task.kind==='reddit_comment_search'){
@@ -303,7 +344,7 @@ export function claimCollection(data, settings, productId, now = Date.now()) {
       cycleError(cycle,task,settings.commentSearchEnabled?'daily_comment_search_budget':'provider_unconfigured');
       cycle.queue=cycle.queue.filter(task=>task.kind!=='reddit_comment_search');return claimCollection(data,settings,productId,now);
     }
-    const request={mode:'regular',provider:'reddit-apify',token:randomUUID(),productId,cycleId:cycle.id,task,url,day:dayKey,reserve,expiresAt:now+90000,...(data.subscription?{preserveText:true}:{})};
+    const request={mode:cycle.mode||'regular',provider:'reddit-apify',token:randomUUID(),productId,cycleId:cycle.id,task,url,day:dayKey,reserve,expiresAt:now+90000,...(data.subscription?{preserveText:true}:{})};
     reserveCollectedQuota(data,request,now);markFamilyDispatch(data,cycle,task,now);day.reservedMicroUsd+=reserve;day.calls++;cycle.requests++;cycle.queue.splice(taskIndex,1);s.lastModes[productId]=request.mode;s.nextRequestAt=now+PACE;s.active=request;return structuredClone(request);
   }
   if(settings.scrapebadgerConfigured===false){
@@ -311,7 +352,7 @@ export function claimCollection(data, settings, productId, now = Date.now()) {
     cycle.queue.splice(taskIndex,1);if(cycle.mode==='backfill'&&!cycle.queue.length)finishBackfill(data,cycle,now);return claimCollection(data,settings,productId,now);
   }
   const dayKey=budgetDay(now),day=s.daily[dayKey] ||= {spentCredits:0,reservedCredits:0,uncertainCredits:0,calls:0};
-  const reserve=commentTask(task)?200:socialTaskPlatform(task)?105:task.kind==='x'?101:102;
+  const reserve=reserveFor(task);
   if(day.spentCredits+day.reservedCredits+reserve>settings.dailyCreditLimit){cycle.blocked='daily_scraper_budget';return null;}
   const pilotBlock=pilotBudgetBlock(data,'scrapeCredits',reserve);if(pilotBlock){cycle.blocked=pilotBlock.code;return null;}
   delete cycle.blocked;
@@ -320,6 +361,8 @@ export function claimCollection(data, settings, productId, now = Date.now()) {
   s.lastModes[productId]=request.mode;s.nextRequestAt=now+PACE;s.active=request;return structuredClone(request);
 }
 function applyPage(data,cycle,task,result,now) {
+  if(discoveryPlatform(task)||task.discoverySource)applyDiscoveryPage(data,cycle,task,result,now);
+  if(task.kind==='reddit_comment_search'&&task.historical&&result.rawCount>=30&&Number.isFinite(result.oldest)&&result.oldest>task.cutoff)result.cursor=iso(result.oldest-1);
   if(cycle.mode==='backfill')return applyBackfillPage(data,cycle,task,result,now);
   const s=state(data),product=data.products.find(p=>p.id===cycle.productId);if(!product)return;
   const rows=(result.rows || []).map(row=>({...row,snippet:data.subscription?String(row.snippet??row.text??''):row.snippet.slice(0,3000)}));cycle.rows+=rows.length;
@@ -337,7 +380,7 @@ function applyPage(data,cycle,task,result,now) {
   if(commentTask(task)){if(!result.partial&&!result.omitted)s.threads[`${cycle.productId}:${task.post.sourceId}`]={commentCount:task.post.commentCount,checkedAt:iso(now)};}
   else {
     const reachedBoundary=Number.isFinite(result.oldest) && result.oldest<=task.cutoff;
-    if(result.cursor && !(socialTaskPlatform(task)?false:reachedBoundary) && task.page<2 && result.cursor!==task.cursor)cycle.queue.unshift({...task,page:task.page+1,cursor:result.cursor,incomplete:task.incomplete||result.partial||Boolean(result.omitted)});
+    if(result.cursor && !(socialTaskPlatform(task)?false:reachedBoundary) && task.page<(task.kind==='google_search'?task.maxPages:2) && result.cursor!==task.cursor)cycle.queue.unshift({...task,page:task.page+1,cursor:result.cursor,incomplete:task.incomplete||result.partial||Boolean(result.omitted)});
     else {
       if(result.cursor && (socialTaskPlatform(task)||!reachedBoundary))cycleError(cycle,task,'page_limit');
       // A failure, omitted record or truncated cursor retains the old checkpoint.
@@ -354,7 +397,7 @@ export function finishCollection(data, token, outcome, now = Date.now()) {
   const cycle=requestCycle(s,request);if(cycle?.id!==request.cycleId){settleCollectedQuota(data,request,outcome);return null;}
   const product=data.products.find(p=>p.id===request.productId);
   if(!product||!listeningReady(product)||cycle.profileKey!==(cycle.mode==='backfill'?digest([profileKey(product),product.needs]):profileKey(product))){cycle.status='profile_changed';cycle.queue=[];delete cycle.posts;settleCollectedQuota(data,request,outcome);return {status:'profile_changed'};}
-  if(outcome.error){if(request.mode==='backfill'){backfillError(cycle,request.task,outcome.error);finishBackfill(data,cycle,now);}else {cycleError(cycle,request.task,outcome.error);if(outcome.error==='provider_temporarily_unavailable')cycle.queue=cycle.queue.filter(task=>taskPlatform(task)!==taskPlatform(request.task));}}
+  if(outcome.error){if(request.task.discoveryKey&&s.discoveries?.[request.productId]?.[request.task.discoveryKey])Object.assign(s.discoveries[request.productId][request.task.discoveryKey],{status:'original_unavailable',error:outcome.error});if(request.mode==='backfill'){backfillError(cycle,request.task,outcome.error);finishBackfill(data,cycle,now);}else {cycleError(cycle,request.task,outcome.error);if(outcome.error==='provider_temporarily_unavailable')cycle.queue=cycle.queue.filter(task=>taskPlatform(task)!==taskPlatform(request.task));}}
   else {
     outcome.result.rows=outcome.result.rows.map(row=>({...row,snippet:data.subscription?String(row.snippet??row.text??''):row.snippet.slice(0,3000)}));
     s.cache[digest([request.url,Boolean(request.task.historical||request.task.includeClosed),...(data.subscription?['durable',request.task.loopRunId||cycle.id]:[])])]={at:now,result:outcome.result};
@@ -371,13 +414,32 @@ export function collectionDueIds(data, now = Date.now()) {
 export function collectionPublicState(data, now=Date.now(),settings=collectionSettings()) {
   const s=data.collection||{daily:{},cycles:{}};
   return {version:COLLECTION_VERSION,collectedUsage:collectedUsageState(data,now),day:budgetDay(now),budget:s.daily[budgetDay(now)] || {},limitCredits:3333,apify:{budget:s.apifyDaily?.[budgetDay(now)]||{},dailyLimitMicroUsd:settings.apifyDailyLimitMicroUsd??settings.commentDailyLimitMicroUsd},instagramSearch:{actor:INSTAGRAM_ACTOR.replace('~','/'),maxPosts:INSTAGRAM_MAX_ITEMS,maxRunChargeUsd:INSTAGRAM_MAX_CHARGE_USD},commentSearch:{actor:REDDIT_COMMENTS_ACTOR.replace('~','/'),budget:s.apifyDaily?.[budgetDay(now)]||{},dailyLimitMicroUsd:settings.commentDailyLimitMicroUsd,maxRunChargeUsd:COMMENT_SEARCH_MAX_CHARGE_USD},overrun:Boolean(s.overrun),
+    discovery:{version:DISCOVERY_VERSION,intervalMinutes:DISCOVERY_INTERVAL_MS/60000,products:Object.fromEntries(Object.entries(s.discoveries||{}).map(([id,rows])=>[id,{discovered:Object.keys(rows).length,retrieved:Object.values(rows).filter(r=>r.status==='retrieved').length,pending:Object.values(rows).filter(r=>r.status!=='retrieved').length}])),reviewPlaces:Object.fromEntries(Object.entries(s.reviewPlaces||{}).map(([id,p])=>[id,{title:p.title,address:p.address,verifiedAt:p.verifiedAt}]))},
     backfills:Object.fromEntries(Object.entries(s.backfills||{}).map(([id,j])=>[id,backfillPublic(data,j)])),
     cycles:Object.fromEntries(Object.entries(s.cycles).map(([id,c])=>[id,{status:c.status,startedAt:c.startedAt,finishedAt:c.finishedAt || null,remaining:c.queue?.length || 0,requests:c.requests,staged:c.staged,unassessed:c.unassessed,errors:c.errors,blocked:c.blocked || null,...(data.subscription?{families:c.familyRuns||{},schedules:collectionPlanState(data,id,now)}:{})}]))};
 }
 export function createCollectionProvider({env=process.env,fetchImpl=fetch}={}) {
   const comments=env.APIFY_TOKEN?new ApifyRedditCommentsAdapter({token:env.APIFY_TOKEN,fetchImpl}):null;
   const instagram=env.APIFY_TOKEN&&env.INSTAGRAM_SEARCH_ENABLED!=='false'?new ApifyInstagramAdapter({token:env.APIFY_TOKEN,fetchImpl}):null;
-  return {async fetchPage(request) {
+  let pricingCache=null;
+  return {async pricing(){
+    if(pricingCache&&Date.now()-pricingCache.at<3600000)return pricingCache.costs;
+    try{
+      const response=await fetchImpl('https://scrapebadger.com/api/public/pricing',{redirect:'error',signal:AbortSignal.timeout(8000)});
+      if(!response.ok)throw Error('pricing_unavailable');const body=JSON.parse(await readText(response,524288));
+      const costs={web_page:6};
+      for(const kind of ['google_search','maps_search','maps_place','maps_reviews','reddit_post','instagram_post','app_store_reviews']){
+        const path=new URL(discoveryTaskURL({kind,query:'pricing',postId:'fixture',shortcode:'fixture',appId:'1',country:'us',page:1,dataId:'0x1:0x1',place:{dataId:'0x1:0x1'}})).pathname.replace(/^\/v1\//,'');
+        const [scraper,...rest]=path.split('/'),category=body.scraper_costs?.find(s=>s.scraper_name===scraper),entry=category?.endpoints?.find(e=>new RegExp('^'+e.endpoint_pattern.split('*').map(p=>p.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).join('[^/]+')+'$').test(rest.join('/')))||category;
+        if(entry&&Number.isSafeInteger(entry.base_cost)&&entry.base_cost>=0&&Number.isSafeInteger(entry.per_item_cost)&&entry.per_item_cost>=0){
+          const near=entry.upcoming&&Date.parse(entry.upcoming.effective_at)<=Date.now()+3600000?entry.upcoming:entry;
+          const maxItems=kind==='app_store_reviews'?50:kind==='instagram_post'||kind==='reddit_post'?1:20;
+          const value=Math.max(entry.base_cost+entry.per_item_cost*maxItems,near.base_cost+near.per_item_cost*maxItems);if(Number.isSafeInteger(value)&&value>=0)costs[kind]=value;
+        }
+      }
+      pricingCache={at:Date.now(),costs};return costs;
+    }catch{return {web_page:6};}
+  },async fetchPage(request) {
     if(request.provider==='instagram-apify'){
       try{
         if(!instagram)return {error:'provider_unconfigured'};
@@ -388,13 +450,13 @@ export function createCollectionProvider({env=process.env,fetchImpl=fetch}={}) {
     if(request.task.kind==='reddit_comment_search'){
       try{
         if(!comments)return {error:'provider_unconfigured'};
-        const {rows,coverage}=await comments.search({query:request.task.query,subreddit:request.task.name,cutoff:request.task.cutoff,limit:30,preserveText:request.preserveText===true});
+        const {rows,coverage}=await comments.search({query:request.task.query,subreddit:request.task.name,cutoff:request.task.cutoff,until:request.task.cursor?Date.parse(request.task.cursor):request.task.until,limit:30,preserveText:request.preserveText===true});
         return {credits:0,coverage,result:{rows,cursor:null,oldest:coverage.oldest,rawCount:coverage.observedComments,partial:coverage.errors.length>0||coverage.observedComments>=30&&!(coverage.oldest<=request.task.cutoff),omitted:coverage.skippedComments>0}};
       }catch(error){return {error:error.code||'reddit_comments_provider_failed',runId:error.runId||null};}
     }
     let credits=null,httpStatus;
     try {
-      const response=await fetchImpl(request.url,{headers:{'X-API-Key':env.SCRAPEBADGER_API_KEY,Accept:'application/json'},redirect:'error',signal:AbortSignal.timeout(25000)});
+      const response=await fetchImpl(request.url,{...(request.task.kind==='web_page'?{method:'POST',body:JSON.stringify({url:request.task.originalURL,format:'html',engine:'auto',proxy_tier:'simple',max_cost:6,retry_on_block:false})}:{}),headers:{'X-API-Key':env.SCRAPEBADGER_API_KEY,Accept:'application/json',...(request.task.kind==='web_page'?{'Content-Type':'application/json'}:{})},redirect:'error',signal:AbortSignal.timeout(25000)});
       httpStatus=response.status;const receipt=response.headers.get('X-Credits-Used');
       if(receipt!==null && receipt.trim() && Number.isSafeInteger(Number(receipt)) && Number(receipt)>=0)credits=Number(receipt);
       const raw=await readText(response.ok?response:{ok:true,headers:response.headers,body:response.body},response.ok?2_097_152:65_536);
@@ -404,6 +466,7 @@ export function createCollectionProvider({env=process.env,fetchImpl=fetch}={}) {
         throw Error('upstream_status');
       }
       const body=JSON.parse(raw),task=request.task,collectedAt=iso(Date.now());let rows,values,cursor=null,stamps=[];
+      if(discoveryPlatform(task))return {credits,httpStatus,result:parseDiscoveryPage(task,body,collectedAt,{preserveText:request.preserveText===true})};
       if(socialTaskPlatform(task))return {credits,httpStatus,result:parseSocialPage(task,body,collectedAt,{preserveText:request.preserveText===true})};
       if(task.kind==='listing'||task.kind==='search') {
         values=body.posts;if(!Array.isArray(values)||values.length>100)throw Error('invalid_response');
@@ -424,7 +487,8 @@ export function createCollectionProvider({env=process.env,fetchImpl=fetch}={}) {
   }};
 }
 export async function processCollection(store, settings, provider, productId) {
-  const request=await store.claimCollection(settings,productId,Date.now());if(!request)return {status:'idle'};
+  const discoveryPricing=provider.pricing?await provider.pricing():undefined;
+  const request=await store.claimCollection(discoveryPricing?{...settings,discoveryPricing,discoveryPricingRequired:true}:settings,productId,Date.now());if(!request)return {status:'idle'};
   if(request.cached)return {status:'cached'};
   let result;try{result=await provider.fetchPage(request);}catch{result={credits:null,error:'uncertain_dispatch'};}
   return await store.finishCollection(request.token,result,Date.now()) || {status:'uncertain'};

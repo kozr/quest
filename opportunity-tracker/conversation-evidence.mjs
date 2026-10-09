@@ -1,3 +1,4 @@
+import {canonicalReviewURL} from './review-identity.mjs';
 import {needsEntityReview} from './entity-mention.mjs';
 import {canonicalSocialSource} from './social-search.mjs';
 import {conversationSignals,commentThreadPriority} from './conversation-purpose.mjs';
@@ -11,7 +12,7 @@ export const QUALIFY_PIPELINE_VERSION='listening-qualification-v3';
 export const durableEvidenceEnabled=data=>Boolean(data.subscription);
 export const qualificationInputHash=product=>hash([QUALIFY_PIPELINE_VERSION,product.businessProfileV2,product.searchPlanV2,product.aliases||[],product.competitorNames||[]]);
 export function qualificationEvidence(row){
-  const value=Object.fromEntries(['id','url','title','text','author','community','threadId','type','source','publishedAt','discussionClosed','crosspost','context','postId','parentId'].map(k=>[k,row[k]]));
+  const value=Object.fromEntries(['id','url','title','text','author','community','threadId','type','source','publishedAt','discussionClosed','crosspost','context','postId','parentId','businessReview'].map(k=>[k,row[k]]));
   // Preserve source text in storage. Only the AI request receives an excerpt.
   if(row.retention==='durable')Object.assign(value,{title:String(row.title||'').slice(0,500),text:String(row.text||'').slice(0,2200),context:String(row.context||'').slice(0,1500),sourceContentHash:row.contentHash,sourceTextTruncated:String(row.title||'').length>500||String(row.text||'').length>2200||String(row.context||'').length>1500});
   return value;
@@ -34,7 +35,7 @@ export function captureEvidence(data,product,rows,at){
     let url;try{url=new URL(publicUrl(row.url));}catch{continue;}
     const social=canonicalSocialSource(row);
     if(social)url=new URL(social.url);
-    else {if(!/(^|\.)(reddit\.com|x\.com|twitter\.com|linkedin\.com)$/.test(url.hostname))continue;url=new URL(canonicalSourceUrl(url.href));}
+    else {if(!/(^|\.)(reddit\.com|x\.com|twitter\.com|linkedin\.com)$/.test(url.hostname)&&!canonicalReviewURL(row.url)&&!(row.source==='Web'&&row.contentOrigin==='original_page'))continue;url=new URL(canonicalSourceUrl(url.href));}
     const thread=url.pathname.match(/\/comments\/([a-z0-9]+)/i)?.[1];
     const author=typeof row.author==='string'?row.author.slice(0,120):null;
     const title=String(row.title||'').slice(0,500),text=String(row.snippet||'').slice(0,2200);
@@ -43,7 +44,7 @@ export function captureEvidence(data,product,rows,at){
     const receipt=data.conversationReviewReceipts?.[product.id]?.[id],item=data.items.find(i=>i.productId===product.id&&conversationSourceKey(i.url)===key);
     const previous=prior?.qualification||receipt?.qualification||item?.qualification;
     const previousHash=prior?.qualification?prior.contentHash:receipt?.contentHash||item?.qualification?.contentHash;
-    const record={...sourceProvenance(row),id,url:url.href,title,text,...(context?{context}:{}),author,community:url.pathname.match(/\/r\/([^/]+)/i)?.[1]?.toLowerCase()||String(row.community||row.subreddit||'').replace(/^r\//,'').toLowerCase().slice(0,21)||null,
+    const record={...sourceProvenance(prior||{}),...sourceProvenance(row),id,url:url.href,title,text,...(context?{context}:{}),author,community:url.pathname.match(/\/r\/([^/]+)/i)?.[1]?.toLowerCase()||String(row.community||row.subreddit||'').replace(/^r\//,'').toLowerCase().slice(0,21)||null,
       threadId:thread?`reddit:${thread}`:String(social?`${social.platform}:${social.post}`:row.postId||row.parentId||url.href),type:row.type==='comment'?'comment':'post',source:String(row.source||'').slice(0,80),publishedAt:Number.isFinite(Date.parse(row.publishedAt))?new Date(row.publishedAt).toISOString():null,
       collectedAt:at,historical:row.historical===true||prior?.historical===true,discussionClosed:row.discussionClosed===true,crosspost:row.crosspost===true||Boolean(row.crosspostParent||row.crosspost_parent),contentHash,
       queryIds:[...new Set([...(prior?.queryIds||[]),...(row.queryId?[row.queryId]:[])])].slice(0,12),
@@ -67,7 +68,7 @@ function captureDurableEvidence(data,product,rows,at){
     let url;try{url=new URL(publicUrl(row.url));}catch{continue;}
     const social=canonicalSocialSource(row);
     if(social)url=new URL(social.url);
-    else {if(!/(^|\.)(reddit\.com|x\.com|twitter\.com|linkedin\.com)$/.test(url.hostname))continue;url=new URL(canonicalSourceUrl(url.href));}
+    else {if(!/(^|\.)(reddit\.com|x\.com|twitter\.com|linkedin\.com)$/.test(url.hostname)&&!canonicalReviewURL(row.url)&&!(row.source==='Web'&&row.contentOrigin==='original_page'))continue;url=new URL(canonicalSourceUrl(url.href));}
     const key=social?social.identity:url.href,prior=bySource.get(key),id=prior?.id||hash([product.id,key]).slice(0,24);
     const title=String(row.title||''),text=String(row.snippet??row.text??''),context=typeof row.context==='string'?row.context:'';
     const contentHash=hash(context?[title,text,context]:[title,text]);
@@ -80,7 +81,7 @@ function captureDurableEvidence(data,product,rows,at){
     const backfillIds=[...new Set([...(prior?.backfillIds||[]),...(prior?.backfillId?[prior.backfillId]:[]),...(row.backfillId?[row.backfillId]:[])])];
     const allowanceSource=prior?.contentHash===contentHash?prior:item?.qualification?.contentHash===contentHash?item:null;
     const allowance=allowanceSource?.historicalAllowanceBackfillId&&allowanceSource?.allowanceAttribution?{historicalAllowanceBackfillId:allowanceSource.historicalAllowanceBackfillId,allowanceAttribution:structuredClone(allowanceSource.allowanceAttribution)}:{};
-    const record={...allowance,...sourceProvenance(row),id,url:url.href,title,text,...(context?{context}:{}),retention:'durable',author:typeof row.author==='string'?row.author.slice(0,120):null,
+    const record={...allowance,...sourceProvenance(prior||{}),...sourceProvenance(row),id,url:url.href,title,text,...(context?{context}:{}),retention:'durable',author:typeof row.author==='string'?row.author.slice(0,120):null,
       community:url.pathname.match(/\/r\/([^/]+)/i)?.[1]?.toLowerCase()||String(row.community||row.subreddit||'').replace(/^r\//,'').toLowerCase().slice(0,21)||null,
       threadId:thread?`reddit:${thread}`:String(social?`${social.platform}:${social.post}`:row.postId||row.parentId||url.href),type:row.type==='comment'?'comment':'post',source:String(row.source||'').slice(0,80),publishedAt:Number.isFinite(Date.parse(row.publishedAt))?new Date(row.publishedAt).toISOString():null,
       collectedAt:prior?.collectedAt||at,lastSeenAt:at,historical:row.historical===true||prior?.historical===true,discussionClosed:row.discussionClosed===true,crosspost:row.crosspost===true||Boolean(row.crosspostParent||row.crosspost_parent),contentHash,queryIds,queryFamilies,
@@ -159,7 +160,7 @@ export function saveConversationReview(data,product,row,decision,at,model){
 }
 function evidenceBySource(data,product,url){const key=conversationSourceKey(url);return [...(data.conversationReviewQueue?.[product.id]||[]),...evidenceFor(data,product),...Object.values(data.conversationReviewFailures?.[product.id]||{}).map(f=>f.row)].find(r=>conversationSourceKey(r.url)===key);}
 export function conversationSourceKey(value){const social=canonicalSocialSource({source:'TikTok',url:value})||canonicalSocialSource({source:'Instagram',url:value});return social?.identity||canonicalSourceUrl(value);}
-export function canonicalSourceUrl(value){const social=canonicalSocialSource({source:'TikTok',url:value})||canonicalSocialSource({source:'Instagram',url:value});if(social)return social.url;try{const url=new URL(value);url.search='';url.hash='';const match=url.pathname.match(/^\/r\/([a-z0-9_]+)\/comments\/([a-z0-9]+)(?:\/[^/]+)?(?:\/([a-z0-9]+))?\/?$/i);if(/(^|\.)reddit\.com$/.test(url.hostname)&&match){url.hostname='www.reddit.com';url.pathname=`/r/${match[1].toLowerCase()}/comments/${match[2]}/${match[3]?`_/${match[3]}/`:''}`;}return url.href;}catch{return value;}}
+export function canonicalSourceUrl(value){const review=canonicalReviewURL(value);if(review)return review;const social=canonicalSocialSource({source:'TikTok',url:value})||canonicalSocialSource({source:'Instagram',url:value});if(social)return social.url;try{const url=new URL(value);for(const key of [...url.searchParams.keys()])if(/^utm_|^(fbclid|gclid|ref|tracking)$/i.test(key))url.searchParams.delete(key);url.hash='';const match=url.pathname.match(/^\/r\/([a-z0-9_]+)\/comments\/([a-z0-9]+)(?:\/[^/]+)?(?:\/([a-z0-9]+))?\/?$/i);if(/(^|\.)(x\.com|twitter\.com|linkedin\.com)$/.test(url.hostname))url.search='';if(/(^|\.)reddit\.com$/.test(url.hostname)&&match){url.search='';url.hostname='www.reddit.com';url.pathname=`/r/${match[1].toLowerCase()}/comments/${match[2]}/${match[3]?`_/${match[3]}/`:''}`;}return url.href;}catch{return value;}}
 export function currentConversationRelevant(data,item){
   const p=data.products.find(p=>p.id===item.productId);if(!p||p.listeningVersion!=='v2')return true;
   const row=evidenceBySource(data,p,item.url);
@@ -186,11 +187,12 @@ export function validateEvidence(value,products,{durable=false,limit=durable?Num
       const fullText=value=>{if(typeof value!=='string')problem('Invalid conversation source text.');return value;};
       const title=durable?fullText(r.title):string(r.title,500,0),text=durable?fullText(r.text):string(r.text,2200,0),context=durable?fullText(r.context||''):string(r.context||'',1500,0);
       // Imported classification is deliberately re-run against the active business.
-      return {...sourceProvenance(r),id:r.id,url,title,text,...(context?{context}:{}),...(durable?{retention:'durable',queryFamilies:array(r.queryFamilies||[],1000).map(x=>string(x,100)),backfillIds:array(r.backfillIds||[],1000).map(x=>string(x,100)),...(typeof r.backfillId==='string'?{backfillId:string(r.backfillId,100)}:{})}:{}),author:r.author===null?null:string(r.author,120,0),community:r.community===null?null:string(r.community,21,0),threadId:string(r.threadId,2048),type:oneOf(r.type,['post','comment']),source:string(r.source,80,0),publishedAt:Number.isFinite(Date.parse(r.publishedAt))?r.publishedAt:null,collectedAt:r.collectedAt,historical:r.historical===true,discussionClosed:r.discussionClosed===true,crosspost:r.crosspost===true,contentHash:hash(context?[title,text,context]:[title,text]),queryIds:array(r.queryIds||[],durable?Number.MAX_SAFE_INTEGER:12).map(x=>string(x,100))};
+      const provenance=sourceProvenance(r);delete provenance.businessReview; // Imported listing attribution requires provider re-verification.
+      return {...provenance,id:r.id,url,title,text,...(context?{context}:{}),...(durable?{retention:'durable',queryFamilies:array(r.queryFamilies||[],1000).map(x=>string(x,100)),backfillIds:array(r.backfillIds||[],1000).map(x=>string(x,100)),...(typeof r.backfillId==='string'?{backfillId:string(r.backfillId,100)}:{})}:{}),author:r.author===null?null:string(r.author,120,0),community:r.community===null?null:string(r.community,21,0),threadId:string(r.threadId,2048),type:oneOf(r.type,['post','comment']),source:string(r.source,80,0),publishedAt:Number.isFinite(Date.parse(r.publishedAt))?r.publishedAt:null,collectedAt:r.collectedAt,historical:r.historical===true,discussionClosed:r.discussionClosed===true,crosspost:r.crosspost===true,contentHash:hash(context?[title,text,context]:[title,text]),queryIds:array(r.queryIds||[],durable?Number.MAX_SAFE_INTEGER:12).map(x=>string(x,100))};
     });
     if(new Set(result[product.id].map(x=>x.id)).size!==rows.length)problem('Duplicate conversation evidence.');
   }
   if(total>totalLimit)problem('Too many saved conversations.');return result;
 }
 
-function sourceProvenance(row){return Object.fromEntries(['provider','sourceId','postId','parentId'].filter(k=>row[k]===null||typeof row[k]==='string'&&row[k].length<=120).map(k=>[k,row[k]]));}
+function sourceProvenance(row){const value=Object.fromEntries(['provider','sourceId','postId','parentId','discoverySource','discoveryURL','contentOrigin','sourceLinkKind'].filter(k=>row[k]===null||typeof row[k]==='string'&&row[k].length<=2048).map(k=>[k,row[k]]));if(row.businessReview?.version===1)value.businessReview=structuredClone(row.businessReview);if(Number.isFinite(row.rating))value.rating=row.rating;return value;}

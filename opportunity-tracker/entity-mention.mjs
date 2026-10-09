@@ -1,3 +1,4 @@
+import {reviewListingEvidence} from './review-identity.mjs';
 // Business identity is independent of usefulness and customer intent.
 export const ENTITY_MATCH_VERSION='entity-identity-v1';
 const folded=value=>String(value).normalize('NFD').replace(/\p{M}/gu,'').toLowerCase();
@@ -93,6 +94,7 @@ export function validEntityMatch(product,source,decision){
 }
 export function entityMentionEvidence(product,source,{decision,current=false}={}){
   if(!product||!source)return null;
+  const review=reviewListingEvidence(product,source);if(review)return review;
   const direct=directIdentifierEvidence(product,source);if(direct)return direct;
   const verdict=decision?.entityMatch;
   if(!current||!literalMentionEvidence(product,source)||!validEntityMatch(product,source,verdict)||verdict.status!=='confirmed')return null;

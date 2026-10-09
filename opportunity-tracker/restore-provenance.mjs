@@ -31,6 +31,7 @@ export function restoreSourceProvenance(current,incoming){
   const result=structuredClone(incoming);
   visit(result,(productId,row)=>{
     const source=identity(productId,row),prior=source?trusted.get(JSON.stringify([source,fingerprint(row)])):null;
+    delete row.businessReview;if(prior?.businessReview)row.businessReview=structuredClone(prior.businessReview);
     delete row.backfillId;delete row.backfillIds;delete row.historicalAllowanceBackfillId;delete row.allowanceAttribution;
     row.historical=prior?.historical===true;
     if(!row.historical)return;

@@ -1,3 +1,4 @@
+import {discoveryTasks,mentionQueries} from './mention-discovery.mjs';
 import {materializeCollectedConversations} from './conversation-pages.mjs';
 import {commentThreadPriority} from './conversation-purpose.mjs';
 import {plannedQueries,compileRedditQuery} from './search-plan.mjs';
@@ -24,7 +25,7 @@ export function historicalQueries(product) {
   for(let i=0;i<terms.length;i+=4)families.push('('+terms.slice(i,i+4).map(quote).join(' OR ')+')');
   return {phrases,families};
 }
-export function backfillPlan(product,queries,now,{durable=false}={}) {
+export function backfillPlan(product,queries,now,{durable=false,settings={}}={}) {
   const cutoff=now-365*DAY;
   if(product.listeningVersion==='v2'){
     const reddit=plannedQueries(product,'reddit').map(q=>({kind:'search',query:compileRedditQuery(q),queryId:q.id,themeId:q.themeId,queryFamily:q.loop||q.queryFamily||q.family||'keyword',purposes:q.purposes,name:q.community,sort:'relevance',page:1,cutoff,until:now}));
@@ -33,7 +34,7 @@ export function backfillPlan(product,queries,now,{durable=false}={}) {
       const source=originals[index],until=now-Math.floor(i*365/12)*DAY,from=durable?Math.max(cutoff,now-Math.floor((i+1)*365/12)*DAY):cutoff;
       x.push({kind:'x',query:query.replace(/\b(?:since|until):\S+/g,'').trim(),...(source?{queryId:source.id,themeId:source.themeId,purposes:source.purposes}:{}),queryFamily:source?.loop||source?.queryFamily||source?.family||'keyword',page:1,cutoff:from,until});
     });
-    const queue=[];while(reddit.length||x.length){if(reddit.length)queue.push(reddit.shift());if(x.length)queue.push(x.shift());}
+    const queue=[...(settings.commentSearchEnabled?mentionQueries(product).map(q=>({kind:'reddit_comment_search',query:q.query,queryId:q.id,queryFamily:'keyword',purposes:q.purposes,name:q.community,page:1,cutoff,until:now})):[]),...discoveryTasks(product,{settings,historical:true,cutoff,until:now})];while(reddit.length||x.length){if(reddit.length)queue.push(reddit.shift());if(x.length)queue.push(x.shift());}
     return queue.map((task,index)=>({...task,historical:true,branch:String(index)}));
   }
   const {phrases,families}=historicalQueries(product);
@@ -49,15 +50,15 @@ export function backfillPlan(product,queries,now,{durable=false}={}) {
   while(reddit.length||x.length){if(reddit.length)queue.push(reddit.shift());if(x.length)queue.push(x.shift());}
   return queue.map((task,index)=>({...task,historical:true,branch:String(index)}));
 }
-export function createBackfill(data,product,queries,profileKey,now) {
+export function createBackfill(data,product,queries,profileKey,now,{settings={}}={}) {
   const s=data.collection;s.backfills ||= {};
   // Retain server-owned job identity when a later profile replaces the visible job.
   // Historical AI billing must still recognize conversations from the old run.
   if(data.subscription){s.backfillRuns||={};const prior=s.backfills[product.id];if(prior)s.backfillRuns[prior.id]={id:prior.id,productId:prior.productId,profileKey:prior.profileKey,startedAt:prior.startedAt,from:prior.from,to:prior.to};}
   // Starting twice (including a repeated onboarding request) never replays paid work.
   if(s.backfills[product.id] && (s.backfills[product.id].profileKey===profileKey || !data.subscription&&['running','reviewing'].includes(s.backfills[product.id].status)))return structuredClone(s.backfills[product.id]);
-  const durable=Boolean(data.subscription),queue=backfillPlan(product,queries,now,{durable});
-  const job={id:randomUUID(),productId:product.id,profileKey,mode:'backfill',trigger:'onboarding',status:queue.length?'running':durable?'unavailable':'complete',...(durable?{retention:'durable',limitWindow:{day:budgetDay(now),requestStart:0,stagedStart:0}}:{}),startedAt:iso(now),from:iso(now-365*DAY),to:iso(now),queue,requests:0,rows:0,staged:0,duplicates:0,filtered:0,unassessed:0,errors:[],threads:{},branches:queue.map(t=>({id:t.branch,platform:t.kind==='x'?'x':'reddit',query:t.query,...(t.queryId?{queryId:t.queryId}:{}),...(t.themeId?{themeId:t.themeId}:{}),queryFamily:t.queryFamily||'keyword',from:iso(t.cutoff),to:iso(t.until),pages:0,rows:0,status:'queued'}))};
+  const durable=Boolean(data.subscription),queue=backfillPlan(product,queries,now,{durable,settings});
+  const job={id:randomUUID(),productId:product.id,profileKey,mode:'backfill',trigger:'onboarding',status:queue.length?'running':durable?'unavailable':'complete',...(durable?{retention:'durable',limitWindow:{day:budgetDay(now),requestStart:0,stagedStart:0}}:{}),startedAt:iso(now),from:iso(now-365*DAY),to:iso(now),queue,requests:0,rows:0,staged:0,duplicates:0,filtered:0,unassessed:0,errors:[],threads:{},branches:queue.map(t=>({id:t.branch,platform:t.kind==='x'?'x':t.kind==='reddit_comment_search'?'reddit_comment_search':t.kind.startsWith('maps_')?'maps':t.kind==='app_store_reviews'?'app_store_reviews':t.kind==='google_search'?'google':'reddit',query:t.query,...(t.queryId?{queryId:t.queryId}:{}),...(t.themeId?{themeId:t.themeId}:{}),queryFamily:t.queryFamily||'keyword',from:iso(t.cutoff),to:iso(t.until),pages:0,rows:0,status:'queued'}))};
   if(!queue.length)job.finishedAt=iso(now);
   s.backfills[product.id]=job;
   if(durable)s.backfillRuns[job.id]={id:job.id,productId:job.productId,profileKey:job.profileKey,startedAt:job.startedAt,from:job.from,to:job.to};
@@ -146,9 +147,9 @@ export function applyBackfillPage(data,job,task,result,now) {
   }
   if(task.kind!=='comments') {
     const repeated=result.cursor&&(task.cursors||[]).includes(result.cursor);
-    const pageLimit=!data.subscription&&task.page>=BACKFILL_LIMITS.pages;
+    const pageLimit=(!data.subscription&&task.page>=BACKFILL_LIMITS.pages)||(task.kind==='reddit_comment_search'&&task.page>=20);
     // Relevance order is not chronological: an old result cannot end Reddit pagination.
-    const boundary=task.kind==='x'&&Number.isFinite(result.oldest)&&result.oldest<=task.cutoff;
+    const boundary=['x','maps_reviews','app_store_reviews','reddit_comment_search'].includes(task.kind)&&Number.isFinite(result.oldest)&&result.oldest<=task.cutoff;
     if(result.cursor&&!repeated&&!pageLimit&&!boundary&&result.rawCount!==0) {
       job.queue.push({...task,page:task.page+1,cursor:result.cursor,cursors:[...(task.cursors||[]),result.cursor]});
       if(branch)branch.status='queued';
@@ -165,5 +166,5 @@ export function applyBackfillPage(data,job,task,result,now) {
 }
 export function backfillPublic(data,job) {
   const reviews=backfillReviews(data,job);
-  return {id:job.id,status:job.status,from:job.from,to:job.to,startedAt:job.startedAt,finishedAt:job.finishedAt||null,remaining:job.queue.length,requests:job.requests,rows:job.rows,staged:job.staged,duplicates:job.duplicates,filtered:job.filtered,unassessed:job.unassessed,errors:job.errors,blocked:job.blocked||null,reviews,limits:job.retention==='durable'?{dailyRequests:BACKFILL_LIMITS.requests,dailyCandidates:BACKFILL_LIMITS.candidates,selectedThreads:BACKFILL_LIMITS.threads,resumable:true}:BACKFILL_LIMITS,branches:job.branches,...(job.retention==='durable'?{coverageStatus:job.coverageStatus||'in_progress',resumable:job.queue.length>0}:{}),coverage:'Search-index results and selected comment threads; not an exhaustive archive. Relevance uses current confirmed capabilities.'};
+  return {id:job.id,status:job.status,from:job.from,to:job.to,startedAt:job.startedAt,finishedAt:job.finishedAt||null,remaining:job.queue.length,requests:job.requests,rows:job.rows,staged:job.staged,duplicates:job.duplicates,filtered:job.filtered,unassessed:job.unassessed,errors:job.errors,blocked:job.blocked||null,reviews,limits:job.retention==='durable'?{dailyRequests:BACKFILL_LIMITS.requests,dailyCandidates:BACKFILL_LIMITS.candidates,selectedThreads:BACKFILL_LIMITS.threads,resumable:true}:BACKFILL_LIMITS,branches:job.branches,...(job.retention==='durable'?{coverageStatus:job.coverageStatus||'in_progress',resumable:job.queue.length>0}:{}),coverage:'Search indexes, direct Reddit comment searches, verified business/app reviews and original pages discovered through Google where configured. Provider limits, failures and unfinished branches are reported; this is not an exhaustive archive.'};
 }
