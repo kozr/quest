@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {cafe,breakdown} from './business-profile.fixture.mjs';
 import {validateSearchPlan} from '../search-plan.mjs';
-import {discoveryTasks,googleQueries,originalTask,parseDiscoveryPage,applyDiscoveryPage,verifiedPlace,reviewListingEvidence,canonicalReviewURL} from '../mention-discovery.mjs';
+import {discoveryTaskURL,discoveryTasks,googleQueries,originalTask,parseDiscoveryPage,applyDiscoveryPage,verifiedPlace,reviewListingEvidence,canonicalReviewURL} from '../mention-discovery.mjs';
 import {beginCollection,beginBackfill,claimCollection,finishCollection,collectionSettings,extendBackfillCoverage,createCollectionProvider} from '../collection.mjs';
 import {activatePilotBudget,pilotBudgetState,ensurePilotCollectionAccounting,pilotBudgetBlock} from '../pilot-budget.mjs';
 import {captureEvidence,evidenceFor,validateEvidence,canonicalSourceUrl} from '../conversation-evidence.mjs';
@@ -103,4 +103,16 @@ test('public pricing uses explicit endpoint overrides and the documented categor
  const {createCollectionProvider}=await import('../collection.mjs');
  const provider=createCollectionProvider({env:{},fetchImpl:async()=>Response.json({scraper_costs:[{scraper_name:'instagram',base_cost:5,per_item_cost:0,endpoints:[]},{scraper_name:'google',base_cost:1,per_item_cost:0,endpoints:[{endpoint_pattern:'search',base_cost:7,per_item_cost:0}]}]})});
  const costs=await provider.pricing();assert.equal(costs.instagram_post,5);assert.equal(costs.google_search,7);assert.equal(costs.maps_reviews,1);assert.equal(costs.reddit_post,undefined);
+});
+
+test('historical Google discovery retains older thread pages and undated listings while source dates remain bounded',()=>{
+ const task={kind:'google_search',query:'"Fixture Cafe"',page:1,historical:true,cutoff:now-365*day,until:now};
+ const {searchParams}=new URL(discoveryTaskURL(task));assert.equal(searchParams.has('tbs'),false);
+ assert.equal(new URL(discoveryTaskURL({...task,historical:false})).searchParams.get('tbs'),'qdr:w');
+});
+test('the unrestricted upgrade reuses queued Google work and adds only an already-searched dated query once',()=>{
+ const data=workspace();beginBackfill(data,'p',now);extendBackfillCoverage(data,data.products[0],settings);const job=data.collection.backfills.p;const google=job.queue.filter(t=>t.kind==='google_search');assert(google.length>1);
+ for(const task of google){const branch=job.branches.find(b=>b.id===task.branch);branch.id='old_'+branch.id;task.branch=branch.id;}
+ const completed=google[0];job.queue=job.queue.filter(t=>t!==completed);job.branches.find(b=>b.id===completed.branch).status='searched';job.coverageVersion=2;
+ const id=job.id,requests=job.requests;assert.equal(extendBackfillCoverage(data,data.products[0],settings),1);assert.equal(job.id,id);assert.equal(job.requests,requests);assert.equal(job.queue.filter(t=>t.kind==='google_search'&&t.query===completed.query).length,1);assert.equal(extendBackfillCoverage(data,data.products[0],settings),0);
 });

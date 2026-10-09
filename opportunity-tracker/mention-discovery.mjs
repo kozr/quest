@@ -8,7 +8,7 @@ import {businessReferences,namedReference,trustedBusinessIdentifiers} from './en
 import {canonicalSocialSource,normalizeSocialPost} from './social-search.mjs';
 import {normalizeScrapeBadgerPost} from './reddit/scrapebadger.mjs';
 
-export const DISCOVERY_VERSION=2,DISCOVERY_INTERVAL_MS=86400000;
+export const DISCOVERY_VERSION=3,DISCOVERY_INTERVAL_MS=86400000;
 export const DISCOVERY_LABELS={google:'Google discovery',maps:'Google Maps reviews',app_store_reviews:'App Store reviews'};
 const hash=x=>createHash('sha256').update(JSON.stringify(x)).digest('hex');
 const iso=x=>new Date(x).toISOString();
@@ -41,7 +41,7 @@ export function discoveryTasks(product,{settings={},historical=false,cutoff,unti
 export function discoveryPlatform(task){return task.kind.startsWith('maps_')?'maps':task.kind==='app_store_reviews'?'app_store_reviews':['google_search','reddit_post','instagram_post','web_page'].includes(task.kind)?'google':null;}
 export function discoveryTaskURL(task){
   const url=new URL('https://scrapebadger.com/v1/'+({google_search:'google/search',maps_search:'google/maps/search',maps_place:'google/maps/place',maps_reviews:'google/maps/reviews',reddit_post:`reddit/posts/${task.postId}`,instagram_post:`instagram/media/${task.shortcode}`,web_page:'web/scrape',app_store_reviews:`app-store/apps/${task.appId}/reviews`}[task.kind]));
-  const params=task.kind==='google_search'?{q:task.query,start:String((task.page-1)*10),hl:'en',filter:'0',nfpr:'1',...(task.historical?{tbs:`cdr:1,cd_min:${iso(task.cutoff).slice(0,10)},cd_max:${iso(task.until).slice(0,10)}`}:{tbs:'qdr:w'})}:task.kind==='maps_search'?{q:task.query}:task.kind==='maps_place'?{data_id:task.dataId}:task.kind==='maps_reviews'?{data_id:task.place.dataId,sort_by:'newestFirst',results:'20',offset:String((task.page-1)*20),...(task.cursor&&!task.cursor.startsWith('offset:')?{next_page_token:task.cursor}:{})}:task.kind==='app_store_reviews'?{country:task.country||'ca',page:String(task.page),sort:'mostRecent'}:{};
+  const params=task.kind==='google_search'?{q:task.query,start:String((task.page-1)*10),hl:'en',filter:'0',nfpr:'1',...(!task.historical?{tbs:'qdr:w'}:{})}:task.kind==='maps_search'?{q:task.query}:task.kind==='maps_place'?{data_id:task.dataId}:task.kind==='maps_reviews'?{data_id:task.place.dataId,sort_by:'newestFirst',results:'20',offset:String((task.page-1)*20),...(task.cursor&&!task.cursor.startsWith('offset:')?{next_page_token:task.cursor}:{})}:task.kind==='app_store_reviews'?{country:task.country||'ca',page:String(task.page),sort:'mostRecent'}:{};
   url.search=new URLSearchParams(params).toString();return url.href;
 }
 export function discoveryReservation(task){return task.kind==='web_page'?6:task.kind==='reddit_post'?8:task.kind==='instagram_post'?105:task.kind==='app_store_reviews'?105:20;}

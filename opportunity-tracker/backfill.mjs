@@ -1,4 +1,4 @@
-import {discoveryTasks,mentionQueries} from './mention-discovery.mjs';
+import {DISCOVERY_VERSION,discoveryTasks,mentionQueries} from './mention-discovery.mjs';
 import {materializeCollectedConversations} from './conversation-pages.mjs';
 import {commentThreadPriority} from './conversation-purpose.mjs';
 import {plannedQueries,compileRedditQuery} from './search-plan.mjs';
@@ -58,7 +58,7 @@ export function createBackfill(data,product,queries,profileKey,now,{settings={}}
   // Starting twice (including a repeated onboarding request) never replays paid work.
   if(s.backfills[product.id] && (s.backfills[product.id].profileKey===profileKey || !data.subscription&&['running','reviewing'].includes(s.backfills[product.id].status)))return structuredClone(s.backfills[product.id]);
   const durable=Boolean(data.subscription),queue=backfillPlan(product,queries,now,{durable,settings});
-  const job={id:randomUUID(),productId:product.id,profileKey,mode:'backfill',trigger:'onboarding',status:queue.length?'running':durable?'unavailable':'complete',...(durable?{retention:'durable',limitWindow:{day:budgetDay(now),requestStart:0,stagedStart:0}}:{}),startedAt:iso(now),from:iso(now-365*DAY),to:iso(now),queue,requests:0,rows:0,staged:0,duplicates:0,filtered:0,unassessed:0,errors:[],threads:{},branches:queue.map(t=>({id:t.branch,platform:t.kind==='x'?'x':t.kind==='reddit_comment_search'?'reddit_comment_search':t.kind.startsWith('maps_')?'maps':t.kind==='app_store_reviews'?'app_store_reviews':t.kind==='google_search'?'google':'reddit',query:t.query,...(t.queryId?{queryId:t.queryId}:{}),...(t.themeId?{themeId:t.themeId}:{}),queryFamily:t.queryFamily||'keyword',from:iso(t.cutoff),to:iso(t.until),pages:0,rows:0,status:'queued'}))};
+  const job={...(settings.extendedDiscoveryEnabled?{coverageVersion:DISCOVERY_VERSION}:{}),id:randomUUID(),productId:product.id,profileKey,mode:'backfill',trigger:'onboarding',status:queue.length?'running':durable?'unavailable':'complete',...(durable?{retention:'durable',limitWindow:{day:budgetDay(now),requestStart:0,stagedStart:0}}:{}),startedAt:iso(now),from:iso(now-365*DAY),to:iso(now),queue,requests:0,rows:0,staged:0,duplicates:0,filtered:0,unassessed:0,errors:[],threads:{},branches:queue.map(t=>({id:t.branch,platform:t.kind==='x'?'x':t.kind==='reddit_comment_search'?'reddit_comment_search':t.kind.startsWith('maps_')?'maps':t.kind==='app_store_reviews'?'app_store_reviews':t.kind==='google_search'?'google':'reddit',query:t.query,...(t.queryId?{queryId:t.queryId}:{}),...(t.themeId?{themeId:t.themeId}:{}),queryFamily:t.queryFamily||'keyword',from:iso(t.cutoff),to:iso(t.until),pages:0,rows:0,status:'queued'}))};
   if(!queue.length)job.finishedAt=iso(now);
   s.backfills[product.id]=job;
   if(durable)s.backfillRuns[job.id]={id:job.id,productId:job.productId,profileKey:job.profileKey,startedAt:job.startedAt,from:job.from,to:job.to};

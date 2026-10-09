@@ -59,7 +59,8 @@ export function extendBackfillCoverage(data,product,settings=collectionSettings(
   const desired=backfillPlan(product,xQueries(product),Date.parse(job.to),{durable:true,settings}).filter(t=>discoveryPlatform(t)||t.kind==='reddit_comment_search');
   let count=0;
   for(const task of desired){
-    const identity=digest([task.kind,task.query||task.appId||'',task.country||'',task.name||'']).slice(0,16),id=`coverage_${identity}`;
+    if(task.kind==='google_search'&&job.queue.some(t=>t.kind==='google_search'&&t.query===task.query))continue;
+    const identity=digest([task.kind,task.query||task.appId||'',task.country||'',task.name||'',...(task.kind==='google_search'?['unrestricted-v3']:[])]).slice(0,16),id=`coverage_${identity}`;
     if(job.branches.some(b=>b.id===id))continue;
     const next={...task,branch:id,cutoff:Date.parse(job.from),until:Date.parse(job.to),historical:true};
     job.queue.push(next);job.branches.push({id,platform:taskPlatform(next),query:next.query||next.appId,queryId:next.queryId,queryFamily:next.queryFamily,from:job.from,to:job.to,pages:0,rows:0,status:'queued'});count++;
