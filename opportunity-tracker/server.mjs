@@ -319,11 +319,15 @@ export function createTrackerApp({ dataDirectory = process.env.TRACKER_DATA_DIR 
       if(!ids.has(i.productId)||!['opportunity','mention','conversation'].includes(i.kind)||!['new','saved','dismissed'].includes(i.status)||typeof i.id!=='string'||!i.id||typeof i.title!=='string'||typeof i.note!=='string'||i.note.length>3000) throw new Error('The backup has invalid matches.');
       const provenance = {};
       for (const key of ['sourceId', 'postId', 'parentId']) if (i[key] != null) {
-        if (typeof i[key] !== 'string' || !(['linkedin-mcp','linkedin-apify'].includes(i.provider) ? /^(?:li_)?\d{10,20}$/.test(i[key]) : /^(?:(?:t[13]_)?[a-z0-9]{1,20}|x_\d{1,30})$/i.test(i[key]))) throw new Error('The backup has invalid source IDs.');
+        if (typeof i[key] !== 'string' || !(['linkedin-mcp','linkedin-apify'].includes(i.provider) ? /^(?:li_)?\d{10,20}$/.test(i[key]) : /^(?:(?:t[13]_)?[a-z0-9]{1,20}|x_\d{1,30}|gm_[a-f0-9]{32}|as_\d{1,30}|web_[a-f0-9]{32}|ig_[A-Za-z0-9_-]{1,64}|igc_\d{1,30}|0x[a-f0-9]+:0x[a-f0-9]+)$/i.test(i[key]))) throw new Error('The backup has invalid source IDs.');
         provenance[key] = i[key];
       }
       if (i.parentId === null) provenance.parentId = null;
-      if (['scrapebadger', 'redlib', 'public-json', 'linkedin-mcp', 'linkedin-apify'].includes(i.provider)) provenance.provider = i.provider;
+      if (i.postId === null) provenance.postId = null;
+      for(const key of ['discoverySource','contentOrigin','sourceLinkKind'])if(typeof i[key]==='string'&&i[key].length<=100)provenance[key]=i[key];
+      if(typeof i.discoveryURL==='string')provenance.discoveryURL=publicUrl(i.discoveryURL).href;
+      if(Number.isFinite(i.rating)&&i.rating>=0&&i.rating<=5)provenance.rating=i.rating;
+      if (['scrapebadger', 'redlib', 'public-json', 'linkedin-mcp', 'linkedin-apify', 'reddit-apify'].includes(i.provider)) provenance.provider = i.provider;
       if (['post', 'comment'].includes(i.type)) provenance.type = i.type;
       if(i.draft!==undefined){if(typeof i.draft!=='string'||i.draft.length>5000)throw new Error('The backup has an invalid draft.');provenance.draft=i.draft;}
       if(i.historical===true)provenance.historical=true;
