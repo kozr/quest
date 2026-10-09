@@ -209,3 +209,19 @@ test('database failures do not expose credentials or provider internals', async 
   adapter.document.get = async () => { throw new Error('private_key=DO_NOT_EXPOSE'); };
   await assert.rejects(adapter.getManifest(), failure => failure.status === 503 && !failure.message.includes('DO_NOT_EXPOSE'));
 });
+
+test('batched Firestore reads preserve the full state and current manifest with fewer round trips',async()=>{
+ const db=new FakeFirestore(),batches=[];db.getAll=async(...refs)=>{batches.push(refs.length);return refs.map(ref=>db.snapshot(ref.path));};
+ const backend=new FirestoreRecordBackend(db),original=state(400);assert.equal(await backend.compareAndSwap(0,original),true);
+ assert.deepEqual((await backend.read()).data,original);assert(batches.some(n=>n>1));assert(batches.every(n=>n<=128));
+ const next=clone(original);next.items[17].note='Keep review';assert.equal(await backend.compareAndSwap(1,next),true);assert.deepEqual((await new FirestoreRecordBackend(db).read()).data,next);
+});
+test('an incomplete or missing batched record fails instead of returning partial state',async()=>{
+ const db=new FakeFirestore();db.getAll=async()=>[];const backend=new FirestoreRecordBackend(db);await backend.compareAndSwap(0,state());await assert.rejects(backend.read(),/batch is incomplete/);
+ db.getAll=async(...refs)=>refs.map(()=>({exists:false}));await assert.rejects(backend.read(),/missing or unsupported/);
+});
+test('REST create conflicts retain immutable byte verification',async()=>{
+ const db=new FakeFirestore(),doc=db.doc.bind(db);db.doc=path=>{const ref=doc(path),create=ref.create;ref.create=async value=>{try{return await create(value);}catch(error){if(error.code===6)error.code=409;throw error;}};return ref;};
+ const first=new FirestoreRecordBackend(db);await first.compareAndSwap(0,state(1));const second=new FirestoreRecordBackend(db);assert.equal(await second.compareAndSwap(1,state(1)),true);
+ const node=[...db.documents.keys()].find(path=>path.includes('/recordNodes/'));const bytes=Buffer.from(db.documents.get(node).bytes);db.documents.get(node).bytes=Buffer.from('corrupt');const adapter=new FirestoreRecordAdapter(db);const id=node.split('/').at(-1);await assert.rejects(adapter.putNode(id,bytes),/collision or corruption/);
+});

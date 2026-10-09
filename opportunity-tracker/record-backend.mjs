@@ -250,14 +250,32 @@ export class FirestoreRecordAdapter {
   constructor(db, workspace = 'personal') {
     if (!db || !/^[a-zA-Z0-9_-]{1,100}$/.test(workspace)) throw new TypeError('A database and safe workspace identifier are required.');
     this.db = db; this.document = db.collection('opportunityTrackers').doc(workspace);
+    this.nodeReads = []; this.nodeReadScheduled = false;
   }
   async getManifest() { const snapshot = await databaseOperation(() => this.document.get()); return snapshot.exists ? snapshot.data() : null; }
   async getNode(id) {
-    const snapshot = await databaseOperation(() => this.document.collection('recordNodes').doc(reference(id)).get());
+    const ref = this.document.collection('recordNodes').doc(reference(id));
+    const snapshot = typeof this.db.getAll === 'function' ? await new Promise((resolve, reject) => {
+      this.nodeReads.push({ref,resolve,reject}); this.scheduleNodeReads();
+    }) : await databaseOperation(() => ref.get());
     if (!snapshot.exists || snapshot.data().version !== RECORD_VERSION) throw error('Stored record is missing or unsupported.');
     const bytes = snapshot.data().bytes;
     if (!Buffer.isBuffer(bytes) && !(bytes instanceof Uint8Array)) throw error('Stored record bytes are invalid.');
     return Buffer.from(bytes);
+  }
+  scheduleNodeReads() {
+    if (this.nodeReadScheduled) return;
+    this.nodeReadScheduled = true;
+    queueMicrotask(async () => {
+      this.nodeReadScheduled = false;
+      const pending = this.nodeReads.splice(0,128);
+      if (this.nodeReads.length) this.scheduleNodeReads();
+      try {
+        const snapshots = await databaseOperation(() => this.db.getAll(...pending.map(row=>row.ref)));
+        if (!Array.isArray(snapshots) || snapshots.length !== pending.length) throw error('Stored record batch is incomplete.');
+        pending.forEach((row,index)=>row.resolve(snapshots[index]));
+      } catch (failure) { pending.forEach(row=>row.reject(failure)); }
+    });
   }
   async putNode(id, bytes) {
     reference(id);
@@ -265,7 +283,7 @@ export class FirestoreRecordAdapter {
     const document = this.document.collection('recordNodes').doc(id);
     try { await document.create({version:RECORD_VERSION, bytes}); return true; }
     catch (failure) {
-      if (![6,'6','already-exists','ALREADY_EXISTS'].includes(failure.code)) throw unavailable();
+      if (![6,'6',409,'409','already-exists','ALREADY_EXISTS'].includes(failure.code)) throw unavailable();
       if (!(await this.getNode(id)).equals(bytes)) throw error('Immutable record collision or corruption.');
       return false;
     }
