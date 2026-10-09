@@ -131,10 +131,10 @@ export function applyDiscoveryPage(data,cycle,task,result,now){
   if(task.kind==='maps_search')for(const place of result.places||[])cycle.queue.push(wrap({kind:'maps_place',dataId:place.data_id}));
   if(task.kind==='maps_place'){
     const place=verifiedPlace(product,result.place,now);
-    if(place&&!cycle.queue.some(t=>t.kind==='maps_reviews'&&t.place.dataId===place.dataId)){(s.reviewPlaces||={})[product.id]=place;cycle.queue.push(wrap({kind:'maps_reviews',place}));}
+    if(place&&!cycle.queue.some(t=>t.kind==='maps_reviews'&&t.place.dataId===place.dataId)){(s.reviewPlaces||={})[product.id]=place;cycle.queue.unshift(wrap({kind:'maps_reviews',place}));}
     else cycle.errors.push('maps_place:business_identity_unconfirmed');
   }
-  if(task.kind==='reddit_post'&&result.rows[0])cycle.queue.push(wrap({kind:'comments',post:result.rows[0],includeClosed:true,discoveredThread:true}));
+  if(task.kind==='reddit_post'&&result.rows[0])cycle.queue.unshift(wrap({kind:'comments',post:result.rows[0],includeClosed:true,discoveredThread:true}));
   if(task.discoverySource||task.kind==='maps_reviews')result.rows=result.rows.map(row=>({...row,...(task.discoverySource?{discoverySource:task.discoverySource||'google',discoveryURL:task.discoveryURL||row.url}:{})}));
   if(task.kind==='maps_reviews'&&result.offsetContinuation)result.cursor=`offset:${task.page*20}`;
   if(task.kind==='maps_reviews'&&Number.isFinite(result.oldest)&&result.oldest<task.cutoff)result.cursor=null;
