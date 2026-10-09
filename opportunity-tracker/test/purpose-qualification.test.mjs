@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {captureEvidence,pendingEvidence,qualificationInputHash,qualificationEvidence,saveConversationReview} from '../conversation-evidence.mjs';
 import {conversationCurrentState} from '../conversation-feed.mjs';
 import {conversationSignals,namedReference,commentThreadPriority} from '../conversation-purpose.mjs';
-import {validateV2Qualification} from '../listening-qualification.mjs';
+import {validateV2Qualification,qualificationInput} from '../listening-qualification.mjs';
 import {searchPlanInput,validateSearchPlan,plannedQueries,compileRedditQuery} from '../search-plan.mjs';
 import {applyBackfillPage} from '../backfill.mjs';
 import {beginCollection,claimCollection,finishCollection,collectionSettings} from '../collection.mjs';
@@ -158,4 +158,14 @@ test('Reddit collection keeps local context mandatory and preserves exact quoted
  assert.equal(data.collection.cycles[p.id].queue[0].query,'subreddit:vancouver AND downtown AND brunch');
  const long='word '.repeat(30).trim();
  assert.throws(()=>validateSearchPlan({...plan(),themes:[{...plan().themes[0],queries:[{id:'long',platform:'reddit',community:'vancouver',query:long}]}]},p),/compiled query/);
+});
+
+
+test('qualification provides the review date separately from an old source date',()=>{
+ const {p,data}=fixture();
+ captureEvidence(data,p,[source('Where can I get lunch this Spring?',{publishedAt:'2026-02-01T12:00:00Z'})],at);
+ const input=qualificationInput(data,p,now);
+ assert.equal(input.asOf,at);
+ assert.equal(input.evidence[0].publishedAt,'2026-02-01T12:00:00.000Z');
+ assert.equal(input.evidence[0].text,'Where can I get lunch this Spring?');
 });
