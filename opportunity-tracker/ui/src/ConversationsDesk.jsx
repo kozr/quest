@@ -7,11 +7,13 @@ import {Skeleton} from '@/components/ui/skeleton';
 import {DropdownMenu,DropdownMenuContent,DropdownMenuLabel,DropdownMenuRadioGroup,DropdownMenuRadioItem,DropdownMenuSeparator,DropdownMenuTrigger} from '@/components/ui/dropdown-menu';
 import {CollectionProgress} from './WorkspaceViews';
 import {date,platform,safeURL,sourceLabel} from './api';
+import {purposeEvidence} from './feed.mjs';
 
-export function ConversationsDesk({title="Conversations",state,filtered,visible,selected,pageIndex,pageSize,onPage,onSelect,mobileDetail,onMobileDetail,detailHeading,query,onQuery,platformFilter,onPlatform,statusFilter,onStatus,products,busy,find,action,updateReview,showPlaceholders,addProduct,renderNotes,renderDraft}) {
+export function ConversationsDesk({title="Conversations",relevance="all",state,filtered,visible,selected,pageIndex,pageSize,onPage,onSelect,mobileDetail,onMobileDetail,detailHeading,query,onQuery,platformFilter,onPlatform,statusFilter,onStatus,products,busy,find,action,updateReview,showPlaceholders,addProduct,renderNotes,renderDraft}) {
  const [queueOpen,setQueueOpen]=useState(false);
  const [mobileTab,setMobileTab]=useState('source');
  const [narrow,setNarrow]=useState(()=>matchMedia('(max-width: 900px)').matches);
+ const evidence=purposeEvidence(selected,relevance);
  const selectedIndex=filtered.findIndex(item=>item.id===selected?.id);
  const queueVisible=narrow?!mobileDetail:queueOpen||!selected;
  useEffect(()=>{
@@ -91,8 +93,8 @@ export function ConversationsDesk({title="Conversations",state,filtered,visible,
       <p className="detail-byline">{selected.author&&<><span>{platform(selected)==='reddit'?'u/':''}{selected.author}</span><span aria-hidden="true">·</span></>}<span>{sourceLabel(selected)}</span><span aria-hidden="true">·</span><span>{date(selected.publishedAt)}</span></p>
       {selected.currentConversationRelevant===false&&<p className="historical-note">This saved conversation needs review against the current business profile.</p>}
       {(selected.historical||selected.publishedAt&&Date.parse(selected.publishedAt)<Date.now()-30*86400000||selected.discussionClosed)&&<p className="historical-note">{selected.discussionClosed?'Archived or locked discussion · replies are closed.':'Earlier conversation · check whether the need is still current.'}</p>}
-      {selected.snippet&&<figure className="source-quote"><figcaption>{(selected.qualification?.intentQuote||selected.qualification?.quote)?'Evidence from the author':`From the ${selected.type==='comment'?'comment':'post'}`}</figcaption><blockquote>“{selected.conversationSignals?.[0]?.quote||selected.qualification?.intentQuote||selected.qualification?.quote||selected.snippet}”</blockquote></figure>}
-      <details className="relevance match-details" key={`match:${selected.id}`}><summary>Match details</summary>{selected.conversationSignals?.length?selected.conversationSignals.map(signal=><p key={signal.purpose}><strong>{PURPOSE_LABELS[signal.purpose]}.</strong> {signal.reason}</p>):<p>{selected.qualification?.whyItFits||selected.reason||'Review this saved source against the current business profile.'}</p>}</details>
+      {selected.snippet&&<figure className="source-quote"><figcaption>{(selected.qualification?.intentQuote||selected.qualification?.quote)?'Evidence from the author':`From the ${selected.type==='comment'?'comment':'post'}`}</figcaption><blockquote>“{evidence.quote}”</blockquote></figure>}
+      <details className="relevance match-details" key={`match:${selected.id}:${relevance}`}><summary>Match details</summary>{evidence.signals.length?evidence.signals.map(signal=><p key={signal.purpose}><strong>{PURPOSE_LABELS[signal.purpose]}.</strong> {signal.reason}</p>):<p>{selected.qualification?.whyItFits||selected.reason||'Review this saved source against the current business profile.'}</p>}</details>
       {selected.context&&<details className="context-detail"><summary>Parent discussion</summary><p>{selected.context}</p></details>}
       {renderNotes(selected)}
      </div>

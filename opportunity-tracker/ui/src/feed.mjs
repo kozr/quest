@@ -9,3 +9,11 @@ export function matchesConversation(item,{view='conversations',status='active',r
   if(relevance==='competitors')return (item.conversationSignals||item.qualification?.purposes)?.some(signal=>signal.purpose==='competitor')||false;
   return true;
 }
+
+export function purposeEvidence(item,relevance='all'){
+  const purpose={mentions:'mention',direct:'potential_customer',feedback:'feedback',competitors:'competitor'}[relevance];
+  const all=item?.conversationSignals??item?.qualification?.purposes??[];
+  const signals=purpose?all.filter(signal=>signal.purpose===purpose):all;
+  const quote=signals.find(signal=>signal.quote)?.quote||(purpose?item?.snippet:item?.qualification?.intentQuote||item?.qualification?.quote||item?.snippet)||'';
+  return {signals,quote};
+}

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {captureEvidence,qualificationInputHash} from '../conversation-evidence.mjs';
 import {syncConversationItems,conversationCurrentState} from '../conversation-feed.mjs';
-import {matchesConversation} from '../ui/src/feed.mjs';
+import {matchesConversation,purposeEvidence} from '../ui/src/feed.mjs';
 import {v2Business,conversations} from './pipeline.fixture.mjs';
 
 function reviewed(){
@@ -79,4 +79,26 @@ test('purpose views use recorded market feedback and explicit competitor evidenc
  assert.equal(matchesConversation({...item,qualification:{relevant:true,category:'promotion'}},{relevance:'feedback'}),false);
  assert.equal(matchesConversation({...item,conversationSignals:[{purpose:'competitor'}]},{relevance:'competitors'}),true);
  assert.equal(matchesConversation(item,{relevance:'competitors'}),false);
+});
+
+
+test('each purpose shows its own author quote on a shared conversation',()=>{
+ const item={snippet:'Full original comment',conversationSignals:[
+  {purpose:'mention',quote:'Wren Cafe in Yaletown!',reason:'Names the cafe'},
+  {purpose:'feedback',quote:'Food and atmosphere were good',reason:'Firsthand experience'},
+  {purpose:'competitor',quote:'I also tried another cafe',reason:'Used an alternative'},
+ ]};
+ const before=structuredClone(item);
+ assert.equal(purposeEvidence(item,'mentions').quote,'Wren Cafe in Yaletown!');
+ assert.equal(purposeEvidence(item,'feedback').quote,'Food and atmosphere were good');
+ assert.equal(purposeEvidence(item,'competitors').quote,'I also tried another cafe');
+ assert.deepEqual(purposeEvidence(item,'feedback').signals,[item.conversationSignals[1]]);
+ assert.equal(purposeEvidence(item,'direct').quote,item.snippet,'Never substitute another purpose quote');
+ assert.deepEqual(item,before,'Shared notes, status and source remain untouched');
+});
+
+test('current purpose signals take precedence over older qualification quotes',()=>{
+ const item={snippet:'Original comment',conversationSignals:[],qualification:{quote:'Old general quote',purposes:[{purpose:'feedback',quote:'Old feedback'}]}};
+ assert.deepEqual(purposeEvidence(item,'feedback'),{signals:[],quote:'Original comment'});
+ assert.equal(purposeEvidence({snippet:'Original comment',qualification:{purposes:[{purpose:'feedback',quote:'Legacy feedback'}]}},'feedback').quote,'Legacy feedback');
 });

@@ -94,7 +94,7 @@ function Dashboard({state,reload,logout,error}){
      <div className="purpose-tabs"><TabsList aria-label={`${purpose.label} views`}><TabsTrigger value="conversations">Conversations</TabsTrigger><TabsTrigger value="patterns">Patterns</TabsTrigger>{purpose.id!=='mentions'&&<TabsTrigger value="explore">Explore</TabsTrigger>}</TabsList></div>
      <TabsContent value={subview} className="purpose-panel">
      {error&&<p className="form-error" role="alert">Refresh failed: {error} <button onClick={()=>reload().catch(e=>toast.error(e.message))}>Try again</button></p>}
-     {isFeed&&<ConversationsDesk key={view} title={purpose.label} state={state} filtered={filtered} visible={visible} selected={selected} pageIndex={pageIndex} pageSize={pageSize}
+     {isFeed&&<ConversationsDesk key={view} title={purpose.label} relevance={purpose.relevance} state={state} filtered={filtered} visible={visible} selected={selected} pageIndex={pageIndex} pageSize={pageSize}
       onPage={index=>{setPage(index);setSelectedId(null);}}
       onSelect={item=>{setSelectedId(item.id);setPage(Math.floor(filtered.findIndex(row=>row.id===item.id)/pageSize));setMobileDetail(true);}}
       mobileDetail={mobileDetail} onMobileDetail={setMobileDetail} detailHeading={heading}
