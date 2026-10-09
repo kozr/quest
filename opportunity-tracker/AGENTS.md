@@ -32,3 +32,10 @@ Read `../AGENTS.md` before continuing dashboard work. This is the canonical dash
 
 - The user explicitly approved removing Products, Listening, Insights and Research as standalone destinations. This supersedes the earlier read-only overlap review.
 - Preserve the collection/analysis APIs and saved results. Patterns must retain their source attribution and counts, and be supported by conversations matching the selected purpose. Explore is a separate web search: Feedback uses problems, Competitors uses alternatives, and Potential customers uses public people/need evidence. Do not present market research as brand-mention monitoring.
+
+
+## Database pagination — October 9, 2026
+
+- Startup and background polls request `/api/state?light=1`; rich tool data loads on demand. Conversation pagination reads a compact filter index and selected immutable row payloads, preserving full source text, review identities, notes and drafts. Exact entity mentions remain separate from keyword matches.
+- Optional derived read views bind to the current primary root and publish in the same manifest CAS. Raw records, writer integrity, queues, receipts, leases and budgets are unchanged. Missing views use the authoritative full reader; mismatched roots or corrupt nodes fail closed. Account workspaces never use the private read views. Normal writes rebuild projections; an initial projection refresh must read live data and preserve the primary root, never import a stale local snapshot.
+- Keep clock-sensitive budget days, monthly periods, schedule and review-lease expiry evaluated at request time. Background polls coalesce pending requests; a post-save manual refresh invalidates the pre-save request. Cloud record reads batch up to 128 and share in-flight immutable reads.

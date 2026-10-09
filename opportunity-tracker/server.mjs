@@ -1,17 +1,18 @@
+import {workspaceReadViews,readWorkspaceSummary,summaryUsage,summaryCollection} from './workspace-read-views.mjs';
 import {projectPurposePatterns} from './purpose-patterns.mjs';
 import {planFor,subscriptionState,assertSubscriptionActive,activeProduct} from './plans.mjs';
 import {scheduleState} from './schedules.mjs';
 import {analysisCycleState,analysisCycleDue} from './analysis-cycles.mjs';
 import {analysisUsageState} from './usage.mjs';
 import {pilotBudgetState} from './pilot-budget.mjs';
-import {pagePrivateConversations} from './conversation-pages.mjs';
+import {pagePrivateConversations,pagePrivateConversationViews} from './conversation-pages.mjs';
 import {FirestoreRecordBackend,LocalRecordBackend} from './record-backend.mjs';
 import {conversationCurrentState} from './conversation-feed.mjs';
 import {stageSnapshot,validateStageRecords} from './pipeline-stages.mjs';
 import {createStageProvider} from './pipeline-provider.mjs';
 import {validateListeningSettings,listeningReady,activeSearchPlan,plannedQueries} from './search-plan.mjs';
 import {evidenceFor,pendingEvidence,pendingEvidenceCount,currentOpportunityFit,currentConversationRelevant,relevantEvidence,validateEvidence,qualificationInputHash,qualificationDue,failedEvidenceCount,currentReviewFailure,reviewEvidenceFor,REVIEW_BATCH_LIMIT,REVIEW_QUEUE_LIMIT,REVIEW_WORKSPACE_LIMIT} from './conversation-evidence.mjs';
-import {discoveryProgress} from './discovery-progress.mjs';
+import {discoveryProgress,discoveryProgressFromSummary} from './discovery-progress.mjs';
 import {collectionSettings,collectionDueIds,collectionPublicState,createCollectionProvider,processCollection,COLLECTION_VERSION} from './collection.mjs';
 import express from 'express';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
@@ -28,7 +29,7 @@ import {createBusinessProfileProvider,businessProfileReservation} from './busine
 import {createRedditAdapter} from './reddit/adapters.mjs';
 import {linkedinConfigured} from './linkedin/adapter.mjs';
 import {dueProducts, startLocalMonitoring, MONITOR_INTERVAL_MS, LINKEDIN_TIME_ZONE, LINKEDIN_HOURS} from './monitor.mjs';
-import {qualificationSettings, qualificationPublicState, qualificationBackup, validateQualificationHistory, createQualificationProvider, processQualification} from './qualification.mjs';
+import {qualificationSettings, qualificationPublicState, budgetDay, qualificationBackup, validateQualificationHistory, createQualificationProvider, processQualification} from './qualification.mjs';
 import {analysisConfiguration, analysisSnapshot, researchProduct, analyzeMatch, productHash, matchHash, validateResearch, validateFit, freshAnalysis, ANALYSIS_DAILY_LIMIT} from './analysis.mjs';
 
 const directory = dirname(fileURLToPath(import.meta.url));
@@ -66,7 +67,7 @@ export function createTrackerApp({ dataDirectory = process.env.TRACKER_DATA_DIR 
   const recordStorage=qualificationEnv.TRACKER_RECORD_STORAGE_ENABLED==='true';
   const db=hosted&&!providedStore?configuredFirestore({projectId:firebaseProjectId,serviceAccountJson:firebaseServiceAccountJson}):null;
   const legacy=providedStore||(hosted?new FirestoreStore(new FirestoreBackend(db,workspace)):new Store(dataDirectory));
-  const store=providedStore||(recordStorage?new FirestoreStore(hosted?new FirestoreRecordBackend(db,workspace,{legacyBackend:legacy.backend}):new LocalRecordBackend(dataDirectory,{legacyBackend:{read:async()=>({revision:0,data:legacy.snapshot()})}})):legacy);
+  const store=providedStore||(recordStorage?new FirestoreStore(hosted?new FirestoreRecordBackend(db,workspace,{legacyBackend:legacy.backend,readViews:workspaceReadViews}):new LocalRecordBackend(dataDirectory,{readViews:workspaceReadViews,legacyBackend:{read:async()=>({revision:0,data:legacy.snapshot()})}})):legacy);
   const app = express();
   const token = randomBytes(24).toString('hex');
   const busy = new Set();
@@ -194,14 +195,35 @@ export function createTrackerApp({ dataDirectory = process.env.TRACKER_DATA_DIR 
     await auth.login(req,res); res.json({ok:true});
   });
   app.post('/api/logout',(_req,res)=>{auth?.logout(res);res.json({ok:true});});
-  app.get('/api/conversations',async(req,res)=>{const snapshot=await store.snapshot();res.json(pagePrivateConversations(snapshot,req.query));});
+  app.get('/api/conversations',async(req,res)=>{
+    const views=await store.backend?.openReadViews?.();
+    const page=views?await pagePrivateConversationViews(views,req.query):null;
+    res.json(page||pagePrivateConversations(await store.snapshot(),req.query));
+  });
   app.get('/api/state',async(req,res)=>{
+    if(req.query.light==='1'){
+      const views=await store.backend?.openReadViews?.(),summary=views?readWorkspaceSummary(await views.get('summary')):null;
+      if(summary){
+        const internal=summary.seed,settings=qualificationSettings(qualificationEnv),qualification=qualificationPublicState(internal,settings).qualification,pilot=pilotBudgetState(internal);
+        qualification.counts=summary.counts;qualification.products=summary.productCounts;
+        res.json({version:internal.version,products:internal.products,items:[],searches:internal.searches||{},research:{},lightweight:true,revision:views.revision,
+          subscription:subscriptionState(internal),entitlements:planFor(internal),usage:{analysis:summaryUsage(summary)},conversationPaging:true,itemPage:{limit:0,total:summary.total},
+          schedules:Object.fromEntries(internal.products.map(p=>[p.id,{keyword:publicSchedule(internal,p.id,'keyword',{manual:true}),long_tail:publicSchedule(internal,p.id,'long_tail',{manual:true}),analysis:publicSchedule(internal,p.id,'analysis',{manual:true,candidatesReady:true}),cycle:summary.cycles[p.id]}])),
+          ...(pilot?{pilotBudget:pilot}:{}),qualification,
+          pipeline:{available:stages.available,actionsEnabled,stages:{},products:summary.pipeline},
+          discovery:Object.fromEntries(internal.products.map(p=>[p.id,discoveryProgressFromSummary(internal,p,summary.discovery[p.id],{settings,available:stages.available})])),
+          analysis:{available:analysis.available,dailyLimit:ANALYSIS_DAILY_LIMIT},businessProfiles:{versions:['v1','v2'],v2Available:businessProfiles.available},
+          token:auth?auth.csrf(req):token,busy:store.activeSearches?Object.keys(internal.leases||{}).filter(id=>internal.leases[id].expiresAt>Date.now()):[...busy],storage:hosted?'cloud':'local',
+          collection:collector.enabled?summaryCollection(summary,budgetDay(Date.now()),Date.now(),collector):null,
+          sources:{x:{available:collector.enabled&&collector.configured},linkedin:{available:linkedinAvailable&&!pilot?.active}},monitoring:{available:monitoringAvailable,intervalMinutes:planFor(internal).intervals.keyword/60000,linkedin:{timeZone:LINKEDIN_TIME_ZONE,hours:LINKEDIN_HOURS}}});return;
+      }
+    }
     const internal = await store.snapshot(),modern=Boolean(internal.subscription);
     const snapshot=modern?{...internal,items:internal.items.slice(0,100)}:internal;
     const planState=modern?{subscription:subscriptionState(internal),entitlements:planFor(internal),usage:{analysis:analysisUsageState(internal)},conversationPaging:true,itemPage:{limit:100,total:internal.items.length},schedules:Object.fromEntries(internal.products.map(p=>[p.id,{keyword:publicSchedule(internal,p.id,'keyword',{manual:true}),long_tail:publicSchedule(internal,p.id,'long_tail',{manual:true}),analysis:publicSchedule(internal,p.id,'analysis',{manual:true,candidatesReady:true}),cycle:analysisCycleState(internal,p.id)}]))}:{};
     const pilot=pilotBudgetState(internal);
     const publicAnalysis=analysisSnapshot(snapshot),v2Products=new Set(snapshot.products.filter(p=>p.listeningVersion==='v2').map(p=>p.id));
-    res.json({...planState,...(pilot?{pilotBudget:pilot}:{}),...qualificationPublicState(snapshot,qualificationSettings(qualificationEnv)),...publicAnalysis,items:publicAnalysis.items.map(item=>({...item,...conversationCurrentState(internal,item)})),pipeline:{available:stages.available,actionsEnabled,stages:stageSnapshot(internal),products:Object.fromEntries(snapshot.products.map(p=>[p.id,{ready:listeningReady(p),purposePatterns:projectPurposePatterns(internal,p),retained:evidenceFor(internal,p).length,batchSize:REVIEW_BATCH_LIMIT,failed:failedEvidenceCount(internal,p),pending:pendingEvidenceCount(internal,p),relevant:relevantEvidence(internal,p).length,conversations:reviewEvidenceFor(internal,p).slice(0,modern?50:Infinity).map(r=>({...r,reviewFailure:currentReviewFailure(internal,p,r)?.reason||null,classificationCurrent:p.listeningVersion==='v2'&&r.qualification?.profileHash===qualificationInputHash(p)}))}]))},discovery:Object.fromEntries(snapshot.products.map(p=>[p.id,discoveryProgress(internal,p,{settings:qualificationSettings(qualificationEnv),available:stages.available})])),analysis:{available:analysis.available,dailyLimit:ANALYSIS_DAILY_LIMIT},businessProfiles:{versions:['v1','v2'],v2Available:businessProfiles.available},token:auth?auth.csrf(req):token,busy:await busyIds(),storage:hosted?'cloud':'local',collection:collector.enabled?collectionPublicState(internal):null,sources:{x:{available:collector.enabled&&collector.configured},linkedin:{available:linkedinAvailable&&!pilot?.active}},monitoring:{available:monitoringAvailable,intervalMinutes:(modern?planFor(internal).intervals.keyword:MONITOR_INTERVAL_MS) / 60000,linkedin:{timeZone:LINKEDIN_TIME_ZONE,hours:LINKEDIN_HOURS}}});
+    res.json({...planState,...(pilot?{pilotBudget:pilot}:{}),...qualificationPublicState(snapshot,qualificationSettings(qualificationEnv)),...publicAnalysis,items:publicAnalysis.items.map(item=>({...item,...conversationCurrentState(internal,item)})),pipeline:{available:stages.available,actionsEnabled,stages:stageSnapshot(internal),products:Object.fromEntries(snapshot.products.map(p=>[p.id,{ready:listeningReady(p),purposePatterns:projectPurposePatterns(internal,p),retained:evidenceFor(internal,p).length,batchSize:REVIEW_BATCH_LIMIT,failed:failedEvidenceCount(internal,p),pending:pendingEvidenceCount(internal,p),relevant:relevantEvidence(internal,p).length,conversations:reviewEvidenceFor(internal,p).slice(0,modern?50:Infinity).map(r=>({...r,reviewFailure:currentReviewFailure(internal,p,r)?.reason||null,classificationCurrent:p.listeningVersion==='v2'&&r.qualification?.profileHash===qualificationInputHash(p)}))}]))},discovery:Object.fromEntries(snapshot.products.map(p=>[p.id,discoveryProgress(internal,p,{settings:qualificationSettings(qualificationEnv),available:stages.available})])),analysis:{available:analysis.available,dailyLimit:ANALYSIS_DAILY_LIMIT},businessProfiles:{versions:['v1','v2'],v2Available:businessProfiles.available},token:auth?auth.csrf(req):token,busy:store.activeSearches?Object.keys(internal.leases||{}).filter(id=>internal.leases[id].expiresAt>Date.now()):[...busy],storage:hosted?'cloud':'local',collection:collector.enabled?collectionPublicState(internal):null,sources:{x:{available:collector.enabled&&collector.configured},linkedin:{available:linkedinAvailable&&!pilot?.active}},monitoring:{available:monitoringAvailable,intervalMinutes:(modern?planFor(internal).intervals.keyword:MONITOR_INTERVAL_MS) / 60000,linkedin:{timeZone:LINKEDIN_TIME_ZONE,hours:LINKEDIN_HOURS}}});
   });
   app.get('/api/monitor', async(_req, res) => {
     const snapshot=await store.snapshot(),settings=qualificationSettings(qualificationEnv);

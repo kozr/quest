@@ -124,11 +124,12 @@ function encode(data, maximum) {
 // Adapter contract: getManifest(), getNode(hash), putNode(hash, Buffer), and
 // compareManifest(expectedRevision, nextManifest). putNode never overwrites.
 export class RecordBackend {
-  constructor(adapter, {legacyBackend, empty = emptyState, maxReadBytes = DEFAULT_LIMIT, maxWriteBytes = maxReadBytes, maxNodes = 1_000_000, concurrency = 16} = {}) {
+  constructor(adapter, {legacyBackend, empty = emptyState, maxReadBytes = DEFAULT_LIMIT, maxWriteBytes = maxReadBytes, maxNodes = 1_000_000, concurrency = 16, readViews} = {}) {
     if (!adapter || !['getManifest','getNode','putNode','compareManifest'].every(name => typeof adapter[name] === 'function')) throw new TypeError('A record storage adapter is required.');
     for (const [name, value] of Object.entries({maxReadBytes,maxWriteBytes,maxNodes,concurrency})) if (!Number.isSafeInteger(value) || value < 1) throw new TypeError(`Invalid ${name}.`);
     this.adapter = adapter; this.legacyBackend = legacyBackend; this.empty = empty;
     this.maxReadBytes = maxReadBytes; this.maxWriteBytes = maxWriteBytes; this.maxNodes = maxNodes; this.io = gate(concurrency);
+    this.readViews = readViews; this.inflight = new Map();
     this.known = new Set();
     // A warm worker rechecks the manifest but reuses verified immutable nodes.
     // Bound this cache so long-lived processes do not retain every old revision.
@@ -148,7 +149,11 @@ export class RecordBackend {
       if (after && own(after, 'format')) return this.read();
       return legacy;
     }
-    const root = manifest(pointer), cache = new Map();
+    const root = manifest(pointer);
+    return {revision:root.revision, data:await this.reader().decode(root.root)};
+  }
+  reader() {
+    const cache = new Map();
     let outputBytes = 0, storedBytes = 0, operations = 0;
     const account = bytes => { outputBytes += bytes; if (outputBytes > this.maxReadBytes) throw error('State exceeds the configured defensive read limit.', 413); };
     const node = id => {
@@ -159,7 +164,10 @@ export class RecordBackend {
         cache.set(id, this.io(async () => {
           let bytes=this.nodeCache.get(id);
           if(bytes){this.nodeCache.delete(id);this.nodeCache.set(id,bytes);}
-          else bytes=await this.adapter.getNode(id);
+          else {
+            if(!this.inflight.has(id))this.inflight.set(id,this.adapter.getNode(id).finally(()=>this.inflight.delete(id)));
+            bytes=await this.inflight.get(id);
+          }
           if (!Buffer.isBuffer(bytes) || bytes.length > MAX_NODE_BYTES || hash(bytes) !== id) throw error('Stored record failed integrity verification.');
           if(!this.nodeCache.has(id)){
             this.nodeCache.set(id,bytes);this.nodeCacheBytes+=bytes.length;
@@ -234,15 +242,58 @@ export class RecordBackend {
       }
       throw error('Invalid record value node.');
     };
-    const data = await decode(root.root);
-    return {revision:root.revision, data};
+    return {decode,node};
+  }
+  // Every request pins one current manifest. A derived view is accepted only
+  // when its immutable descriptor binds it to that exact primary root.
+  async openReadViews() {
+    const pointer=await this.adapter.getManifest();
+    if(!pointer?.readViews)return null;
+    const current=manifest(pointer),reader=this.reader(),descriptor=await reader.node(reference(current.readViews));
+    if(descriptor.t!=='view-root'||descriptor.schema!==1||descriptor.primaryRoot!==current.root||!object(descriptor.buckets))throw error('Read view does not match the current storage root.');
+    return {revision:current.revision,get:async name=>{
+      if(typeof name!=='string')throw error('Invalid read view name.');
+      const bucketRef=descriptor.buckets[hash(jsonBytes(name)).slice(0,2)];
+      if(!bucketRef)return null;
+      const bucket=await reader.node(reference(bucketRef));
+      if(bucket.t!=='view-map'||!object(bucket.entries))throw error('Invalid read view index.');
+      return own(bucket.entries,name)?reader.decode(reference(bucket.entries[name])):null;
+    }};
+  }
+  async refreshReadViews() {
+    if(!this.readViews)return false;
+    const current=await this.read();
+    return this.compareAndSwap(current.revision,current.data);
   }
   async compareAndSwap(expectedRevision, data) {
     revision(expectedRevision);
     const {root, nodes} = encode(data, this.maxWriteBytes);
+    let viewsRoot;this.readViewsFailed=false;
+    // Optional projections must never prevent a durable provider receipt or
+    // human edit from being saved. A failed build drops the views, causing the
+    // authoritative reader to be used until a normal write rebuilds them.
+    if(this.readViews)try {
+      const views=await this.readViews(data),viewNodes=new Map();
+      if(views){
+        const buckets=new Map();
+        for(const [name,value] of Object.entries(views)){
+          const encoded=encode(value,this.maxWriteBytes);
+          for(const [id,bytes] of encoded.nodes)viewNodes.set(id,bytes);
+          const prefix=hash(jsonBytes(name)).slice(0,2);
+          if(!buckets.has(prefix))buckets.set(prefix,{});
+          buckets.get(prefix)[name]=encoded.root;
+        }
+        const put=value=>{const bytes=jsonBytes({v:RECORD_VERSION,...value});if(bytes.length>MAX_NODE_BYTES)throw error('Read view exceeds the storage envelope.',413);const id=hash(bytes);viewNodes.set(id,bytes);return id;};
+        const refs=Object.fromEntries([...buckets].map(([prefix,entries])=>[prefix,put({t:'view-map',entries})]));
+        const proposed=put({t:'view-root',schema:1,primaryRoot:root,buckets:refs});
+        if(new Set([...nodes.keys(),...viewNodes.keys()]).size>this.maxNodes)throw error('Read view exceeds the configured node limit.',413);
+        for(const [id,bytes] of viewNodes)nodes.set(id,bytes);
+        viewsRoot=proposed;
+      }
+    } catch {this.readViewsFailed=true;}
     if (nodes.size > this.maxNodes) throw error('State exceeds the configured defensive node limit.', 413);
     await Promise.all([...nodes].filter(([id]) => !this.known.has(id)).map(([id, bytes]) => this.io(async () => { await this.adapter.putNode(id, bytes); this.known.add(id); })));
-    return this.adapter.compareManifest(expectedRevision, {format:RECORD_FORMAT, version:RECORD_VERSION, revision:expectedRevision + 1, root});
+    return this.adapter.compareManifest(expectedRevision, {format:RECORD_FORMAT, version:RECORD_VERSION, revision:expectedRevision + 1, root,...(viewsRoot?{readViews:viewsRoot}:{})});
   }
 }
 
@@ -387,7 +438,7 @@ export class LocalRecordAdapter {
 }
 
 export class FirestoreRecordBackend extends RecordBackend {
-  constructor(db, workspace = 'personal', options = {}) { super(new FirestoreRecordAdapter(db, workspace), options); }
+  constructor(db, workspace = 'personal', options = {}) { super(new FirestoreRecordAdapter(db, workspace), {concurrency:128,...options}); }
 }
 export class LocalRecordBackend extends RecordBackend {
   constructor(directory, options = {}) {

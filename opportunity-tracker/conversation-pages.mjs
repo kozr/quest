@@ -122,3 +122,50 @@ export function pageConversationEvidence(data,principal,options={}){return page(
 
 // Use only behind the existing private tracker authentication boundary.
 export function pagePrivateConversations(data,options={}){if(data.workspace)throw Object.assign(new Error('Use the workspace-scoped conversation API.'),{status:403,code:'workspace_scope_required'});return page(data,null,options,options.relevance==='collected',true);}
+
+// Public row payloads are stored separately from their compact filter index.
+// The index contains no source bodies, drafts, notes or private provider data.
+export function privateConversationReadViews(data){
+  if(data.workspace)return null;
+  const products=data.products||[],byProduct=new Map(products.map(p=>[p.id,p])),evidence=evidenceIndex(data,products),items=new Map(),views={},index=[],search={};
+  for(const item of data.items||[])if(byProduct.has(item.productId)&&item.url)items.set(key(item.productId,item),item);
+  const entries=[...items].map(([identity,item])=>({product:byProduct.get(item.productId),item,row:evidence.get(identity)?.row}));
+  for(const [identity,entry] of evidence)if(!items.has(identity))entries.push(entry);
+  entries.sort((a,b)=>{const stamp=e=>Date.parse(e.row?.publishedAt||e.item?.publishedAt||e.row?.collectedAt||e.item?.foundAt)||0;return stamp(b)-stamp(a)||String(a.item?.id||a.row.id).localeCompare(String(b.item?.id||b.row.id))||a.product.id.localeCompare(b.product.id);});
+  for(const entry of entries){
+    const {product,item,row}=entry,source=row||item,computed=state(data,product,item,row,qualificationInputHash(product));entry.computed=computed;
+    const name=`conversation:${key(product.id,source)}`;
+    const purposes=['mention','potential_customer','feedback','competitor'].filter(purpose=>purpose==='mention'?Boolean(computed.entityMention):computed.conversationSignals?computed.conversationSignals.some(s=>s.purpose===purpose):purpose==='potential_customer'?item?.kind==='opportunity'&&item.qualification?.directFit!==false:item?.qualification?.purposes?.some(s=>s.purpose===purpose));
+    index.push({name,productId:product.id,platform:platform(source),status:item?.status||'new',analysisStatus:computed.analysisStatus,regular:Boolean(item),relevant:computed.currentConversationRelevant!==false,purposes,kind:item?.kind||'conversation',current:computed.current});
+    search[name]=[source.title,source.text??source.snippet,source.context,source.author,source.source,source.community,item?.reason].filter(v=>typeof v==='string').map(v=>v.toLowerCase());
+    views[name]=JSON.stringify(project(data,entry,false));
+  }
+  // Serializing the compact arrays avoids turning each scalar into a database
+  // node. The immutable codec still checks their hashes and byte limits.
+  views['conversation-index']=JSON.stringify(index);
+  views['conversation-search']=JSON.stringify(search);
+  return views;
+}
+export async function pagePrivateConversationViews(reader,options={}){
+  const input=filters(options),collected=options.relevance==='collected';
+  const raw=await reader.get('conversation-index');if(raw===null)return null;
+  const entries=JSON.parse(raw),search=input.query?JSON.parse(await reader.get('conversation-search')):null;
+  const matching=entries.filter(e=>{
+    if(input.productId&&e.productId!==input.productId||!collected&&!e.regular||input.platform!=='all'&&e.platform!==input.platform)return false;
+    if(['awaiting_analysis','analysis_failed','analyzed'].includes(input.status)){if(e.analysisStatus!==input.status)return false;}
+    else if(input.status==='active'?e.status==='dismissed':input.status!=='all'&&e.status!==input.status)return false;
+    const mention=input.purpose==='mention'&&e.purposes.includes('mention');
+    if(input.purpose==='mention'&&!mention)return false;
+    if(!collected&&!mention&&input.status!=='dismissed'&&!e.relevant)return false;
+    if(input.purpose&&!e.purposes.includes(input.purpose))return false;
+    return !input.query||search[e.name]?.some(v=>v.includes(input.query));
+  });
+  const selected=matching.slice(input.offset,input.offset+input.limit),items=await Promise.all(selected.map(async e=>{
+    const raw=await reader.get(e.name),row=raw===null?null:JSON.parse(raw);if(!row)throw Object.assign(new Error('Conversation read view is incomplete.'),{status:503});
+    row.kind=collected&&!e.current?'conversation':e.kind;
+    if(row.analysis&&!freshAnalysis(row.analysis))delete row.analysis;
+    return row;
+  }));
+  const hasMore=input.offset+items.length<matching.length;
+  return {items,total:matching.length,offset:input.offset,limit:input.limit,hasMore,nextOffset:hasMore?input.offset+items.length:null};
+}

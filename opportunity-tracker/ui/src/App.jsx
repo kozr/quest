@@ -1,3 +1,4 @@
+import {useWorkspaceDetails} from './useWorkspaceDetails';
 import {createRequestGate} from './request-gate.mjs';
 import {useConversationPage} from './useConversationPage';
 import {matchesConversation} from './feed.mjs';
@@ -30,7 +31,7 @@ const route=(enabled=loadPurposes())=>resolveWorkspaceRoute(location.hash,enable
 export function App(){
  const [state,setState]=useState(null),[auth,setAuth]=useState(null),[error,setError]=useState(''),stateRequests=useRef(null),clientRefreshEpoch=useRef(0);
  stateRequests.current ||= createRequestGate();
- const reload=useCallback(({coalesce=false}={})=>{if(!coalesce){stateRequests.current.cancel();clientRefreshEpoch.current++;}const epoch=clientRefreshEpoch.current;return stateRequests.current.run('state',signal=>api('/state',{signal}),next=>{setToken(next.token);setState({...next,_clientRefreshEpoch:epoch});setError('');});},[]);
+ const reload=useCallback(({coalesce=false}={})=>{if(!coalesce){stateRequests.current.cancel();clientRefreshEpoch.current++;}const epoch=clientRefreshEpoch.current;return stateRequests.current.run('state',signal=>api('/state?light=1',{signal}),next=>{setToken(next.token);setState({...next,_clientRefreshEpoch:epoch});setError('');});},[]);
  const signIn=useCallback(async()=>{await reload();setAuth(null);},[reload]);
  const boot=useCallback(async()=>{setError('');try{const a=await api('/auth');if(a.authenticated)await signIn();else setAuth(a);}catch(e){setError(e.message);}},[signIn]);
  useEffect(()=>{boot();const expired=()=>{stateRequests.current.cancel();setState(null);setToken('');boot();};window.addEventListener('tracker:unauthorized',expired);return()=>{window.removeEventListener('tracker:unauthorized',expired);stateRequests.current.cancel();};},[boot]);
@@ -41,9 +42,11 @@ export function App(){
  return <Dashboard state={state} reload={reload} logout={logout} error={error}/>;
 }
 
-function Dashboard({state,reload,logout,error}){
+function Dashboard({state:summary,reload,logout,error}){
  const [path,setPath]=useState(()=>route()),[query,setQuery]=useState(''),[productFilter,setProductFilter]=useState('all'),[platformFilter,setPlatformFilter]=useState('all'),[statusFilter,setStatusFilter]=useState('active'),[selectedId,setSelectedId]=useState(null),[page,setPage]=useState(0),[pageSelection,setPageSelection]=useState('first'),[mobileDetail,setMobileDetail]=useState(false),[editing,setEditing]=useState(null),[formOpen,setFormOpen]=useState(false),[busy,setBusy]=useState('');
  const [view,subview='conversations']=path.split('/');
+ const needsDetails=['actions','replies','content'].includes(view)||purposes.some(p=>p.id===view)&&subview!=='conversations'||view==='settings'&&subview==='monitoring';
+ const details=useWorkspaceDetails(summary,needsDetails),state=details.state;
  const [draftEdits,setDraftEdits]=useState({}),[noteEdits,setNoteEdits]=useState({}),[pipelineEdits,setPipelineEdits]=useState({});
  const setBuffer=(setter,id,value)=>setter(old=>{const next={...old};if(value===undefined)delete next[id];else next[id]=value;return next;});
  const unsaved=Object.keys(draftEdits).length+Object.keys(noteEdits).length+Object.keys(pipelineEdits).length>0;
@@ -110,15 +113,17 @@ function Dashboard({state,reload,logout,error}){
       products={selectedProducts} busy={busy} find={find} action={action} updateReview={updateReview} showPlaceholders={showPlaceholders} addProduct={addProduct}
       renderNotes={item=><Notes key={item.id} item={item} patch={patch} buffered={noteEdits[item.id]} setBuffered={value=>setBuffer(setNoteEdits,item.id,value)}/>}
       renderDraft={item=><Draft key={item.id} item={item} paneLayout patch={patch} state={state} busy={busy} buffered={draftEdits[item.id]} setBuffered={value=>setBuffer(setDraftEdits,item.id,value)} analyze={()=>action('analysis',()=>api(`/items/${item.id}/analysis`,{method:'POST',body:{refresh:Boolean(item.analysis)}}),'Reply suggestions saved')}/>}/>}
-     {!isFeed&&<div className="purpose-analysis-scroll"><PurposeAnalysis state={state} purpose={purpose} mode={subview} productId={productId} action={action} busy={busy} onAdd={addProduct} onEdit={editProduct}/></div>}
+     {!isFeed&&<div className="purpose-analysis-scroll">{details.loading?<p role="status">Loading this view…</p>:details.error?<p role="alert" className="form-error">{details.error} <button onClick={()=>reload()}>Try again</button></p>:<PurposeAnalysis state={state} purpose={purpose} mode={subview} productId={productId} action={action} busy={busy} onAdd={addProduct} onEdit={editProduct}/>}</div>}
      </TabsContent>
     </Tabs>}
     {!isPurpose&&<>
     <div className="workspace-page">
     <PageHeading title={currentLabel} description={{actions:'Turn conversation patterns into useful contributions.',replies:'Prepare and review replies before sharing them.',content:'Create videos from templates with captions.',settings:subview==='monitoring'?'Choose where and how to find conversations.':'Manage your workspace, preferences and allowances.'}[view]}/>
     {error&&<p className="form-error" role="alert">Refresh failed: {error} <button onClick={()=>reload().catch(e=>toast.error(e.message))}>Try again</button></p>}
-    {['actions','replies','content'].includes(view)&&<PipelineWorkspace state={state} view={view} productId={productId} action={action} busy={busy} buffers={pipelineEdits} setBuffer={(id,value)=>setBuffer(setPipelineEdits,id,value)} onAdd={addProduct} onEdit={editProduct}/>}
-    {view==='settings'&&(subview==='monitoring'?<><Button variant="ghost" asChild className="monitoring-back"><a href="#settings">Back to Settings</a></Button><PipelineWorkspace state={state} view="listening" productId={productId} action={action} busy={busy} buffers={pipelineEdits} setBuffer={(id,value)=>setBuffer(setPipelineEdits,id,value)} onAdd={addProduct} onEdit={editProduct}/></>:<Settings onPurposes={()=>setPurposesOpen(true)} state={state} logout={async()=>{if(unsaved&&!confirm('Sign out and discard unsaved drafts and notes?'))return;await logout();}} reload={reload} action={action} busy={busy}/>)}
+    {needsDetails&&details.loading&&<p role="status">Loading this view…</p>}
+    {needsDetails&&details.error&&<p role="alert" className="form-error">{details.error} <button onClick={()=>reload()}>Try again</button></p>}
+    {!details.loading&&!details.error&&['actions','replies','content'].includes(view)&&<PipelineWorkspace state={state} view={view} productId={productId} action={action} busy={busy} buffers={pipelineEdits} setBuffer={(id,value)=>setBuffer(setPipelineEdits,id,value)} onAdd={addProduct} onEdit={editProduct}/>}
+    {view==='settings'&&(!details.loading&&!details.error)&&(subview==='monitoring'?<><Button variant="ghost" asChild className="monitoring-back"><a href="#settings">Back to Settings</a></Button><PipelineWorkspace state={state} view="listening" productId={productId} action={action} busy={busy} buffers={pipelineEdits} setBuffer={(id,value)=>setBuffer(setPipelineEdits,id,value)} onAdd={addProduct} onEdit={editProduct}/></>:<Settings onPurposes={()=>setPurposesOpen(true)} state={state} logout={async()=>{if(unsaved&&!confirm('Sign out and discard unsaved drafts and notes?'))return;await logout();}} reload={reload} action={action} busy={busy}/>)}
     </div>
     </>}
    </main>
