@@ -10,7 +10,7 @@ Read `../AGENTS.md` before continuing dashboard work. This is the canonical dash
 
 ## Header hierarchy — October 8, 2026
 
-- The header breadcrumb reads **[selected app] / [sidebar group] / [current tab]**, for example **Blind Box Tracker / HearWhispers / Potential customers**. Use ActOnWhispers for its tabs, and All products when that context is selected. Keep the app label synchronized with the product switcher.
+- The header breadcrumb reads **[selected app] / [sidebar group] / [current tab]**, for example **Blind Box Tracker / HearWhispers / Potential customers**. Use ActOnWhispers for its tabs. Always select one accessible product; never show All products. Keep the app label synchronized with the product switcher.
 - Keep the header compact: 56px high, 24px desktop side padding, and 8px gaps between controls and breadcrumb segments. Use 16px side padding and 6px breadcrumb gaps on phones.
 
 ## Sidebar placement — October 8, 2026
@@ -92,3 +92,11 @@ Read `../AGENTS.md` before continuing dashboard work. This is the canonical dash
 - Pages, state and Patterns share the keyword rule. Optional pattern generation can use unreviewed keyword evidence with source/profile version checks. Private read-view indexes/summaries carry keywords-direct-v1; older AI-gated views fall back to authoritative state until a normal writer refreshes them. Preserve the record backend and current manifest; do not replay collection/activation or import an old snapshot.
 - User explicitly requested **“ok fix, and push”**. The scoped change was reconciled with main c8b04207; existing main layout, Firebase runtime and videos remain preserved. Main-based release checks: **546 passed, zero failures, 12 existing emulator skips**; frontend build passed. Disposable browser verified three keyword rows (unreviewed, prior rejected, prior failed) with Keyword match labels and one long-tail pending; HTML/assets matched, no browser errors. Built index-BwT8tI_1.js and index-BD8qs6XY.css are included.
 - This is a Git push, with no Firebase deploy, production data/configuration/token action, paid provider call or budget/queue reset. Production Firebase remains a separate release step. Canonical unpublished work, public assets and shared preview 50740 were preserved. Evidence lives in the original workspace at implementation/hearwhispers-keyword-direct-2026-10-09/push/.
+
+
+## Mentions source board — October 10, 2026
+
+- The user selected the first source-column board for Mentions, with original-text cards and a reading drawer. Other purposes retain the existing Review Desk, navigation and Patterns/Explore. The drawer omits Match details at the user's request; preserve source/context, notes, drafts and shared review actions.
+- Every view selects one product, persisted per workspace. Normalize old aggregate/invalid preferences to the first accessible product. Sidebar, phone picker, breadcrumb, counts, cards and drawer share that scope. Product changes reset filters/pages and close the drawer; unsaved note/draft buffers remain attached to source IDs.
+- Source lanes use the existing conversations endpoint with bounded eight-row pages and endpoint totals. Previous/next reading crosses pages and sources. Preserve keyword visibility without AI filtering, original author attribution, source identity and existing permission/version behavior.
+- Release only this scoped UI, its tests and referenced build from fresh main. Firebase Hosting site hearwhispers-dashboard in the-app-quest serves it at https://hearwhispers-dashboard.web.app/. Preserve the deployed API/private worker, record storage, queues, budgets, provider settings, secrets and unrelated services.

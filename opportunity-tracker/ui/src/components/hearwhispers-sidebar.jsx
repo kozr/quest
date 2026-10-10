@@ -7,10 +7,10 @@ import { BrandIcon } from "@/components/brand-icon";
 import {defaultPurposes,purposes,loadActivePurpose} from "@/purposes.mjs";
 const purposeIcons={mentions:AtSign,opportunities:Users,feedback:MessagesSquare,competitors:ScanLine};
 
-export function AppSidebar({ view, navigate, products, productId, allowAllProducts, onProduct, onAdd, onEdit, storage, enabledPurposes=defaultPurposes, onPurposes }) {
+export function AppSidebar({ view, navigate, products, productId, onProduct, onAdd, onEdit, storage, enabledPurposes=defaultPurposes, onPurposes }) {
   const { isMobile, setOpenMobile } = useSidebar();
   const selectedProduct = products.find(product => product.id === productId);
-  const productName = selectedProduct?.name || (products.length ? "All products" : "Choose a product");
+  const productName = selectedProduct?.name || "Choose a product";
   function go(next) { navigate(next); setOpenMobile(false); }
   function item(id, label, Icon) {
     const active=view===id;
@@ -30,7 +30,6 @@ export function AppSidebar({ view, navigate, products, productId, allowAllProduc
           <DropdownMenuContent align="start" side={isMobile ? "bottom" : "right"} sideOffset={4} className="min-w-56 max-w-[calc(100vw-2rem)]">
             <DropdownMenuLabel>Products</DropdownMenuLabel>
             <DropdownMenuRadioGroup value={productId} onValueChange={id => {onProduct(id); setOpenMobile(false);}}>
-              {allowAllProducts && products.length > 0 && <DropdownMenuRadioItem value="all">All products</DropdownMenuRadioItem>}
               {products.map(product => <DropdownMenuRadioItem key={product.id} value={product.id}>{product.name}</DropdownMenuRadioItem>)}
             </DropdownMenuRadioGroup>
             <DropdownMenuSeparator />

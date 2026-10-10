@@ -5,6 +5,8 @@ import {matchesConversation} from './feed.mjs';
 import {feedProgress} from './progress.mjs';
 import {PipelineWorkspace} from './PipelineWorkspace';
 import {ConversationsDesk} from './ConversationsDesk';
+import {MentionsBoard} from './MentionsBoard';
+import {loadProductSelection,saveProductSelection,selectedProductId} from './product-selection.mjs';
 import {PurposePicker} from '@/components/purpose-picker';
 import {loadActivePurpose,loadPurposes,purposes,saveActivePurpose,savePurposes} from './purposes.mjs';
 import {useCallback,useEffect,useMemo,useRef,useState} from 'react';
@@ -43,7 +45,7 @@ export function App(){
 }
 
 function Dashboard({state:summary,reload,logout,error}){
- const [path,setPath]=useState(()=>route()),[query,setQuery]=useState(''),[productFilter,setProductFilter]=useState('all'),[platformFilter,setPlatformFilter]=useState('all'),[statusFilter,setStatusFilter]=useState('active'),[selectedId,setSelectedId]=useState(null),[page,setPage]=useState(0),[pageSelection,setPageSelection]=useState('first'),[mobileDetail,setMobileDetail]=useState(false),[editing,setEditing]=useState(null),[formOpen,setFormOpen]=useState(false),[busy,setBusy]=useState('');
+ const [path,setPath]=useState(()=>route()),[query,setQuery]=useState(''),[productFilter,setProductFilter]=useState(()=>loadProductSelection(summary.products,summary.account?.id||'private')),[platformFilter,setPlatformFilter]=useState('all'),[statusFilter,setStatusFilter]=useState('active'),[selectedId,setSelectedId]=useState(null),[page,setPage]=useState(0),[pageSelection,setPageSelection]=useState('first'),[mobileDetail,setMobileDetail]=useState(false),[editing,setEditing]=useState(null),[formOpen,setFormOpen]=useState(false),[busy,setBusy]=useState('');
  const [view,subview='conversations']=path.split('/');
  const needsDetails=['actions','replies','content'].includes(view)||purposes.some(p=>p.id===view)&&subview!=='conversations'||view==='settings'&&subview==='monitoring';
  const details=useWorkspaceDetails(summary,needsDetails),state=details.state;
@@ -54,20 +56,20 @@ function Dashboard({state:summary,reload,logout,error}){
  const [enabledPurposes,setEnabledPurposes]=useState(loadPurposes),[purposesOpen,setPurposesOpen]=useState(false);
  const purpose=purposes.find(purpose=>purpose.id===view);
  const heading=useRef(null);const isPurpose=Boolean(purpose),isFeed=isPurpose&&subview==='conversations';
- const singleProduct=['actions','replies','content'].includes(view)||isPurpose&&!isFeed||view==='settings'&&subview==='monitoring';
- const productId=state.products.some(p=>p.id===productFilter)?productFilter:singleProduct?(state.products[0]?.id||'all'):'all';
- const productName=state.products.find(p=>p.id===productId)?.name||(state.products.length?'All products':'Choose a product');
+ const isMentionsBoard=isFeed&&purpose.id==='mentions',FeedWorkspace=isMentionsBoard?MentionsBoard:ConversationsDesk;
+ const productId=selectedProductId(state.products,productFilter);
+ const productName=state.products.find(p=>p.id===productId)?.name||'Choose a product';
  const section=['actions','replies','content'].includes(view)?'ActOnWhispers':'HearWhispers';
  const currentLabel=view==='settings'&&subview==='monitoring'?'Monitoring settings':views[view];
  useEffect(()=>{const change=()=>{if(location.hash==='#main-content')return;const next=route(enabledPurposes);if(location.hash!==`#${next}`)history.replaceState(null,'',`#${next}`);setPath(next);setMobileDetail(false);};window.addEventListener('hashchange',change);return()=>window.removeEventListener('hashchange',change);},[enabledPurposes]);
  useEffect(()=>{document.title=`${currentLabel}${isPurpose&&!isFeed?` · ${subview==='patterns'?'Patterns':'Explore'}`:''} · ${section}`;},[path,currentLabel,section]);
  useEffect(()=>{if(purpose)saveActivePurpose(view);if(location.hash!=='#main-content'&&location.hash!==`#${path}`)history.replaceState(null,'',`#${path}`);},[path]);
  useEffect(()=>{setPage(0);setPageSelection('first');setMobileDetail(false);},[query,productFilter,platformFilter,statusFilter,path]);
- useEffect(()=>{if(productFilter!==productId)setProductFilter(productId);},[productFilter,productId]);
+ useEffect(()=>{if(productFilter!==productId)setProductFilter(productId);saveProductSelection(productId,state.account?.id||'private');},[productFilter,productId,state.account?.id]);
  useEffect(()=>{if(!isFeed&&mobileDetail&&matchMedia('(max-width: 900px)').matches)heading.current?.focus();},[mobileDetail,selectedId,isFeed]);
- const localFiltered=useMemo(()=>state.items.filter(i=>(productFilter==='all'||i.productId===productFilter)&&(platformFilter==='all'||platform(i)===platformFilter)&&matchesConversation(i,{status:statusFilter,relevance:purpose?.relevance})&&(!query||`${i.title} ${i.snippet} ${i.reason} ${sourceLabel(i)}`.toLowerCase().includes(query.toLowerCase()))).sort((a,b)=>(Date.parse(b.publishedAt||b.foundAt)||0)-(Date.parse(a.publishedAt||a.foundAt)||0)),[state.items,productFilter,platformFilter,statusFilter,query,purpose]);
+ const localFiltered=useMemo(()=>state.items.filter(i=>i.productId===productId&&(platformFilter==='all'||platform(i)===platformFilter)&&matchesConversation(i,{status:statusFilter,relevance:purpose?.relevance})&&(!query||`${i.title} ${i.snippet} ${i.reason} ${sourceLabel(i)}`.toLowerCase().includes(query.toLowerCase()))).sort((a,b)=>(Date.parse(b.publishedAt||b.foundAt)||0)-(Date.parse(a.publishedAt||a.foundAt)||0)),[state.items,productId,platformFilter,statusFilter,query,purpose]);
  const pageSize=5,paged=Boolean(state.conversationPaging&&isFeed);
- const remote=useConversationPage(state,{enabled:paged,productId:productFilter,query,platform:platformFilter,status:statusFilter,relevance:purpose?.relevance,page,limit:pageSize});
+ const remote=useConversationPage(state,{enabled:paged&&!isMentionsBoard,productId,query,platform:platformFilter,status:statusFilter,relevance:purpose?.relevance,page,limit:pageSize});
  const filtered=paged?remote.items:localFiltered,total=paged?remote.total:filtered.length;
  const pageIndex=paged?page:Math.min(page,Math.max(0,Math.ceil(total/pageSize)-1)),visible=paged?filtered:filtered.slice(pageIndex*pageSize,(pageIndex+1)*pageSize),selected=filtered.find(i=>i.id===selectedId)||visible[pageSelection==='last'?visible.length-1:0];
  useEffect(()=>{if(paged&&!remote.loading&&page>Math.max(0,Math.ceil(total/pageSize)-1))setPage(Math.max(0,Math.ceil(total/pageSize)-1));},[paged,remote.loading,page,total]);
@@ -75,22 +77,22 @@ function Dashboard({state:summary,reload,logout,error}){
  function navigate(next,enabled=enabledPurposes){const resolved=resolveWorkspaceRoute(next,enabled,loadActivePurpose(enabled));location.hash=resolved;setPath(resolved);setMobileDetail(false);}
  function addProduct(){setEditing(null);setFormOpen(true);}
  function editProduct(product){setEditing(product);setFormOpen(true);}
- async function action(key,operation,success){if(busy)return;setBusy(key);try{await operation();await reload();if(success)toast.success(success);}catch(e){toast.error(e.message);}finally{setBusy('');}}
+ async function action(key,operation,success){if(busy)return;setBusy(key);try{const result=await operation();await reload();if(success)toast.success(success);return result;}catch(e){toast.error(e.message);}finally{setBusy('');}}
  async function patch(item,update){const result=await api(`/items/${item.id}`,{method:'PATCH',body:update});await reload();return result.item;}
- function updateReview(item,status){action('review',()=>patch(item,{status}),status==='saved'?'Conversation saved':status==='dismissed'?'Conversation dismissed':'Conversation restored');}
- const selectedProducts=state.products.filter(p=>productFilter==='all'||p.id===productFilter);
+ function updateReview(item,status){return action('review',()=>patch(item,{status}),status==='saved'?'Conversation saved':status==='dismissed'?'Conversation dismissed':'Conversation restored');}
+ const selectedProducts=state.products.filter(p=>p.id===productId);
  const find=()=>action('collection',async()=>{for(const p of selectedProducts)await api(`/products/${p.id}/search`,{method:'POST',body:{}});},'Finding conversations. Results will appear here.');
  const progress=feedProgress(state,selectedProducts);
  const showPlaceholders=isFeed&&progress.phase==='finding'&&!filtered.length&&!query&&platformFilter==='all'&&statusFilter==='active';
  return <SidebarProvider className={`review-desk ${isPurpose?'conversations-layout':''}`} style={{'--sidebar-width':'15rem'}}>
   <a className="skip-link" href="#main-content">Skip to content</a>
-  <AppSidebar view={view} navigate={navigate} products={state.products} productId={productId} allowAllProducts={!singleProduct} storage={state.storage} enabledPurposes={enabledPurposes} onPurposes={()=>setPurposesOpen(true)} onAdd={addProduct} onEdit={editProduct} onProduct={id=>{setProductFilter(id);setStatusFilter('active');setQuery('');setMobileDetail(false);}}/>
+  <AppSidebar view={view} navigate={navigate} products={state.products} productId={productId} storage={state.storage} enabledPurposes={enabledPurposes} onPurposes={()=>setPurposesOpen(true)} onAdd={addProduct} onEdit={editProduct} onProduct={id=>{setProductFilter(id);setStatusFilter('active');setPlatformFilter('all');setQuery('');setMobileDetail(false);}}/>
   <SidebarInset className="min-w-0">
    <header className="workspace-header">
     <SidebarTrigger/><Separator orientation="vertical" className="data-[orientation=vertical]:h-4"/>
     <Breadcrumb className="workspace-breadcrumb">
      <BreadcrumbList>
-      <BreadcrumbItem><span className="truncate" title={productName}>{productName}</span></BreadcrumbItem>
+      <BreadcrumbItem><span className="truncate workspace-product-label" title={productName}>{productName}</span><select className="workspace-product-select" aria-label="Selected product" value={productId} disabled={!state.products.length} onChange={event=>{setProductFilter(event.target.value);setStatusFilter('active');setPlatformFilter('all');setQuery('');setMobileDetail(false);}}>{state.products.length?state.products.map(product=><option key={product.id} value={product.id}>{product.name}</option>):<option value="">Choose a product</option>}</select></BreadcrumbItem>
       <BreadcrumbSeparator>/</BreadcrumbSeparator>
       <BreadcrumbItem className="workspace-breadcrumb-section"><span>{section}</span></BreadcrumbItem>
       <BreadcrumbSeparator className="workspace-breadcrumb-section">/</BreadcrumbSeparator>
@@ -104,15 +106,15 @@ function Dashboard({state:summary,reload,logout,error}){
      <div className="purpose-tabs"><TabsList aria-label={`${purpose.label} views`}><TabsTrigger value="conversations">Conversations</TabsTrigger><TabsTrigger value="patterns">Patterns</TabsTrigger>{purpose.id!=='mentions'&&<TabsTrigger value="explore">Explore</TabsTrigger>}</TabsList></div>
      <TabsContent value={subview} className="purpose-panel">
      {error&&<p className="form-error" role="alert">Refresh failed: {error} <button onClick={()=>reload().catch(e=>toast.error(e.message))}>Try again</button></p>}
-     {isFeed&&paged&&remote.error&&<p className="form-error" role="alert">{remote.error} <button onClick={()=>reload().catch(e=>toast.error(e.message))}>Try again</button></p>}
-     {isFeed&&<ConversationsDesk key={view} title={purpose.label} relevance={purpose.relevance} state={state} total={total} paged={paged} pageLoading={paged&&remote.loading} filtered={filtered} visible={visible} selected={selected} pageIndex={pageIndex} pageSize={pageSize}
+     {isFeed&&!isMentionsBoard&&paged&&remote.error&&<p className="form-error" role="alert">{remote.error} <button onClick={()=>reload().catch(e=>toast.error(e.message))}>Try again</button></p>}
+     {isFeed&&<FeedWorkspace key={`${view}/${productId}`} productId={productId} items={localFiltered} reload={reload} title={purpose.label} relevance={purpose.relevance} state={state} total={total} paged={paged} pageLoading={paged&&remote.loading} filtered={filtered} visible={visible} selected={selected} pageIndex={pageIndex} pageSize={pageSize}
       onPage={(index,edge='first')=>{setPage(index);setPageSelection(edge);setSelectedId(null);}}
       onSelect={item=>{setSelectedId(item.id);if(!paged)setPage(Math.floor(filtered.findIndex(row=>row.id===item.id)/pageSize));setMobileDetail(true);}}
       mobileDetail={mobileDetail} onMobileDetail={setMobileDetail} detailHeading={heading}
       query={query} onQuery={setQuery} platformFilter={platformFilter} onPlatform={setPlatformFilter} statusFilter={statusFilter} onStatus={setStatusFilter}
       products={selectedProducts} busy={busy} find={find} action={action} updateReview={updateReview} showPlaceholders={showPlaceholders} addProduct={addProduct}
       renderNotes={item=><Notes key={item.id} item={item} patch={patch} buffered={noteEdits[item.id]} setBuffered={value=>setBuffer(setNoteEdits,item.id,value)}/>}
-      renderDraft={item=><Draft key={item.id} item={item} paneLayout patch={patch} state={state} busy={busy} buffered={draftEdits[item.id]} setBuffered={value=>setBuffer(setDraftEdits,item.id,value)} analyze={()=>action('analysis',()=>api(`/items/${item.id}/analysis`,{method:'POST',body:{refresh:Boolean(item.analysis)}}),'Reply suggestions saved')}/>}/>}
+      renderDraft={item=><Draft key={item.id} item={item} paneLayout={!isMentionsBoard} patch={patch} state={state} busy={busy} buffered={draftEdits[item.id]} setBuffered={value=>setBuffer(setDraftEdits,item.id,value)} analyze={()=>action('analysis',()=>api(`/items/${item.id}/analysis`,{method:'POST',body:{refresh:Boolean(item.analysis)}}),'Reply suggestions saved')}/>}/>}
      {!isFeed&&<div className="purpose-analysis-scroll">{details.loading?<p role="status">Loading this view…</p>:details.error?<p role="alert" className="form-error">{details.error} <button onClick={()=>reload()}>Try again</button></p>:<PurposeAnalysis state={state} purpose={purpose} mode={subview} productId={productId} action={action} busy={busy} onAdd={addProduct} onEdit={editProduct}/>}</div>}
      </TabsContent>
     </Tabs>}
