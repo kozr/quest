@@ -1,3 +1,4 @@
+import {saveVideoEdits,videoEditVersion} from './video-content.mjs';
 import {activeProduct,assertSubscriptionActive,planError} from './plans.mjs';
 import {validateQualificationBatch} from './listening-qualification.mjs';
 import {stageReservation} from './pipeline-provider.mjs';
@@ -44,21 +45,23 @@ function claimProvisionedQualification(data,productId,settings,now){
   return {lease:structuredClone(lease),input:structuredClone(input)};
 }
 
-export function claimStage(data,productId,stage,settings,refresh,now){
+export function claimStage(data,productId,stage,settings,refresh,now,expectedVersion,videoLibrary){
   retireAnalysis(data,now);
   data.analysisLeases ||= {};
   if(data.subscription&&stage==='qualify'){
     if(Object.values(data.analysisLeases).some(l=>l.productId===productId))problem('A stage is already running for this business.',409);
     return claimProvisionedQualification(data,productId,settings,now);
   }
-  const context=stageContext(data,productId,stage),cached=data.pipelineStages?.[productId]?.[stage];
+  const context=stageContext(data,productId,stage,stage==='videos'?videoLibrary:undefined),cached=data.pipelineStages?.[productId]?.[stage];
   if(stage!=='qualify'&&!refresh&&cached&&!cached.imported&&cached.inputHash===context.inputHash&&Date.parse(cached.generatedAt)>now-30*86400000)return {cached:structuredClone(cached)};
+  if(stage==='videos'&&cached&&expectedVersion!==videoEditVersion(cached))problem('The saved video batch changed. Refresh before regenerating.',409);
   if(data.subscription){assertSubscriptionActive(data,now);if(!activeProduct(context.product)||context.product.planMonitoringBlocked)throw planError('This product is outside the active plan capacity.',{status:403,code:context.product.planMonitoringBlocked||'product_archived'});}
   data.analysisLeases ||= {};
   if(Object.values(data.analysisLeases).some(l=>l.productId===productId))problem('A stage is already running for this business.',409);
   const day=budgetDay(now);data.analysisUsage ||= {};
   if(stage!=='qualify'&&(data.analysisUsage[day]||0)>=ANALYSIS_DAILY_LIMIT)problem('The daily analysis request limit has been reached.',429);
   const lease={token:randomUUID(),kind:'pipeline-stage',productId,stage,inputHash:context.inputHash,stageReservationMicroUsd:stageReservation(stage,context.input),expiresAt:now+120000};
+  if(stage==='videos'){lease.videoLibrary=context.input.videoLibrary;if(cached)lease.priorVideoVersion=videoEditVersion(cached);}
   if(stage==='qualify'){lease.qualificationInput=context.input;lease.qualificationProfileHash=qualificationInputHash(context.product);}
   if(settings)reserveAnalysis(data,lease,settings,now);
   data.analysisLeases[lease.token]=lease;if(stage!=='qualify')data.analysisUsage[day]=(data.analysisUsage[day]||0)+1;
@@ -67,16 +70,17 @@ export function claimStage(data,productId,stage,settings,refresh,now){
 export function finishStage(data,lease,result,now){
   const saved=data.analysisLeases?.[lease.token];
   if(!saved||saved.expiresAt<=now||saved.kind!=='pipeline-stage')problem('This stage expired. Run it again.',409);
+  if(saved.stage==='videos'&&saved.priorVideoVersion!== (data.pipelineStages?.[saved.productId]?.videos?videoEditVersion(data.pipelineStages[saved.productId].videos):undefined))problem('The video batch changed during generation. Refresh before trying again.',409);
   let context;
   if(saved.stage==='qualify'){
     const product=data.products.find(p=>p.id===saved.productId);
     if(!product||product.listeningVersion!=='v2'||qualificationInputHash(product)!==saved.qualificationProfileHash||saved.qualificationInput.evidence.some(old=>{const current=findEvidence(data,product,old.id);return !current||hash(qualificationEvidence(current))!==hash(old);}))problem('Stage inputs changed while it was running. Refresh and try again.',409);
     context={product,input:saved.qualificationInput,inputHash:saved.inputHash,definition:STAGE_DEFINITIONS.qualify};
-  }else context=stageContext(data,saved.productId,saved.stage);
+  }else context=stageContext(data,saved.productId,saved.stage,saved.stage==='videos'?saved.videoLibrary:undefined);
   if(context.inputHash!==saved.inputHash)problem('Stage inputs changed while it was running. Refresh and try again.',409);
   const validated=saved.stage==='qualify'?validateQualificationBatch(result.value,context.product,context.input):null;
   const output=validated?{results:validated.results}:context.definition.validate(result.value,context.product,context.input);
-  const record={version:PIPELINE_VERSION,stage:saved.stage,inputHash:saved.inputHash,generatedAt:new Date(now).toISOString(),model:result.model,data:output};
+  const record={version:PIPELINE_VERSION,stage:saved.stage,inputHash:saved.inputHash,generatedAt:new Date(now).toISOString(),model:result.model,data:output,...(saved.stage==='videos'?{videoLibrary:context.input.videoLibrary}:{})};
   data.pipelineStages ||= {};data.pipelineStages[saved.productId] ||= {};if(!validated||validated.results.length)data.pipelineStages[saved.productId][saved.stage]=record;
   if(validated)for(const failure of validated.failed)recordReviewFailure(data,context.product,findEvidence(data,context.product,failure.evidenceId),failure.reason,record.generatedAt);
   if(validated?.failed.length)record.failed=validated.failed;
@@ -97,6 +101,11 @@ export function saveSearchPlan(data,productId,value,version){
   if(version==='v2'&&!p.searchPlanV2?.reviewed)problem('Review the search plan before activating it.',409);
   if(version==='v2')p.searchPlanV2=validateSearchPlan(p.searchPlanV2,p);
   p.listeningVersion=version;p.updatedAt=new Date().toISOString();return structuredClone(p);
+}
+
+export function saveVideos(data,productId,value){
+ const current=stageContext(data,productId,'videos'),next=stageContext(data,productId,'videos',value?.videoLibrary);
+ return saveVideoEdits(data,productId,value,{...next,inputHash:current.inputHash,nextInputHash:next.inputHash});
 }
 
 export function saveDrafts(data,productId,value){

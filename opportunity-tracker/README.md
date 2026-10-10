@@ -297,3 +297,8 @@ HearWhispers navigation contains selected purposes and Add/Manage purpose. Produ
 ### Indexed mention and review coverage (October 9, 2026)
 
 The Growth historical planner now includes Google discovery, direct Reddit comment search, verified Google Maps written reviews and exact-ID App Store reviews, in addition to Reddit/X. Existing historical jobs gain these branches once; no fresh allowance or job reset is granted. Google discoveries retrieve original Reddit comments, Instagram captions or public pages before becoming evidence. Automatic Google/review checks run daily under existing provider and pilot budgets. See [GOOGLE_DISCOVERY.md](GOOGLE_DISCOVERY.md) for limits, identity rules, original-source provenance and listing-link behavior. The earlier Reddit/X-only coverage description is superseded for this path.
+
+
+### Videos and captions
+
+Videos & captions at `#content` provides a reusable reaction-template composer and an optional source-backed draft editor. Customers add their on-video caption and post caption; Snapchat and Instagram styles are available in the preview and browser-rendered silent MP4/WebM. The regular gallery displays only published owner templates. The current café references are restricted to local fixtures and are not distributed as production masters. From conversations uses current collected topics and the reviewed product profile, retaining sources, the shared AI allowance and versioned draft saves. Earlier text drafts, custom media, subtitle and script/source exports remain supported. Original library masters, cloud rendering and Instagram automatic publishing are still pending.

@@ -7,7 +7,7 @@ import {assertWorkspaceCapacity,assertSubscriptionActive} from './plans.mjs';
 import {reserveAnalysisUnits,settleAnalysisUnits} from './usage.mjs';
 import {claimScheduledLoop,finishScheduledLoop} from './schedules.mjs';
 import {sourceIdentity,freshRows} from './incremental.mjs';
-import {claimStage,finishStage,failStage,saveSearchPlan,saveDrafts} from './pipeline-runtime.mjs';
+import {claimStage,finishStage,failStage,saveSearchPlan,saveDrafts,saveVideos} from './pipeline-runtime.mjs';
 import {captureEvidence} from './conversation-evidence.mjs';
 import {beginBackfill, beginCollection, claimCollection, finishCollection} from './collection.mjs';
 import { mkdirSync, readFileSync, writeFileSync, renameSync, existsSync } from 'node:fs';
@@ -196,8 +196,9 @@ export class Store {
     if (!this.data.analysisLeases?.[token]) return;
     const next = this.snapshot(),lease=next.analysisLeases[token]; settleAnalysis(next,lease); if(lease.analysisCycleBatchId)finishAnalysisCycleBatch(next,lease.productId,lease.analysisCycleBatchId,{}); delete next.analysisLeases[token]; this.commit(next);
   }
+  saveVideos(productId,value) {return this.mutate(data=>saveVideos(data,productId,value));}
   saveDrafts(productId,value) {const next=this.snapshot(),result=saveDrafts(next,productId,value);this.commit(next);return result;}
-  claimStage(productId,stage,settings,refresh,now=Date.now()) {const next=this.snapshot(),result=claimStage(next,productId,stage,settings,refresh,now);this.commit(next);return result;}
+  claimStage(productId,stage,settings,refresh,now=Date.now(),expectedVersion,videoLibrary) {const next=this.snapshot(),result=claimStage(next,productId,stage,settings,refresh,now,expectedVersion,videoLibrary);this.commit(next);return result;}
   finishStage(lease,result,now=Date.now()) {const next=this.snapshot(),record=finishStage(next,lease,result,now);this.commit(next);return record;}
   failStage(lease,reason,costMicroUsd,now=Date.now()) {const next=this.snapshot();failStage(next,lease,reason,costMicroUsd,now);this.commit(next);}
   saveSearchPlan(productId,plan,version) {const next=this.snapshot(),product=saveSearchPlan(next,productId,plan,version);if(next.subscription){assertSubscriptionActive(next);enforceCapacityChange(this.data,next);if(product.listeningVersion==='v2'&&product.searchPlanV2?.reviewed)beginBackfill(next,productId);}this.commit(next);return product;}

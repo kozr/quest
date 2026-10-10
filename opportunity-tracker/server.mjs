@@ -83,10 +83,10 @@ export function createTrackerApp({ dataDirectory = process.env.TRACKER_DATA_DIR 
   const businessProfiles=businessProfileProvider || createBusinessProfileProvider({env:qualificationEnv});
   const stages=stageProvider||createStageProvider({env:qualificationEnv});
   const actionsEnabled=qualificationEnv.TRACKER_ACTIONS_ENABLED!=='false';
-  async function runStage(productId,stage,refresh=false){
-    if(!actionsEnabled&&['actions','drafts'].includes(stage))throw Object.assign(new Error('The action tier is disabled on this server.'),{status:403});
+  async function runStage(productId,stage,refresh=false,expectedVersion,videoLibrary){
+    if(!actionsEnabled&&['actions','drafts','videos'].includes(stage))throw Object.assign(new Error('The action tier is disabled on this server.'),{status:403});
     if(!stages.available)throw Object.assign(new Error('AI stages are paused. Check the server key and daily budget settings.'),{status:503});
-    const claimed=await store.claimStage(productId,stage,stageProvider?null:qualificationSettings(qualificationEnv),refresh);
+    const claimed=await store.claimStage(productId,stage,stageProvider?null:qualificationSettings(qualificationEnv),refresh,Date.now(),expectedVersion,stage==='videos'?videoLibrary:undefined);
     if(claimed.cached)return {result:claimed.cached,cached:true};
     if(!claimed.lease)return claimed;
     let result;
@@ -169,7 +169,7 @@ export function createTrackerApp({ dataDirectory = process.env.TRACKER_DATA_DIR 
   if(hosted) app.set('trust proxy',1);
   app.use((req,res,next) => {
     if (!hosted && !allowedHosts.has(req.hostname)) return res.status(403).json({error:'Open this tracker using localhost.'});
-    res.set({ 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'strict-origin-when-cross-origin', 'Cross-Origin-Opener-Policy': 'same-origin-allow-popups', 'Content-Security-Policy': "default-src 'self'; script-src 'self' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; img-src 'self' data:; connect-src 'self' https://accounts.google.com/gsi/; frame-src https://accounts.google.com/gsi/; base-uri 'none'; frame-ancestors 'none'; form-action 'self'" });
+    res.set({ 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'strict-origin-when-cross-origin', 'Cross-Origin-Opener-Policy': 'same-origin-allow-popups', 'Content-Security-Policy': "default-src 'self'; script-src 'self' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' https://accounts.google.com/gsi/; frame-src https://accounts.google.com/gsi/; base-uri 'none'; frame-ancestors 'none'; form-action 'self'" });
     if(req.path.startsWith('/api/')) {
       res.set('Cache-Control','no-store');
       if (req.path === '/api/monitor' || req.path.startsWith('/api/monitor/')) {
@@ -286,8 +286,9 @@ export function createTrackerApp({ dataDirectory = process.env.TRACKER_DATA_DIR 
     const product=await store.saveProduct(input,req.params.id);
     if(!product) return res.status(404).json({error:'Product not found.'}); res.json({product});
   });
-  app.post('/api/products/:id/stages/:stage',async(req,res)=>res.json(await runStage(req.params.id,req.params.stage,req.body.refresh===true)));
+  app.post('/api/products/:id/stages/:stage',async(req,res)=>res.json(await runStage(req.params.id,req.params.stage,req.body.refresh===true,req.body.expectedVersion,req.body.videoLibrary)));
   app.put('/api/products/:id/search-plan',async(req,res)=>res.json({product:await store.saveSearchPlan(req.params.id,req.body.plan,req.body.version)}));
+  app.put('/api/products/:id/stages/videos',async(req,res)=>{if(!actionsEnabled)return res.status(403).json({error:'The action tier is disabled on this server.'});res.json({result:await store.saveVideos(req.params.id,req.body)});});
   app.put('/api/products/:id/stages/drafts',async(req,res)=>{if(!actionsEnabled)return res.status(403).json({error:'The action tier is disabled on this server.'});res.json({result:await store.saveDrafts(req.params.id,req.body)});});
   app.delete('/api/products/:id',async(req,res)=>{await store.deleteProduct(req.params.id);res.json({ok:true});});
   app.post('/api/products/:id/backfill',async(req,res)=>{

@@ -166,6 +166,7 @@ export class FirestoreStore {
   claimAnalysis(productId,itemId,now,settings) { return this.record('claimAnalysis',productId,itemId,now,settings); }
   finishAnalysis(lease,result,now) { return this.record('finishAnalysis',lease,result,now); }
   releaseAnalysis(token) { return this.record('releaseAnalysis',token); }
+  saveVideos(...args) {return this.record('saveVideos',...args);}
   saveDrafts(...args) {return this.record('saveDrafts',...args);}
   claimStage(...args) {return this.record('claimStage',...args);}
   finishStage(...args) {return this.record('finishStage',...args);}

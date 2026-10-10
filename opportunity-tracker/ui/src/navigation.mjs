@@ -5,6 +5,7 @@ export const workspaceViews={...Object.fromEntries(purposes.map(p=>[p.id,p.label
 export function resolveWorkspaceRoute(hash,enabled,last){
  const selected=normalizePurposes(enabled),home=selected.includes(last)?last:selected[0];
  const [requested,detail]=(hash||'').replace(/^#/,'').split('/');
+ if(requested==='increase-reach'&&detail==='videos')return 'content';
  if(requested==='products')return 'settings';
  if(requested==='listening')return 'settings/monitoring';
  if(requested==='insights')return `${selected.includes('feedback')?'feedback':home}/patterns`;

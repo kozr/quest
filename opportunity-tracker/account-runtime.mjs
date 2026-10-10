@@ -6,7 +6,7 @@ import {accessContext,authorizeProduct,filterWorkspaceState} from './workspace.m
 import {accountSnapshot} from './account.mjs';
 
 const denied = (message,status=403,code='workspace_access') => Object.assign(new Error(message),{status,code});
-const productMethods = new Set(['deleteProduct','saveSearchPlan','saveDrafts','claimStage','claimAnalysis','beginBackfill','beginCollection','markMonitorAttempt','claimQualificationBatch','claimQualification','claimCollection','claimSearch']);
+const productMethods = new Set(['deleteProduct','saveSearchPlan','saveDrafts','saveVideos','claimStage','claimAnalysis','beginBackfill','beginCollection','markMonitorAttempt','claimQualificationBatch','claimQualification','claimCollection','claimSearch']);
 const managementMethods = new Set(['importData','claimBusinessProfile']);
 
 function authorizeMutation(data,principal,method,args) {
@@ -16,7 +16,7 @@ function authorizeMutation(data,principal,method,args) {
     else accessContext(data,principal,{admin:true,write:true},plan);
   } else if(productMethods.has(method)) {
     const product=authorizeProduct(data,principal,['claimQualificationBatch','claimQualification'].includes(method)?args[2]:method==='claimCollection'?args[1]:args[0],{write:true},plan);
-    if(!activeProduct(product)&&!['deleteProduct','saveSearchPlan','saveDrafts'].includes(method))throw denied('Activate this product before starting new work.',409,'product_archived');
+    if(!activeProduct(product)&&!['deleteProduct','saveSearchPlan','saveDrafts','saveVideos'].includes(method))throw denied('Activate this product before starting new work.',409,'product_archived');
   } else if(method==='updateItem') {
     const item=data.items.find(row=>row.id===args[0]);
     if(!item)throw denied('Conversation not found.',404,'item_not_found');

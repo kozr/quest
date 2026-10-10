@@ -1,4 +1,5 @@
 import {useEffect,useState} from 'react';
+import {VideoContentWorkspace} from './VideoContentWorkspace';
 import {Button} from '@/components/ui/button';
 import {Input} from '@/components/ui/input';
 import {Textarea} from '@/components/ui/textarea';
@@ -10,7 +11,7 @@ import {WorkspaceEmpty,WorkspaceNotice} from './WorkspacePage';
 
 const labels={search_plan:'Generate search plan',qualify:'Qualify next batch',actions:'Recommend actions',drafts:'Prepare drafts'};
 export function PipelineWorkspace({state,view,productId,action,busy,buffers,setBuffer,onAdd,onEdit}){
- if(view==='content')return <WorkspaceEmpty title="Videos & captions are coming soon" description="Template videos with captions will be available here."/>;
+ if(view==='content')return <VideoContentWorkspace key={productId} {...{state,productId,action,busy,buffers,setBuffer,onAdd,onEdit}}/>;
  const product=state.products.find(p=>p.id===productId);
  if(!product)return <WorkspaceEmpty title="Set up your product" description="Add a product and review its business profile to start."><Button onClick={onAdd}>Add product</Button></WorkspaceEmpty>;
  const records=state.pipeline?.stages?.[product.id]||{},summary=state.pipeline?.products?.[product.id]||{};
