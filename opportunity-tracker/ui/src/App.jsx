@@ -118,7 +118,7 @@ function Dashboard({state:summary,reload,logout,error}){
     </Tabs>}
     {!isPurpose&&<>
     <div className="workspace-page">
-    <PageHeading title={currentLabel} description={{actions:'Turn conversation patterns into useful contributions.',replies:'Prepare and review replies before sharing them.',content:'Create videos from templates with captions.',settings:subview==='monitoring'?'Choose where and how to find conversations.':'Manage your workspace, preferences and allowances.'}[view]}/>
+    {view!=='content'&&<PageHeading title={currentLabel} description={{actions:'Turn conversation patterns into useful contributions.',replies:'Prepare and review replies before sharing them.',content:'Create videos from templates with captions.',settings:subview==='monitoring'?'Choose where and how to find conversations.':'Manage your workspace, preferences and allowances.'}[view]}/>}
     {error&&<p className="form-error" role="alert">Refresh failed: {error} <button onClick={()=>reload().catch(e=>toast.error(e.message))}>Try again</button></p>}
     {needsDetails&&details.loading&&<p role="status">Loading this view…</p>}
     {needsDetails&&details.error&&<p role="alert" className="form-error">{details.error} <button onClick={()=>reload()}>Try again</button></p>}
