@@ -79,7 +79,7 @@ test('recollection retains source identity, review metadata and qualification re
   assert.equal(data.items[0].id,item.id);assert.equal(data.items[0].note,'Keep this note');assert.equal(data.items[0].draft,'Keep this draft');
   assert.equal(data.workspace.reviews[item.id].version,3);
   captureEvidence(data,product,[row(1,{snippet:'Updated original text.'})],at);
-  const updated=evidenceFor(data,product)[0];assert.equal(updated.id,item.id);assert.equal(pendingEvidenceCount(data,product),1);
+  const updated=evidenceFor(data,product)[0];assert.equal(updated.id,item.id);assert.equal(pendingEvidenceCount(data,product),0);
   saveConversationReview(data,product,updated,decision(updated),at,'fixture');
   assert.equal(data.items[0].status,'saved');assert.equal(data.items[0].note,'Keep this note');assert.equal(data.items[0].snippet,'Updated original text.');
 });
@@ -131,7 +131,7 @@ test('modern history keeps page-nine cursor work and all candidates while dedupl
   assert.equal(evidenceFor(data,product)[0].text,text);assert.equal(evidenceFor(data,product)[0].backfillId,job.id);
   assert.equal(job.staged,1);
   const next=job.queue.shift();applyBackfillPage(data,job,next,page([row('history',{snippet:text})]),now+1);
-  assert.equal(job.staged,1);assert.equal(job.duplicates,1);assert.equal(job.status,'reviewing');
+  assert.equal(job.staged,1);assert.equal(job.duplicates,1);assert.equal(job.status,'complete');assert.equal(backfillPublic(data,job).reviews.not_required,1);
   settleReviews(data,product);finishBackfill(data,job,now+2);assert.equal(job.status,'complete');
   assert.match(backfillPublic(data,job).coverage,/not an exhaustive archive/);
 });
@@ -144,7 +144,7 @@ test('history provider failures and partial pages cannot become successful compl
   const {data,product}=fixture();beginBackfill(data,product.id,now);
   const job=data.collection.backfills[product.id],task=job.queue[0];job.queue=[];job.branches=job.branches.filter(branch=>branch.id===task.branch);
   applyBackfillPage(data,job,task,page([row('partial')],{partial:true,omitted:1}),now);
-  assert.equal(job.status,'reviewing');assert.equal(job.coverageStatus,'partial');
+  assert.equal(job.status,'partial');assert.equal(job.coverageStatus,'partial');
   settleReviews(data,product);finishBackfill(data,job,now+1);
   assert.equal(job.status,'partial');assert.equal(backfillPublic(data,job).coverageStatus,'partial');
 });

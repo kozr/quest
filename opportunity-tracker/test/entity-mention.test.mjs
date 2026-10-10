@@ -49,7 +49,7 @@ test('only named cached conversations lacking identity verdict join the targeted
  const {captureEvidence,pendingEvidenceAll,qualificationInputHash,saveConversationReview}=await import('../conversation-evidence.mjs');
  const product={...cafe,id:'cafe',listeningVersion:'v2',searchPlanV2:{themes:[]}},data={subscription:{planId:'growth'},products:[product],items:[]};
  const at='2026-10-09T17:00:00.000Z';
- const rows=['Wren Cafe is nice.','Generic lunch advice.','Visit https://wrencafe.ca/menu'].map((text,i)=>({source:'Reddit',type:'post',title:'Discussion',snippet:text,url:`https://www.reddit.com/r/vancouver/comments/target${i}/`,publishedAt:at}));
+ const rows=['Wren Cafe is nice.','Generic lunch advice.','Visit https://wrencafe.ca/menu'].map((text,i)=>({source:'Reddit',type:'post',title:'Discussion',snippet:text,url:`https://www.reddit.com/r/vancouver/comments/target${i}/`,publishedAt:at,queryFamily:'long_tail'}));
  captureEvidence(data,product,rows,at);
  for(const row of data.conversationEvidence.cafe)row.qualification={profileHash:qualificationInputHash(product),relevant:true,directFit:false,offeringIds:[],reason:'Prior review',purposes:[{purpose:'feedback',quote:row.text,reason:'Prior feedback',offeringIds:['o1']}]};
  const before=structuredClone(data.conversationEvidence.cafe.map(row=>row.qualification));
@@ -70,7 +70,7 @@ test('coffee vocabulary and iPhone alone are insufficient corroborating identity
 test('evicted saved mentions are bounded read-only review candidates with historical provenance unchanged',async()=>{
  const {savedItemIdentityEvidence,pendingEvidenceAll,findEvidence,qualificationInputHash}=await import('../conversation-evidence.mjs');
  const product={...cafe,id:'cafe',listeningVersion:'v2',searchPlanV2:{themes:[]}},q={profileHash:qualificationInputHash(product),relevant:true,purposes:[]};
- const data={products:[product],items:Array.from({length:30},(_,i)=>({id:`item${i}`,productId:'cafe',url:`https://www.reddit.com/r/vancouver/comments/old${i}/`,type:'post',title:'Discussion',snippet:'Wren Cafe in Yaletown!',context:'',qualification:q,status:'saved',note:'Keep this',historical:true,foundAt:'2026-10-08T00:00:00.000Z'})),subscription:{planId:'growth'}};
+ const data={products:[product],items:Array.from({length:30},(_,i)=>({id:`item${i}`,productId:'cafe',url:`https://www.reddit.com/r/vancouver/comments/old${i}/`,type:'post',title:'Discussion',snippet:'Wren Cafe in Yaletown!',context:'',queryFamilies:['long_tail'],qualification:q,status:'saved',note:'Keep this',historical:true,foundAt:'2026-10-08T00:00:00.000Z'})),subscription:{planId:'growth'}};
  const before=structuredClone(data);const candidates=savedItemIdentityEvidence(data,product);assert.equal(candidates.length,24);assert.equal(pendingEvidenceAll(data,product).length,24);assert.equal(findEvidence(data,product,candidates[0].id).savedItemIdentityReview,true);assert.equal(candidates[0].historical,true);assert.equal(candidates[0].backfillId,undefined);assert.deepEqual(data,before);
 });
 

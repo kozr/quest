@@ -1,5 +1,5 @@
 import {entityMentionEvidence} from './entity-mention.mjs';
-import {keywordMentionEvidence} from './keyword-mention.mjs';
+import {keywordMentionEvidence,isKeywordResult} from './keyword-mention.mjs';
 import {conversationSignals} from './conversation-purpose.mjs';
 import {hash} from './pipeline-contract.mjs';
 import {evidenceFor,qualificationInputHash,QUALIFY_PIPELINE_VERSION,currentReviewFailure,conversationSourceKey} from './conversation-evidence.mjs';
@@ -49,5 +49,5 @@ export function conversationCurrentState(data,item){
   const entityMention=entityMentionEvidence(product,source,{decision,current});
   if(product.listeningVersion!=='v2')return {keywordMention,entityMention};
   const signals=conversationSignals(product,source,decision,{current});
-  return {keywordMention,entityMention,conversationSignals:signals,currentConversationRelevant:current&&decision.relevant===true,currentOpportunityFit:signals.some(signal=>signal.purpose==='potential_customer')};
+  return {keywordMention,entityMention,keywordResult:isKeywordResult(product,source),...(isKeywordResult(product,source)?{analysisStatus:'not_required'}:{}),conversationSignals:signals,currentConversationRelevant:isKeywordResult(product,source)||current&&decision.relevant===true,currentOpportunityFit:signals.some(signal=>signal.purpose==='potential_customer')};
 }

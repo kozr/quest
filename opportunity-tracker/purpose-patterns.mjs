@@ -1,6 +1,9 @@
 import {conversationSourceKey,qualificationInputHash,reviewEvidenceFor} from './conversation-evidence.mjs';
+import {keywordMentionEvidence,isKeywordResult} from './keyword-mention.mjs';
 import {entityMentionEvidence} from './entity-mention.mjs';
 import {qualificationCurrent} from './conversation-feed.mjs';
+import {hash} from './pipeline-contract.mjs';
+import {ownsSourceQuote} from './entity-mention.mjs';
 import {conversationSignals} from './conversation-purpose.mjs';
 
 const purposeIds={mentions:'mention',opportunities:'potential_customer',feedback:'feedback',competitors:'competitor',all:null};
@@ -23,13 +26,13 @@ export function projectPurposePatterns(data,product){
   for(const row of data.conversationReviewQueue?.[product.id]||[])if(row.url)current.set(conversationSourceKey(row.url),row);
   const entries=[...current.values()].map(row=>{
     const current=qualificationCurrent(data,product,row,items.get(conversationSourceKey(row.url)),profileHash);
-    return {row,current,relevant:current&&row.qualification.relevant===true,entityMention:entityMentionEvidence(product,row,{decision:row.qualification,current}),signals:conversationSignals(product,row,row.qualification,{current})};
+    return {row,current,relevant:isKeywordResult(product,row)||current&&row.qualification.relevant===true,keywordMention:keywordMentionEvidence(product,row),entityMention:entityMentionEvidence(product,row,{decision:row.qualification,current}),signals:conversationSignals(product,row,row.qualification,{current})};
   });
   const saved=data.pipelineStages?.[product.id]?.insights?.data?.insights||[];
   const purposes=Object.fromEntries(Object.entries(purposeIds).map(([name,purpose])=>{
-    const matching=entries.filter(entry=>purpose==='mention'?Boolean(entry.entityMention):entry.relevant&&(!purpose||entry.signals.some(signal=>signal.purpose===purpose)));
-    const rows=matching.map(entry=>entry.row),byId=new Map(matching.filter(entry=>entry.current).map(entry=>[entry.row.id,entry.row]));
-    const patterns=saved.slice(0,8).filter(insight=>Array.isArray(insight.evidenceIds)&&insight.evidenceIds.length>0&&insight.evidenceIds.length<=12&&insight.evidenceIds.every(id=>byId.has(id))).map(insight=>({...pick(insight,insightFields),sources:insight.evidenceIds.map(id=>sourceFor(insight,byId.get(id)))}));
+    const matching=entries.filter(entry=>purpose==='mention'?Boolean(entry.keywordMention||entry.entityMention):entry.relevant&&(!purpose||entry.signals.some(signal=>signal.purpose===purpose)));
+    const rows=matching.map(entry=>entry.row),byId=new Map(matching.filter(entry=>entry.current||isKeywordResult(product,entry.row)&&entry.row.contentHash===hash(entry.row.context?[entry.row.title,entry.row.text,entry.row.context]:[entry.row.title,entry.row.text])).map(entry=>[entry.row.id,entry.row]));
+    const patterns=saved.slice(0,8).filter(insight=>Array.isArray(insight.evidenceIds)&&insight.evidenceIds.length>0&&insight.evidenceIds.length<=12&&(!insight.profileHash||insight.profileHash===profileHash)&&insight.evidenceIds.every(id=>{const row=byId.get(id);if(!row)return false;const savedSource=insight.sources?.find(source=>source.id===id);return !savedSource?Boolean(row.qualification):savedSource.contentHash?savedSource.contentHash===row.contentHash:ownsSourceQuote(row,savedSource.quote);})).map(insight=>({...pick(insight,insightFields),sources:insight.evidenceIds.map(id=>sourceFor(insight,byId.get(id)))}));
     const dates=rows.map(row=>row.publishedAt).filter(value=>typeof value==='string'&&Number.isFinite(Date.parse(value))).sort();
     return [name,{evidenceCount:rows.length,patterns,firstSeen:dates[0]||null,lastSeen:dates.at(-1)||null}];
   }));

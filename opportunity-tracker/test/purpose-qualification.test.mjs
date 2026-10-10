@@ -67,22 +67,22 @@ test('a recommendation may qualify as a mention without inventing an unmet need'
  const item={...data.items[0],...conversationCurrentState(data,data.items[0])};assert.equal(matchesConversation(item,{relevance:'mentions'}),true);assert.equal(matchesConversation(item,{relevance:'direct'}),false);
 });
 
-test('accent variants match while partial names, domains and namesake businesses do not qualify automatically',()=>{
+test('keyword namesakes remain included while partial names and invalid domains do not match',()=>{
  assert.equal(namedReference('Wren Cafe in Yaletown','Wren Café'),true);
  assert.equal(namedReference('Blind Box Trackerish','Blind Box Tracker'),false);
  assert.equal(namedReference('wrencafe.ca.evil.example','wrencafe.ca'),false);
  const p={name:'Wren Café',url:'https://wrencafe.ca/',aliases:['Wren Cafe']};
  const row={title:'Wren Cafe in London',text:'I recommend this London cafe.'};
- assert.deepEqual(conversationSignals(p,row,{relevant:false,purposes:[]},{current:true}),[]);
- assert.deepEqual(conversationSignals(p,row,{relevant:true,purposes:[]},{current:false}),[]);
+ assert.equal(conversationSignals(p,row,{relevant:false,purposes:[]},{current:true})[0].basis,'keyword');
+ assert.equal(conversationSignals(p,row,{relevant:true,purposes:[]},{current:false})[0].purpose,'mention');
 });
 
-test('an explicit uncertain identity stays outside Mentions while retaining its literal name',()=>{
+test('an uncertain AI identity cannot exclude a literal keyword mention',()=>{
  const {p,data}=fixture();captureEvidence(data,p,[source('Fixture Cafe is the name. No customer experience or useful comparison here.')],at);const e=data.conversationEvidence[p.id][0];
  const q=classify(p,e,decision(e,{category:'other',entityMatch:{status:'uncertain',basis:'none',reference:'',quote:'',identityQuote:'',businessQuote:'',contextSource:'none',reason:'Only an ambiguous name is supplied.'},purposes:[]}));saveConversationReview(data,p,e,q,at,'fixture');
  const item={...data.items[0],...conversationCurrentState(data,data.items[0])};
- assert.equal(item.qualification.relevant,true);assert.deepEqual(item.conversationSignals,[]);
- assert.equal(matchesConversation(item,{relevance:'mentions'}),false);assert.equal(item.keywordMention.reference,p.name);assert.equal(matchesConversation(item,{relevance:'direct'}),false);
+ assert.equal(item.qualification.relevant,true);assert.equal(item.conversationSignals[0].purpose,'mention');
+ assert.equal(matchesConversation(item,{relevance:'mentions'}),true);assert.equal(item.keywordMention.reference,p.name);assert.equal(matchesConversation(item,{relevance:'direct'}),false);
 });
 
 test('legacy name mentions preserve complete source URLs rather than sentence fragments',()=>{
@@ -90,7 +90,7 @@ test('legacy name mentions preserve complete source URLs rather than sentence fr
  const text='Android is available: [BlindBoxTracker](https://play.google.com/store/apps/details?id=example.blindboxtracker). Download here.';
  const signals=conversationSignals(p,{text},{relevant:true},{current:true});
  assert.equal(signals.length,1);assert.equal(signals[0].purpose,'mention');
- assert.equal(signals[0].quote,'https://play.google.com/store/apps/details?id=example.blindboxtracker');
+ assert(signals[0].quote.includes('https://play.google.com/store/apps/details?id=example.blindboxtracker'));
 });
 
 test('resolved, closed and satisfied-user evidence cannot qualify as a potential customer',()=>{

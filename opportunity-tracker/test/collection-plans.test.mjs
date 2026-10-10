@@ -85,7 +85,7 @@ test('monitor worker remains compatible with a legacy server without a workspace
 test('regular source rows are immediately editable and retain full text before analysis',()=>{
   const data=workspace({loops:['keyword']}),snippet='Source text '.repeat(1600);beginCollection(data,'p','scheduled',now,settings);const request=claimCollection(data,settings,'p',now);
   finishCollection(data,request.token,{credits:1,result:{rows:[{source:'Reddit',sourceId:'t3_a',postId:'t3_a',type:'post',url:'https://www.reddit.com/r/vancouver/comments/a/',title:'Lunch nearby',snippet,author:'author',publishedAt:new Date(now-1000).toISOString(),commentCount:0}],cursor:null}},now+1);
-  assert.equal(data.items.length,1);assert.equal(data.items[0].snippet,snippet);assert.equal(data.items[0].analysisStatus,'awaiting_analysis');assert.equal(data.items[0].qualification,undefined);assert.equal(data.items[0].queryFamilies[0],'keyword');
+  assert.equal(data.items.length,1);assert.equal(data.items[0].snippet,snippet);assert.equal(data.items[0].analysisStatus,'not_required');assert.equal(data.items[0].qualification,undefined);assert.equal(data.items[0].queryFamilies[0],'keyword');
 });
 test('collection provider forwards preserveText into Reddit normalization without changing legacy clips',async()=>{
   const selftext='Full source '.repeat(1500),body={posts:[{id:'a',subreddit:'vancouver',created_utc:Math.floor(Date.now()/1000)-1,title:'Lunch nearby',selftext,archived:false,locked:false,author:'author'}]};

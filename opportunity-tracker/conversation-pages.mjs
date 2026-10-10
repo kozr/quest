@@ -4,7 +4,7 @@ import {conversationSourceKey,qualificationInputHash,currentReviewFailure} from 
 import {conversationSignals} from './conversation-purpose.mjs';
 import {entityMentionEvidence} from './entity-mention.mjs';
 import {qualificationCurrent} from './conversation-feed.mjs';
-import {keywordMentionEvidence} from './keyword-mention.mjs';
+import {keywordMentionEvidence,isKeywordResult,CONVERSATION_MATCH_RULES} from './keyword-mention.mjs';
 import {freshAnalysis,productHash,matchHash} from './analysis.mjs';
 
 export const CONVERSATION_PAGE_LIMIT=100;
@@ -28,16 +28,16 @@ function evidenceIndex(data,products){
 // human review fields survive later qualification or changed source text.
 // This is a trusted worker mutation; callers run it within the Store CAS.
 export function materializeCollectedConversations(data,product,candidates,now=Date.now()){
-  if(!data.subscription)return 0;
+  if(!data.subscription&&product.listeningVersion!=='v2')return 0;
   const at=new Date(now).toISOString(),existing=new Map((data.items||[]).filter(item=>item.productId===product.id).map(item=>[key(product.id,item),item]));
   const wanted=candidates?new Set(candidates.filter(row=>row?.url).map(row=>key(product.id,row))):null;
   const additions=[],profileHash=qualificationInputHash(product);let count=0;
   for(const [identity,{row}] of evidenceIndex(data,[product])){
-    if(wanted&&!wanted.has(identity))continue;
+    if(wanted&&!wanted.has(identity)||!data.subscription&&!isKeywordResult(product,row))continue;
     const prior=existing.get(identity),current=qualificationCurrent(data,product,row,prior,profileHash);
     const source={...pick(row,fields),id:prior?.id||row.id,productId:product.id,snippet:row.text??row.snippet??'',context:row.context||'',
       kind:current&&row.qualification.relevant?prior?.kind||'conversation':'conversation',status:prior?.status||'new',note:prior?.note||'',draft:prior?.draft||'',foundAt:prior?.foundAt||row.collectedAt||at,
-      lastSeenAt:row.lastSeenAt||row.collectedAt||at,analysisStatus:current?'analyzed':currentReviewFailure(data,product,row)?'analysis_failed':'awaiting_analysis'};
+      lastSeenAt:row.lastSeenAt||row.collectedAt||at,analysisStatus:isKeywordResult(product,row)?'not_required':current?'analyzed':currentReviewFailure(data,product,row)?'analysis_failed':'awaiting_analysis'};
     if(current)source.qualification={...prior?.qualification,...row.qualification,contentHash:row.contentHash};
     if(prior){
       Object.assign(prior,source);
@@ -57,7 +57,7 @@ function filters(value={}){
   const offset=value.offset==null?0:Number(value.offset),limit=value.limit==null?50:Number(value.limit);
   if(!Number.isSafeInteger(offset)||offset<0||!Number.isSafeInteger(limit)||limit<1||limit>CONVERSATION_PAGE_LIMIT)fail('Choose a valid page offset and a limit from 1 to 100.');
   const selectedPlatform=value.platform||'all',status=value.status||'active',relevance=value.relevance||'all',purpose=value.purpose||null;
-  if(!['all','reddit','x','linkedin','tiktok','instagram','reviews','web','other'].includes(selectedPlatform)||!['all','active','new','saved','dismissed','awaiting_analysis','analysis_failed','analyzed'].includes(status)||!['all','collected',...Object.keys(purposeMap)].includes(relevance)||purpose!==null&&!Object.hasOwn(purposeMap,purpose))fail('Choose a supported conversation filter.');
+  if(!['all','reddit','x','linkedin','tiktok','instagram','reviews','web','other'].includes(selectedPlatform)||!['all','active','new','saved','dismissed','awaiting_analysis','analysis_failed','analyzed','not_required'].includes(status)||!['all','collected',...Object.keys(purposeMap)].includes(relevance)||purpose!==null&&!Object.hasOwn(purposeMap,purpose))fail('Choose a supported conversation filter.');
   if(purpose&&relevance!=='all'&&relevance!=='collected'&&purposeMap[purpose]!==purposeMap[relevance])fail('Purpose and relevance filters must agree.');
   return {productId,query:query.toLowerCase(),offset,limit,platform:selectedPlatform,status,relevance,purpose:purposeMap[purpose]||purposeMap[relevance]||null};
 }
@@ -69,17 +69,18 @@ function scope(data,principal,input){
 }
 function state(data,product,item,row,profileHash){
   const source=row||item,keywordMention=keywordMentionEvidence(product,source),decision=row?row.qualification:item?.qualification;
+  const keywordResult=isKeywordResult(product,source);
   const current=qualificationCurrent(data,product,row,item,profileHash),entityMention=entityMentionEvidence(product,source,{decision,current});
-  if(product.listeningVersion!=='v2')return {keywordMention,entityMention,analysisStatus:item?.analysisStatus||'analyzed',conversationSignals:undefined,currentConversationRelevant:undefined,currentOpportunityFit:undefined,current:false};
+  if(product.listeningVersion!=='v2')return {keywordMention,entityMention,keywordResult,analysisStatus:keywordResult?'not_required':item?.analysisStatus||'analyzed',conversationSignals:undefined,currentConversationRelevant:undefined,currentOpportunityFit:undefined,current:false};
   const signals=conversationSignals(product,source,decision,{current});
-  return {keywordMention,entityMention,analysisStatus:current?'analyzed':row&&currentReviewFailure(data,product,row)?'analysis_failed':'awaiting_analysis',conversationSignals:signals,currentConversationRelevant:current&&decision.relevant===true,currentOpportunityFit:signals.some(signal=>signal.purpose==='potential_customer'),current};
+  return {keywordMention,entityMention,keywordResult,analysisStatus:keywordResult?'not_required':current?'analyzed':row&&currentReviewFailure(data,product,row)?'analysis_failed':'awaiting_analysis',conversationSignals:signals,currentConversationRelevant:keywordResult||current&&decision.relevant===true,currentOpportunityFit:signals.some(signal=>signal.purpose==='potential_customer'),current};
 }
 function matches(data,input,entry,collected){
   const {product,item,row}=entry,source=row||item,computed=state(data,product,item,row,input.profileHashes.get(product.id)),status=item?.status||'new';entry.computed=computed;
   if(input.platform!=='all'&&platform(source)!==input.platform)return false;
-  if(['awaiting_analysis','analysis_failed','analyzed'].includes(input.status)){if(computed.analysisStatus!==input.status)return false;}
+  if(['awaiting_analysis','analysis_failed','analyzed','not_required'].includes(input.status)){if(computed.analysisStatus!==input.status)return false;}
   else if(input.status==='active'?status==='dismissed':input.status!=='all'&&input.status!==status)return false;
-  const entityMention=input.purpose==='mention'&&Boolean(computed.entityMention);
+  const entityMention=input.purpose==='mention'&&Boolean(computed.keywordMention||computed.entityMention);
   if(input.purpose==='mention'&&!entityMention)return false;
   if(!collected&&!entityMention&&input.status!=='dismissed'&&computed.currentConversationRelevant===false)return false;
   if(input.purpose&&!entityMention){
@@ -90,7 +91,7 @@ function matches(data,input,entry,collected){
 }
 function project(data,{product,item,row,computed},collected){
   const result={...pick(item,fields),...pick(row,fields),id:item?.id||row.id,productId:product.id,snippet:row?.text??row?.snippet??item?.snippet??'',context:row?.context??item?.context??'',status:item?.status||'new',note:item?.note||'',draft:item?.draft||'',kind:collected&&!computed.current?'conversation':item?.kind||'conversation',
-    ...(row?{evidenceId:row.id}:{}),...pick(computed,['keywordMention','entityMention','analysisStatus','conversationSignals','currentConversationRelevant','currentOpportunityFit']),reviewEditable:Boolean(item)};
+    ...(row?{evidenceId:row.id}:{}),...pick(computed,['keywordMention','entityMention','keywordResult','analysisStatus','conversationSignals','currentConversationRelevant','currentOpportunityFit']),reviewEditable:Boolean(item)};
   if(!computed.current&&row){delete result.reason;delete result.matchedTerms;}
   const decision=row?row.qualification:item?.qualification;
   if(computed.current&&decision)result.qualification=pick(decision,['relevant','directFit','category','need','quote','offeringIds','reason','resolved','purposes','qualifiedAt','model','sourceTextTruncated']);
@@ -135,24 +136,27 @@ export function privateConversationReadViews(data){
   for(const entry of entries){
     const {product,item,row}=entry,source=row||item,computed=state(data,product,item,row,qualificationInputHash(product));entry.computed=computed;
     const name=`conversation:${key(product.id,source)}`;
-    const purposes=['mention','potential_customer','feedback','competitor'].filter(purpose=>purpose==='mention'?Boolean(computed.entityMention):computed.conversationSignals?computed.conversationSignals.some(s=>s.purpose===purpose):purpose==='potential_customer'?item?.kind==='opportunity'&&item.qualification?.directFit!==false:item?.qualification?.purposes?.some(s=>s.purpose===purpose));
+    const purposes=['mention','potential_customer','feedback','competitor'].filter(purpose=>purpose==='mention'?Boolean(computed.keywordMention||computed.entityMention):computed.conversationSignals?computed.conversationSignals.some(s=>s.purpose===purpose):purpose==='potential_customer'?item?.kind==='opportunity'&&item.qualification?.directFit!==false:item?.qualification?.purposes?.some(s=>s.purpose===purpose));
     index.push({name,productId:product.id,platform:platform(source),status:item?.status||'new',analysisStatus:computed.analysisStatus,regular:Boolean(item),relevant:computed.currentConversationRelevant!==false,purposes,kind:item?.kind||'conversation',current:computed.current});
     search[name]=[source.title,source.text??source.snippet,source.context,source.author,source.source,source.community,item?.reason].filter(v=>typeof v==='string').map(v=>v.toLowerCase());
     views[name]=JSON.stringify(project(data,entry,false));
   }
   // Serializing the compact arrays avoids turning each scalar into a database
   // node. The immutable codec still checks their hashes and byte limits.
-  views['conversation-index']=JSON.stringify(index);
+  views['conversation-index']=JSON.stringify({rules:CONVERSATION_MATCH_RULES,entries:index});
   views['conversation-search']=JSON.stringify(search);
   return views;
 }
 export async function pagePrivateConversationViews(reader,options={}){
   const input=filters(options),collected=options.relevance==='collected';
   const raw=await reader.get('conversation-index');if(raw===null)return null;
-  const entries=JSON.parse(raw),search=input.query?JSON.parse(await reader.get('conversation-search')):null;
+  const index=JSON.parse(raw);
+  if(Array.isArray(index))return null; // A normal writer will replace the previous AI-gated projection.
+  if(index.rules!==CONVERSATION_MATCH_RULES||!Array.isArray(index.entries))throw Object.assign(new Error('Unsupported conversation match rules.'),{status:503});
+  const entries=index.entries,search=input.query?JSON.parse(await reader.get('conversation-search')):null;
   const matching=entries.filter(e=>{
     if(input.productId&&e.productId!==input.productId||!collected&&!e.regular||input.platform!=='all'&&e.platform!==input.platform)return false;
-    if(['awaiting_analysis','analysis_failed','analyzed'].includes(input.status)){if(e.analysisStatus!==input.status)return false;}
+    if(['awaiting_analysis','analysis_failed','analyzed','not_required'].includes(input.status)){if(e.analysisStatus!==input.status)return false;}
     else if(input.status==='active'?e.status==='dismissed':input.status!=='all'&&e.status!==input.status)return false;
     const mention=input.purpose==='mention'&&e.purposes.includes('mention');
     if(input.purpose==='mention'&&!mention)return false;

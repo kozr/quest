@@ -375,7 +375,7 @@ function applyPage(data,cycle,task,result,now) {
   const fresh=freshRows(data,product,candidates,{cutoff:task.cutoff,at:iso(now),profileHash:cycle.profileKey});
   const eligible=data.subscription?fresh:fresh.slice(0,Math.max(0,60-cycle.staged));
   captureEvidence(data,product,data.subscription?candidates:fresh,iso(now));
-  if(data.subscription)materializeCollectedConversations(data,product,candidates,iso(now));
+  materializeCollectedConversations(data,product,candidates,iso(now));
   const staged=product.listeningVersion==='v2'?{pending:eligible.length}:stageQualifications(data,product,eligible,iso(now),cycle.trigger);
   cycle.staged+=staged.pending;cycle.unassessed+=Math.max(0,fresh.length-eligible.length);
   if(commentTask(task)){if(!result.partial&&!result.omitted)s.threads[`${cycle.productId}:${task.post.sourceId}`]={commentCount:task.post.commentCount,checkedAt:iso(now)};}

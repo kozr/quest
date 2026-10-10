@@ -4,18 +4,18 @@ import {matchesConversation,purposeEvidence} from '../ui/src/feed.mjs';
 import {canEditCollected,collectedReviewBody,modernReviewSummary} from '../ui/src/review-state.mjs';
 const raw={id:'wren-source',status:'new',kind:'mention',keywordMention:{reference:'Wren Cafe',quote:'Wren Cafe in London'},currentConversationRelevant:false,conversationSignals:[],analysisStatus:'awaiting_analysis'};
 const confirmed={...raw,id:'bbt-source',entityMention:{reference:'Blind Box Tracker',quote:'I built Blind Box Tracker: https://blindboxtracker.com',reason:'The source links to the official business website.',basis:'official_url'},keywordMention:{reference:'Blind Box Tracker',quote:'I built Blind Box Tracker: https://blindboxtracker.com'}};
-test('Mentions excludes raw names, legacy kinds and AI-only namesake labels',()=>{
+test('Mentions includes keyword matches regardless of prior AI status',()=>{
  for(const item of [raw,{...raw,currentConversationRelevant:true,conversationSignals:[{purpose:'mention',quote:raw.keywordMention.quote}]},{...raw,conversationSignals:undefined,qualification:{purposes:[{purpose:'mention'}]}}]){
-  assert.equal(matchesConversation(item,{relevance:'mentions'}),false);
-  assert.equal(matchesConversation({...item,status:'saved'},{view:'saved',relevance:'mentions'}),false);
-  assert.equal(matchesConversation({...item,status:'dismissed'},{status:'dismissed',relevance:'mentions'}),false);
+  assert.equal(matchesConversation(item,{relevance:'mentions'}),true);
+  assert.equal(matchesConversation({...item,status:'saved'},{view:'saved',relevance:'mentions'}),true);
+  assert.equal(matchesConversation({...item,status:'dismissed'},{status:'dismissed',relevance:'mentions'}),true);
  }
 });
 test('identity-confirmed source is a mention before intent analysis without creating a lead',()=>{
  assert.equal(matchesConversation(confirmed,{relevance:'mentions'}),true);
  for(const relevance of ['direct','feedback','competitors'])assert.equal(matchesConversation(confirmed,{relevance}),false);
  const evidence=purposeEvidence(confirmed,'mentions');assert.equal(evidence.quote,confirmed.entityMention.quote);assert.deepEqual(evidence.signals,[]);assert.equal(evidence.entityMention,confirmed.entityMention);
- assert.equal(matchesConversation({...confirmed,entityMention:null},{relevance:'mentions'}),false);
+ assert.equal(matchesConversation({...confirmed,entityMention:null},{relevance:'mentions'}),true);
 });
 test('Mentions retains shared saved/dismissed status rules',()=>{
  assert.equal(matchesConversation({...confirmed,status:'saved'},{relevance:'mentions'}),true);
@@ -23,7 +23,7 @@ test('Mentions retains shared saved/dismissed status rules',()=>{
  assert.equal(matchesConversation({...confirmed,status:'dismissed'},{relevance:'mentions',status:'dismissed'}),true);
 });
 test('other purpose views still require their own signal',()=>{
- const opportunity={...raw,currentConversationRelevant:true,conversationSignals:[{purpose:'potential_customer',quote:'I need help'}]};
+ const opportunity={...raw,keywordMention:null,currentConversationRelevant:true,conversationSignals:[{purpose:'potential_customer',quote:'I need help'}]};
  assert.equal(matchesConversation(opportunity,{relevance:'direct'}),true);
  assert.equal(matchesConversation(opportunity,{relevance:'mentions'}),false);
 });

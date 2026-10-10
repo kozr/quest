@@ -122,7 +122,7 @@ test('non-qualification paid AI stages require active subscription and capacity'
 test('targeted identity review joins an active backlog before unrelated rows and never replays an old receipt',()=>{
   const data=workspace({planId:'growth'});collect(data,25);
   const first=claimStage(data,'p','qualify',settings,false,now);finishStage(data,first.lease,response(first.input),now+1);
-  const cycleId=data.analysisCycles.p.id;collect(data,1,100,{snippet:'Fixture Cafe in London has a menu.'});
+  const cycleId=data.analysisCycles.p.id;collect(data,1,100,{snippet:'Fixture Cafe in London has a menu.',queryFamily:'long_tail'});
   const p=data.products[0],row=data.conversationEvidence.p.find(row=>row.text.includes('London')),version=STAGE_DEFINITIONS.qualify.promptVersion;
   const legacy={evidenceId:row.id,relevant:false,directFit:false,category:'other',need:'',quote:'',offeringIds:[],reason:'No product need.',resolved:'unknown',purposes:[]};
   saveConversationReview(data,p,row,legacy,new Date(now).toISOString(),'old-fixture');
@@ -146,7 +146,7 @@ test('targeted identity review joins an active backlog before unrelated rows and
 test('an active old candidate gets the identity revision before any cached execution is considered',()=>{
   const data=workspace({planId:'growth'});collect(data,13);const first=claimStage(data,'p','qualify',settings,false,now);finishStage(data,first.lease,response(first.input),now+1);
   const oldId=data.analysisCycles.p.queue[0],row=data.conversationEvidence.p.find(r=>r.id===oldId);
-  row.text='Fixture Cafe in London';row.contentHash=hash([row.title,row.text]);
+  row.queryFamilies=['long_tail'];row.text='Fixture Cafe in London';row.contentHash=hash([row.title,row.text]);
   data.analysisCycles.p.candidates[oldId]=analysisCandidate(row,{profileHash:qualificationInputHash(data.products[0]),version:STAGE_DEFINITIONS.qualify.promptVersion});
   const next=claimStage(data,'p','qualify',settings,false,now+2);assert.equal(next.input.evidence[0].id,oldId);assert.equal(data.analysisCycles.p.batch.candidates[0].version,`${STAGE_DEFINITIONS.qualify.promptVersion}:entity-review-v1`);assert.equal(data.analysisCycles.p.skipped,0);
 });

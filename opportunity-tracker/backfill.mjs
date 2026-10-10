@@ -2,6 +2,7 @@ import {DISCOVERY_VERSION,discoveryTasks,mentionQueries} from './mention-discove
 import {materializeCollectedConversations} from './conversation-pages.mjs';
 import {commentThreadPriority} from './conversation-purpose.mjs';
 import {plannedQueries,compileRedditQuery} from './search-plan.mjs';
+import {isKeywordResult} from './keyword-mention.mjs';
 import {captureEvidence,evidenceFor,qualificationInputHash,currentReviewFailure,conversationSourceKey} from './conversation-evidence.mjs';
 import {randomUUID} from 'node:crypto';
 import {stageQualifications,budgetDay} from './qualification.mjs';
@@ -68,8 +69,10 @@ export function backfillReviews(data,job) {
   const counts={pending:0,running:0,qualified:0,rejected:0,uncertain:0};
   const product=data.products.find(row=>row.id===job.productId);
   if(job.retention==='durable'&&product?.listeningVersion==='v2'){
+    counts.not_required=0;
     for(const row of evidenceFor(data,product))if(row.backfillId===job.id||row.backfillIds?.includes(job.id)){
-      if(currentReviewFailure(data,product,row))counts.uncertain++;
+      if(isKeywordResult(product,row))counts.not_required++;
+      else if(currentReviewFailure(data,product,row))counts.uncertain++;
       else if(row.qualification?.profileHash===qualificationInputHash(product))counts[row.qualification.relevant?'qualified':'rejected']++;
       else counts.pending++;
     }
@@ -136,7 +139,7 @@ export function applyBackfillPage(data,job,task,result,now) {
   const eligible=data.subscription?candidates:candidates.slice(0,Math.max(0,BACKFILL_LIMITS.candidates-job.staged));
   const before=data.subscription&&product.listeningVersion==='v2'?new Map(evidenceFor(data,product).map(row=>[conversationSourceKey(row.url),row.contentHash])):null;
   captureEvidence(data,product,eligible,iso(now));
-  if(data.subscription)materializeCollectedConversations(data,product,eligible,iso(now));
+  materializeCollectedConversations(data,product,eligible,iso(now));
   const changed=before?evidenceFor(data,product).filter(row=>row.backfillIds?.includes(job.id)&&before.get(conversationSourceKey(row.url))!==row.contentHash).length:eligible.length;
   const staged=product.listeningVersion==='v2'?{pending:changed,duplicates:eligible.length-changed}:stageQualifications(data,product,eligible,iso(now),'onboarding');
   job.staged+=staged.pending;job.duplicates+=staged.duplicates||0;

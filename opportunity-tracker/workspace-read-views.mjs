@@ -1,3 +1,4 @@
+import {CONVERSATION_MATCH_RULES} from './keyword-mention.mjs';
 import {privateConversationReadViews} from './conversation-pages.mjs';
 import {analysisUsageState,monthlyPeriod} from './usage.mjs';
 import {collectedUsageState} from './collected-usage.mjs';
@@ -23,7 +24,7 @@ export function workspaceReadViews(data){
   const collectedPeriods=Object.fromEntries(Object.keys(data.collectedUsage?.monthly||{}).map(period=>[period,collectedUsageState(data,Date.parse(`${period}-15T12:00:00Z`)).monthly]));
   const collection=collectionPublicState(data),analysis=analysisUsageState(data);
   collectedPeriods[collection.collectedUsage.monthly.period]=collection.collectedUsage.monthly;
-  const summary={schema:WORKSPACE_READ_VIEW_VERSION,seed,counts,productCounts,analysisPeriods,analysisHistorical:analysis.historical,collectedPeriods,collectedHistorical:collection.collectedUsage.historical,
+  const summary={schema:WORKSPACE_READ_VIEW_VERSION,matchRules:CONVERSATION_MATCH_RULES,seed,counts,productCounts,analysisPeriods,analysisHistorical:analysis.historical,collectedPeriods,collectedHistorical:collection.collectedUsage.historical,
     collection,collectionDaily:data.collection?.daily||{},apifyDaily:data.collection?.apifyDaily||{},total:data.items?.length||0,
     cycles:Object.fromEntries(data.products.map(p=>[p.id,analysisCycleState(data,p.id)])),
     pipeline:Object.fromEntries(data.products.map(p=>[p.id,{ready:listeningReady(p),retained:evidenceFor(data,p).length,batchSize:REVIEW_BATCH_LIMIT,failed:failedEvidenceCount(data,p),pending:pendingEvidenceCount(data,p),relevant:relevantEvidence(data,p).length}])),
@@ -36,6 +37,7 @@ export function readWorkspaceSummary(value){
   if(value===null)return null;
   const summary=JSON.parse(value);
   if(summary.schema!==WORKSPACE_READ_VIEW_VERSION||summary.seed.workspace||!summary.seed.subscription)throw Object.assign(new Error('Unsupported workspace read view.'),{status:503});
+  if(summary.matchRules!==CONVERSATION_MATCH_RULES)return null;
   return summary;
 }
 export function summaryUsage(summary,now=Date.now()){

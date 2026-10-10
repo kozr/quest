@@ -31,10 +31,10 @@ test('a completed batch reaches the customer while the backfill is still running
  assert.equal(f.store.snapshot().collection.backfills[f.p.id].status,'running');
  const server=f.app.listen(0,'127.0.0.1');await once(server,'listening');t.after(()=>new Promise(resolve=>server.close(resolve)));
  const state=await (await fetch(`http://127.0.0.1:${server.address().port}/api/state`)).json();
- assert.equal(state.pipeline.products[f.p.id].pending,23);assert.equal(state.discovery[f.p.id].phase,'finding');
- assert.equal(state.items.filter(i=>matchesConversation(i)).length,12);
+ assert.equal(state.pipeline.products[f.p.id].pending,22);assert.equal(state.discovery[f.p.id].phase,'finding');
+ assert.equal(state.items.filter(i=>matchesConversation(i)).length,13);
  assert(state.items.some(i=>i.kind==='conversation'&&i.currentConversationRelevant&&!i.currentOpportunityFit));
- const status=feedProgress(state,[f.p],now+1);assert.match(status.message,/12 conversations ready to review · Finding more conversations/);
+ const status=feedProgress(state,[f.p],now+1);assert.match(status.message,/13 conversations ready to review · Finding more conversations/);
 });
 
 test('queue preserves in-flight rows past the 120-record sample and receipts avoid duplicate review',async t=>{

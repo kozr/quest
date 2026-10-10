@@ -1,5 +1,6 @@
 import {canonicalReviewURL} from './review-identity.mjs';
 import {needsEntityReview} from './entity-mention.mjs';
+import {isKeywordResult} from './keyword-mention.mjs';
 import {canonicalSocialSource} from './social-search.mjs';
 import {conversationSignals,commentThreadPriority} from './conversation-purpose.mjs';
 import {hash,problem,string,array,oneOf} from './pipeline-contract.mjs';
@@ -26,7 +27,7 @@ export function captureEvidence(data,product,rows,at){
   // Protect unreviewed samples from every business before shared sample eviction.
   for(const p of data.products.filter(p=>p.listeningVersion==='v2')){
     const pending=data.conversationReviewQueue[p.id] ||= [];
-    for(const old of evidenceFor(data,p))if(old.qualification?.profileHash!==qualificationInputHash(p)&&!currentReviewFailure(data,p,old)&&!pending.some(r=>r.id===old.id)){
+    for(const old of evidenceFor(data,p))if(!isKeywordResult(p,old)&&old.qualification?.profileHash!==qualificationInputHash(p)&&!currentReviewFailure(data,p,old)&&!pending.some(r=>r.id===old.id)){
       if(pending.length>=REVIEW_QUEUE_LIMIT||Object.values(data.conversationReviewQueue).reduce((n,rs)=>n+rs.length,0)>=REVIEW_WORKSPACE_LIMIT)problem('Conversation review is catching up. Try collecting again shortly.',409);
       pending.push(structuredClone(old));
     }
@@ -47,10 +48,11 @@ export function captureEvidence(data,product,rows,at){
     const record={...sourceProvenance(prior||{}),...sourceProvenance(row),id,url:url.href,title,text,...(context?{context}:{}),author,community:url.pathname.match(/\/r\/([^/]+)/i)?.[1]?.toLowerCase()||String(row.community||row.subreddit||'').replace(/^r\//,'').toLowerCase().slice(0,21)||null,
       threadId:thread?`reddit:${thread}`:String(social?`${social.platform}:${social.post}`:row.postId||row.parentId||url.href),type:row.type==='comment'?'comment':'post',source:String(row.source||'').slice(0,80),publishedAt:Number.isFinite(Date.parse(row.publishedAt))?new Date(row.publishedAt).toISOString():null,
       collectedAt:at,historical:row.historical===true||prior?.historical===true,discussionClosed:row.discussionClosed===true,crosspost:row.crosspost===true||Boolean(row.crosspostParent||row.crosspost_parent),contentHash,
-      queryIds:[...new Set([...(prior?.queryIds||[]),...(row.queryId?[row.queryId]:[])])].slice(0,12),
+      queryIds:[...new Set([...(prior?.queryIds||[]),...(row.queryId?[row.queryId]:[]),...(row.queryIds||[])])].slice(0,12),
+      queryFamilies:[...new Set([...(prior?.queryFamilies||[]),...(row.queryFamily?[row.queryFamily]:[]),...(row.queryFamilies||[])])],
       ...(previousHash===contentHash&&previous?{qualification:previous}:{})};
     const queued=queue.findIndex(r=>r.id===id);
-    if(record.qualification?.profileHash!==qualificationInputHash(product)&&!currentReviewFailure(data,product,record)){
+    if(!isKeywordResult(product,record)&&record.qualification?.profileHash!==qualificationInputHash(product)&&!currentReviewFailure(data,product,record)){
       if(queued>=0)queue[queued]={...record,collectedAt:queue[queued].collectedAt};
       else {if(queue.length>=REVIEW_QUEUE_LIMIT||Object.values(data.conversationReviewQueue).reduce((n,rows)=>n+rows.length,0)>=REVIEW_WORKSPACE_LIMIT)problem('Conversation review is catching up. Try collecting again shortly.',409);queue.push(record);}
     }else if(queued>=0)queue.splice(queued,1);
@@ -105,7 +107,7 @@ export function evidenceFor(data,product){return data.conversationEvidence?.[pro
 // historical flag; it never invents backfill authority or recurring eligibility.
 export function savedItemIdentityEvidence(data,product){
   const present=new Set([...(data.conversationEvidence?.[product.id]||[]),...(data.conversationReviewQueue?.[product.id]||[])].map(row=>conversationSourceKey(row.url)));
-  return (data.items||[]).filter(item=>item.productId===product.id&&item.url&&!present.has(conversationSourceKey(item.url))&&needsEntityReview(product,item)).slice(0,24).map(item=>{
+  return (data.items||[]).filter(item=>item.productId===product.id&&item.url&&!present.has(conversationSourceKey(item.url))&&!isKeywordResult(product,item)&&needsEntityReview(product,item)).slice(0,24).map(item=>{
     const title=String(item.title||''),text=String(item.snippet||''),context=String(item.context||''),contentHash=hash(context?[title,text,context]:[title,text]),thread=new URL(item.url).pathname.match(/\/comments\/([a-z0-9]+)/i)?.[1];
     const id=/^[a-f0-9]{24}$/.test(item.qualification?.evidenceId||'')?item.qualification.evidenceId:hash([product.id,conversationSourceKey(item.url)]).slice(0,24);
     return {...item,id,text,title,context,contentHash,retention:'durable',savedItemIdentityReview:true,threadId:item.threadId||(thread?`reddit:${thread}`:item.postId||item.url),collectedAt:item.collectedAt||item.lastSeenAt||item.foundAt||item.qualification?.qualifiedAt||'1970-01-01T00:00:00.000Z'};
@@ -115,14 +117,14 @@ export function findEvidence(data,product,id){return data.conversationReviewQueu
 
 export function currentReviewFailure(data,product,row){const failure=data.conversationReviewFailures?.[product.id]?.[row.id];return failure?.profileHash===qualificationInputHash(product)&&failure.contentHash===row.contentHash?failure:null;}
 export function reviewEvidenceFor(data,product){const saved=evidenceFor(data,product),rows=new Map(saved.map(row=>[row.id,row]));for(const failure of Object.values(data.conversationReviewFailures?.[product.id]||{}))if(!rows.has(failure.row.id)&&currentReviewFailure(data,product,failure.row))rows.set(failure.row.id,failure.row);return [...rows.values()].sort((a,b)=>Number(Boolean(currentReviewFailure(data,product,b)))-Number(Boolean(currentReviewFailure(data,product,a))));}
-export function failedEvidenceCount(data,product){return reviewEvidenceFor(data,product).filter(row=>currentReviewFailure(data,product,row)).length;}
+export function failedEvidenceCount(data,product){return reviewEvidenceFor(data,product).filter(row=>!isKeywordResult(product,row)&&currentReviewFailure(data,product,row)).length;}
 export function recordReviewFailure(data,product,row,reason,at){
   data.conversationReviewFailures ||= {};const failures=data.conversationReviewFailures[product.id] ||= {};
   failures[row.id]={profileHash:qualificationInputHash(product),contentHash:row.contentHash,failedAt:at,reason:String(reason).slice(0,300),row:structuredClone(row)};
   if(!durableEvidenceEnabled(data))for(const id of Object.keys(failures).slice(0,Math.max(0,Object.keys(failures).length-150)))delete failures[id];
   data.conversationReviewQueue ||= {};data.conversationReviewQueue[product.id]=(data.conversationReviewQueue?.[product.id]||[]).filter(r=>r.id!==row.id);
 }
-function unqualifiedEvidence(data,product){const h=qualificationInputHash(product),rows=new Map();for(const r of [...(data.conversationReviewQueue?.[product.id]||[]),...evidenceFor(data,product),...savedItemIdentityEvidence(data,product)])if((r.qualification?.profileHash!==h||needsEntityReview(product,r))&&!currentReviewFailure(data,product,r)&&!rows.has(r.id))rows.set(r.id,r);const priority=row=>Math.max(commentThreadPriority(product,row),row.type==='comment'&&row.context&&commentThreadPriority(product,{text:row.context})>=3?3:0);return [...rows.values()].sort((a,b)=>priority(b)-priority(a)||a.collectedAt.localeCompare(b.collectedAt)||a.id.localeCompare(b.id));}
+function unqualifiedEvidence(data,product){const h=qualificationInputHash(product),rows=new Map();for(const r of [...(data.conversationReviewQueue?.[product.id]||[]),...evidenceFor(data,product),...savedItemIdentityEvidence(data,product)])if(!isKeywordResult(product,r)&&(r.qualification?.profileHash!==h||needsEntityReview(product,r))&&!currentReviewFailure(data,product,r)&&!rows.has(r.id))rows.set(r.id,r);const priority=row=>Math.max(commentThreadPriority(product,row),row.type==='comment'&&row.context&&commentThreadPriority(product,{text:row.context})>=3?3:0);return [...rows.values()].sort((a,b)=>priority(b)-priority(a)||a.collectedAt.localeCompare(b.collectedAt)||a.id.localeCompare(b.id));}
 export function pendingEvidenceAll(data,product){return unqualifiedEvidence(data,product);}
 export function pendingEvidence(data,product){return pendingEvidenceAll(data,product).slice(0,REVIEW_BATCH_LIMIT);}
 export function pendingEvidenceCount(data,product){return unqualifiedEvidence(data,product).length;}
@@ -165,6 +167,7 @@ export function currentConversationRelevant(data,item){
   const p=data.products.find(p=>p.id===item.productId);if(!p||p.listeningVersion!=='v2')return true;
   const row=evidenceBySource(data,p,item.url);
   const q=row?row.qualification:item.qualification;
+  if(isKeywordResult(p,row||item))return true;
   if(item.kind==='mention'&&!row&&!q)return true;
   return q?.profileHash===qualificationInputHash(p)&&q.relevant===true;
 }
@@ -174,7 +177,7 @@ export function currentOpportunityFit(data,item){
   const row=evidenceBySource(data,product,item.url),decision=row?row.qualification:item.qualification;
   return conversationSignals(product,row||item,decision,{current:decision?.profileHash===qualificationInputHash(product)}).some(signal=>signal.purpose==='potential_customer');
 }
-export function relevantEvidence(data,product){const h=qualificationInputHash(product);return evidenceFor(data,product).filter(x=>x.qualification?.profileHash===h&&x.qualification.relevant);}
+export function relevantEvidence(data,product){const h=qualificationInputHash(product);return evidenceFor(data,product).filter(x=>isKeywordResult(product,x)||x.qualification?.profileHash===h&&x.qualification.relevant);}
 export function validateEvidence(value,products,{durable=false,limit=durable?Number.MAX_SAFE_INTEGER:EVIDENCE_LIMIT,totalLimit=durable?Number.MAX_SAFE_INTEGER:600}={}){
   if(value===undefined)return {};
   if(!value||typeof value!=='object'||Array.isArray(value))problem('Invalid conversation evidence.');
@@ -188,7 +191,7 @@ export function validateEvidence(value,products,{durable=false,limit=durable?Num
       const title=durable?fullText(r.title):string(r.title,500,0),text=durable?fullText(r.text):string(r.text,2200,0),context=durable?fullText(r.context||''):string(r.context||'',1500,0);
       // Imported classification is deliberately re-run against the active business.
       const provenance=sourceProvenance(r);delete provenance.businessReview; // Imported listing attribution requires provider re-verification.
-      return {...provenance,id:r.id,url,title,text,...(context?{context}:{}),...(durable?{retention:'durable',queryFamilies:array(r.queryFamilies||[],1000).map(x=>string(x,100)),backfillIds:array(r.backfillIds||[],1000).map(x=>string(x,100)),...(typeof r.backfillId==='string'?{backfillId:string(r.backfillId,100)}:{})}:{}),author:r.author===null?null:string(r.author,120,0),community:r.community===null?null:string(r.community,21,0),threadId:string(r.threadId,2048),type:oneOf(r.type,['post','comment']),source:string(r.source,80,0),publishedAt:Number.isFinite(Date.parse(r.publishedAt))?r.publishedAt:null,collectedAt:r.collectedAt,historical:r.historical===true,discussionClosed:r.discussionClosed===true,crosspost:r.crosspost===true,contentHash:hash(context?[title,text,context]:[title,text]),queryIds:array(r.queryIds||[],durable?Number.MAX_SAFE_INTEGER:12).map(x=>string(x,100))};
+      return {...provenance,id:r.id,url,title,text,...(context?{context}:{}),...(durable?{retention:'durable',backfillIds:array(r.backfillIds||[],1000).map(x=>string(x,100)),...(typeof r.backfillId==='string'?{backfillId:string(r.backfillId,100)}:{})}:{}),author:r.author===null?null:string(r.author,120,0),community:r.community===null?null:string(r.community,21,0),threadId:string(r.threadId,2048),type:oneOf(r.type,['post','comment']),source:string(r.source,80,0),publishedAt:Number.isFinite(Date.parse(r.publishedAt))?r.publishedAt:null,collectedAt:r.collectedAt,historical:r.historical===true,discussionClosed:r.discussionClosed===true,crosspost:r.crosspost===true,contentHash:hash(context?[title,text,context]:[title,text]),queryFamilies:array(r.queryFamilies||[],1000).map(x=>string(x,100)),queryIds:array(r.queryIds||[],durable?Number.MAX_SAFE_INTEGER:12).map(x=>string(x,100))};
     });
     if(new Set(result[product.id].map(x=>x.id)).size!==rows.length)problem('Duplicate conversation evidence.');
   }
