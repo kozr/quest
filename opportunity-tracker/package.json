@@ -16,6 +16,8 @@
     "express": "5.2.1",
     "firebase-admin": "14.3.0",
     "google-auth-library": "11.1.0",
-    "stripe": "23.0.0"
-  }
+    "stripe": "23.0.0",
+    "@google-cloud/functions-framework": "3.4.5"
+  },
+  "main": "firebase-entry.mjs"
 }

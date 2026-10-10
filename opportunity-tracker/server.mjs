@@ -60,8 +60,8 @@ export function validateProduct(value) {
   return { name: value.name.trim(), description: value.description.trim(), url, type: new URL(url).hostname === 'apps.apple.com' ? 'app_store' : 'website', keywords, aliases: list(value.aliases || [value.name]), competitorNames:list(value.competitorNames||[],8), exclusions: list(value.exclusions || []), ...validateProfile({...value,...selection}),...selection,...validateListeningSettings({...value,...selection}) };
 }
 
-export function createTrackerApp({ dataDirectory = process.env.TRACKER_DATA_DIR || join(directory, '.local'), discoverFn = discover, metadataFn = importMetadata, profileFn = product => suggestProfile(product,{env:{}}), businessProfileProvider, stageProvider, analysisProvider, redditAdapter, linkedinAvailable = linkedinConfigured(), monitorToken = process.env.TRACKER_MONITOR_TOKEN, qualificationEnv = process.env, collectionProvider = createCollectionProvider({env:qualificationEnv}), qualificationProvider = createQualificationProvider({env:qualificationEnv}), store: providedStore, hosted = false, googleClientId = process.env.TRACKER_GOOGLE_CLIENT_ID, googleAllowedEmails = process.env.TRACKER_GOOGLE_ALLOWED_EMAILS, googleAllowedSubjects = process.env.TRACKER_GOOGLE_ALLOWED_SUBJECTS, verifyGoogleIdToken, sessionSecret = process.env.TRACKER_SESSION_SECRET, firebaseProjectId = process.env.FIREBASE_PROJECT_ID, firebaseServiceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON, workspace = process.env.TRACKER_WORKSPACE || (process.env.VERCEL_ENV === 'preview' ? 'preview' : 'personal') } = {}) {
-  const auth = hosted ? createAuth({clientId:googleClientId,allowedEmails:googleAllowedEmails,allowedSubjects:googleAllowedSubjects,secret:sessionSecret,verifyIdToken:verifyGoogleIdToken}) : null;
+export function createTrackerApp({ dataDirectory = process.env.TRACKER_DATA_DIR || join(directory, '.local'), discoverFn = discover, metadataFn = importMetadata, profileFn = product => suggestProfile(product,{env:{}}), businessProfileProvider, stageProvider, analysisProvider, redditAdapter, linkedinAvailable = linkedinConfigured(), monitorToken = process.env.TRACKER_MONITOR_TOKEN, qualificationEnv = process.env, collectionProvider = createCollectionProvider({env:qualificationEnv}), qualificationProvider = createQualificationProvider({env:qualificationEnv}), store: providedStore, hosted = false, googleClientId = process.env.TRACKER_GOOGLE_CLIENT_ID, googleAllowedEmails = process.env.TRACKER_GOOGLE_ALLOWED_EMAILS, googleAllowedSubjects = process.env.TRACKER_GOOGLE_ALLOWED_SUBJECTS, verifyGoogleIdToken, authCookieMode = qualificationEnv.TRACKER_AUTH_COOKIE_MODE || 'host', publicOrigins = qualificationEnv.TRACKER_PUBLIC_ORIGINS || '', sessionSecret = process.env.TRACKER_SESSION_SECRET, firebaseProjectId = process.env.FIREBASE_PROJECT_ID, firebaseServiceAccountJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON, workspace = process.env.TRACKER_WORKSPACE || (process.env.VERCEL_ENV === 'preview' ? 'preview' : 'personal') } = {}) {
+  const auth = hosted ? createAuth({clientId:googleClientId,allowedEmails:googleAllowedEmails,allowedSubjects:googleAllowedSubjects,secret:sessionSecret,verifyIdToken:verifyGoogleIdToken,cookieMode:authCookieMode}) : null;
   // Private record storage migrates on the first CAS write and does not alter
   // the existing Google allowlist, signed sessions or account ownership.
   const recordStorage=qualificationEnv.TRACKER_RECORD_STORAGE_ENABLED==='true';
@@ -73,6 +73,8 @@ export function createTrackerApp({ dataDirectory = process.env.TRACKER_DATA_DIR 
   const busy = new Set();
   const loginAttempts = [];
   const allowedHosts = new Set(['127.0.0.1', 'localhost', '[::1]']);
+  const trustedOrigins = new Set(String(publicOrigins).split(',').map(x=>x.trim()).filter(Boolean));
+  for (const origin of trustedOrigins) if (new URL(origin).origin !== origin || !origin.startsWith('https://')) throw new Error('Use exact HTTPS public origins.');
   const busyIds = async () => store.activeSearches ? await store.activeSearches() : [...busy];
   const monitoringAvailable = !hosted || typeof monitorToken === 'string' && monitorToken.length >= 32;
   const collector=collectionSettings(qualificationEnv);
@@ -176,7 +178,7 @@ export function createTrackerApp({ dataDirectory = process.env.TRACKER_DATA_DIR 
         if (!expected.length || provided.length !== expected.length || !timingSafeEqual(provided, expected)) return res.status(401).json({error: 'unauthorized'});
         return next();
       }
-      if(req.method!=='GET' && req.get('origin') && req.get('origin')!==`${req.protocol}://${req.get('host')}`) return res.status(403).json({error:'This request came from another website.'});
+      if(req.method!=='GET' && req.get('origin') && req.get('origin')!==`${req.protocol}://${req.get('host')}` && !trustedOrigins.has(req.get('origin'))) return res.status(403).json({error:'This request came from another website.'});
       if(req.path==='/api/auth' || req.path==='/api/login/google') return next();
       if(auth&&!auth.authenticated(req)) return res.status(401).json({error:'Sign in to open your tracker.'});
       if(req.method!=='GET' && req.get('X-Tracker-Token')!==(auth ? auth.csrf(req) : token)) return res.status(403).json({error:'Refresh the page and try again.'});

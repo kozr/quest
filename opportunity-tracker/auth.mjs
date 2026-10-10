@@ -9,7 +9,7 @@ const entries = value => (Array.isArray(value) ? value : String(value || '').spl
 const failure = (message, status = 401) => Object.assign(new Error(message), {status});
 
 // This is one private shared workspace, so Google identity must also be allowed.
-export function createAuth({clientId, allowedEmails, allowedSubjects, secret, secure = true, verifyIdToken, now = Date.now, allowVerifiedAccounts = false}) {
+export function createAuth({clientId, allowedEmails, allowedSubjects, secret, secure = true, verifyIdToken, now = Date.now, allowVerifiedAccounts = false, cookieMode = 'host'}) {
   const emails = new Set(entries(allowedEmails).map(x => x.toLowerCase()));
   const subjects = new Set(entries(allowedSubjects));
   if (!/^\d+-[\w-]+\.apps\.googleusercontent\.com$/.test(clientId || '') || (!allowVerifiedAccounts && !emails.size && !subjects.size) || typeof secret !== 'string' || secret.length < 32) {
@@ -17,8 +17,9 @@ export function createAuth({clientId, allowedEmails, allowedSubjects, secret, se
   }
   const client = new OAuth2Client();
   const verify = verifyIdToken || (async credential => (await client.verifyIdToken({idToken: credential, audience: clientId})).getPayload());
-  const sessionName = secure ? '__Host-tracker_session' : 'tracker_session';
-  const challengeName = secure ? '__Host-tracker_login' : 'tracker_login';
+  if (!['host','firebase-hosting'].includes(cookieMode) || cookieMode === 'firebase-hosting' && !secure) throw new Error('Use secure Firebase Hosting session cookies.');
+  const sessionName = cookieMode === 'firebase-hosting' ? '__session' : secure ? '__Host-tracker_session' : 'tracker_session';
+  const challengeName = cookieMode === 'firebase-hosting' ? '__session' : secure ? '__Host-tracker_login' : 'tracker_login';
   const sign = (kind, body) => createHmac('sha256', secret).update(`google-v1:${clientId}:${kind}:${body}`).digest('base64url');
   const encode = (kind, value) => {
     const body = Buffer.from(JSON.stringify(value)).toString('base64url');
@@ -70,12 +71,12 @@ export function createAuth({clientId, allowedEmails, allowedSubjects, secret, se
       if (!allowVerifiedAccounts && !subjects.has(identity.sub) && !(authoritativeEmail && emails.has(identity.email))) throw failure('This Google account does not have access to this tracker. Choose an invited account.', 403);
       const value = {...identity, authoritativeEmail, nonce: randomBytes(24).toString('base64url'), expiresAt: now() + lifetime * 1000};
       res.append('Set-Cookie', cookie(sessionName, encode('session', value), lifetime));
-      res.append('Set-Cookie', cookie(challengeName, '', 0));
+      if (challengeName !== sessionName) res.append('Set-Cookie', cookie(challengeName, '', 0));
       if (secure) res.append('Set-Cookie', cookie('tracker_session', '', 0));
     },
     logout: res => {
       res.append('Set-Cookie', cookie(sessionName, '', 0));
-      res.append('Set-Cookie', cookie(challengeName, '', 0));
+      if (challengeName !== sessionName) res.append('Set-Cookie', cookie(challengeName, '', 0));
     },
   };
 }
